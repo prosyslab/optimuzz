@@ -1,0 +1,12 @@
+(library
+ (name hwLib)
+ (wrapped false)
+ (libraries llvm llvm.bitreader llvm.irreader llvm.transform_utils str unix)
+ (modules
+  (:standard \ main)))
+
+(executable
+ (name main)
+ (modules main)
+ (libraries hwLib llvm llvm.bitreader llvm.irreader llvm.transform_utils str
+   unix))
