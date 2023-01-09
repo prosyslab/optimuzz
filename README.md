@@ -18,6 +18,6 @@ ninja
 cd alive2
 mkdir build
 cd build
-cmake -GNinja -DCMAKE_PREFIX_PATH=../../llvm-project/build -DBUILD_TV=1 -DCMAKE_BUILD_TYPE=Release ..
+cmake -GNinja -DCMAKE_PREFIX_PATH=../llvm-project/build -DBUILD_TV=1 -DCMAKE_BUILD_TYPE=Release ..
 ninja
 ```
