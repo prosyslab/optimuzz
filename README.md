@@ -1,9 +1,12 @@
 # LLFuzz
 
 ## Installation
-#### Clone LLFuzz
+#### Build LLFuzz
 ```
 git clone --recurse-submodules git@github.com:prosyslab/llfuzz.git
+cd llfuzz
+./build.sh
+make
 ```
 #### Build LLVM
 ```
