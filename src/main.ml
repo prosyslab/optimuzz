@@ -44,7 +44,16 @@ let initialize () =
       Config.seed_dir := x)
     usage
 
-let mutate x = x
+let mutate llm =
+  let llm_clone = Llvm_transform_utils.clone_module llm in
+  let f =
+    (* assume the sole function *)
+    match Llvm.function_begin llm_clone with
+    | Before f -> f
+    | At_end _ -> failwith "No function defined"
+  in
+  llm_clone
+
 let interesting cov1 cov2 = true
 let count = ref 0
 
