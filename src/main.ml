@@ -44,6 +44,31 @@ let initialize () =
       Config.seed_dir := x)
     usage
 
+(** [substitute_instr opcode instr] substitutes
+    a binary integer arithmetic operation [instr]
+    into another operation (with opcode [opcode]).
+    It does not use extra keywords such as nsw, nuw, exact, etc. *)
+let substitute_instr instr opcode =
+  (* Add, Sub, Mul, UDiv, SDiv, URem, SRem *)
+  let open Llvm.Opcode in
+  let build_op =
+    match opcode with
+    | Add -> Llvm.build_add
+    | Sub -> Llvm.build_sub
+    | Mul -> Llvm.build_mul
+    | UDiv -> Llvm.build_udiv
+    | SDiv -> Llvm.build_sdiv
+    | URem -> Llvm.build_urem
+    | SRem -> Llvm.build_srem
+    | _ -> failwith "Unsupported"
+  in
+  let new_instr =
+    build_op (Llvm.operand instr 0) (Llvm.operand instr 1) ""
+      (Llvm.builder_before llctx instr)
+  in
+  Llvm.replace_all_uses_with instr new_instr;
+  Llvm.delete_instruction instr
+
 let mutate llm =
   let llm_clone = Llvm_transform_utils.clone_module llm in
   let f =
