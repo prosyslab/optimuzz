@@ -15,6 +15,14 @@ jobs:
         with:
           ocaml-compiler: 4.13.1
 
+      - name: Install ocamlformat
+        run: opam install ocamlformat.0.24.1
+
+      - name: Check format
+        run: |
+          eval $(opam env)
+          scripts/check-format
+
       - name: Build LLFuzz
         run: |
           ./build.sh || eval $(opam env) && make
