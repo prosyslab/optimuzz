@@ -91,6 +91,21 @@ let substitute_instr instr opcode =
   Llvm.replace_all_uses_with instr new_instr;
   Llvm.delete_instruction instr
 
+(** [lower_instr instr] lowers
+    the given instruction [instr] one step down within its parent block.
+    Returns its updated predecessor, i.e., its previous successor.
+    If [instr] is the last instruction, does nothing and returns [instr]. *)
+let lower_instr instr =
+  match Llvm.instr_succ instr with
+  | At_end _ -> instr
+  | Before instr_succ ->
+      let instr_succ_clone = Llvm.instr_clone instr_succ in
+      Llvm.insert_into_builder instr_succ_clone ""
+        (Llvm.builder_before llctx instr);
+      Llvm.replace_all_uses_with instr_succ instr_succ_clone;
+      Llvm.set_value_name (Llvm.value_name instr_succ) instr_succ_clone;
+      instr_succ_clone
+
 (** [split_block instr] splits the parent block of [instr] into two blocks
     and links them by unconditional branch.
     [instr] becomes the first instruction of the latter block.
