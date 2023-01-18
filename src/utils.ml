@@ -10,12 +10,11 @@ let rec get_list_index l v i =
 
 let is_assignment = function
   | Llvm.Opcode.Invoke | Invalid2 | Add | FAdd | Sub | FSub | Mul | FMul | UDiv
-  | SDiv | FDiv | URem | SRem | FRem | Shl | LShr | AShr | And | Or | Xor
-  | Alloca | Load | GetElementPtr | Trunc | ZExt | SExt | FPToUI | FPToSI
-  | UIToFP | SIToFP | FPTrunc | FPExt | PtrToInt | IntToPtr | BitCast | ICmp
-  | FCmp | PHI | Select | UserOp1 | UserOp2 | VAArg | ExtractElement
-  | InsertElement | ShuffleVector | ExtractValue | InsertValue | Call
-  | LandingPad ->
+  | SDiv | FDiv | URem | SRem | FRem | Shl | LShr | AShr | And | Or | Xor | Load
+  | GetElementPtr | Trunc | ZExt | SExt | FPToUI | FPToSI | UIToFP | SIToFP
+  | FPTrunc | FPExt | PtrToInt | IntToPtr | BitCast | ICmp | FCmp | PHI | Select
+  | UserOp1 | UserOp2 | VAArg | ExtractElement | InsertElement | ShuffleVector
+  | ExtractValue | InsertValue | Call | LandingPad ->
       true
   | _ -> false
 
@@ -40,9 +39,16 @@ let get_arguments_from_function m i =
   in
   get_arguments_from_list (List.rev list) i []
 
+let random list =
+  match list with
+  | [] -> failwith "Unsupported"
+  | _ -> List.nth list (Random.int (List.length list))
+
 let random_change_op op =
   let oplist = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ] in
-  List.nth oplist
-    (get_list_index oplist op 0 + Random.int (List.length oplist - 1) + 1)
 
-let random list = List.nth list (Random.int (List.length list))
+  match List.exists (fun l -> compare l op = 0) oplist with
+  | true ->
+      List.nth oplist
+        (get_list_index oplist op 0 + Random.int (List.length oplist - 1) + 1)
+  | false -> random oplist
