@@ -49,7 +49,7 @@ let initialize () =
     a binary integer arithmetic operand 
     into another integer value *)
 let random_change_int operand list =
-  let inttype = Llvm.i32_type llctx in
+  let inttype = Llvm.i64_type llctx in
   let c =
     match Llvm.int64_of_const operand with
     | Some con -> (
@@ -166,7 +166,7 @@ let mutate llm =
       [] f
   in
   let i = Utils.random list in
-  
+
   let arg_list = Utils.get_arguments_from_function f i in
   let mutate_fun =
     Utils.random
@@ -181,8 +181,6 @@ let mutate llm =
   in
 
   mutate_fun i;
-
-  prerr_endline (Llvm.string_of_llvalue f);
   llm_clone
 
 let interesting cov1 cov2 = true
