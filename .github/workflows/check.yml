@@ -1,0 +1,24 @@
+name: check
+
+on: [push, pull_request]
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: 4.13.1
+
+      - name: Build LLFuzz
+        run: |
+          ./build.sh || eval $(opam env) && make
+
+      - name: Run test
+        run: |
+          eval $(opam env) && make test
