@@ -1,5 +1,6 @@
 module F = Format
 
+let _ = Random.init 1234
 let llctx = Llvm.create_context ()
 
 module SeedPool = struct
@@ -43,6 +44,23 @@ let initialize () =
         Filename.concat !Config.project_home "alive2/build/alive-tv";
       Config.seed_dir := x)
     usage
+
+(** [random_change_int operand list] substitutes
+    a binary integer arithmetic operand 
+    into another integer value *)
+let random_change_int operand list =
+  let inttype = Llvm.i32_type llctx in
+  let c =
+    match Llvm.int64_of_const operand with
+    | Some con -> (
+        match Random.int 3 with
+        | 0 -> Int64.div con 2L
+        | 1 -> Int64.div con Int64.minus_one
+        | _ -> Int64.add con 1L)
+    | None -> Int64.of_int (Random.int 200 - 100)
+  in
+
+  Utils.random [ Utils.random list; Llvm.const_of_int64 inttype c true ]
 
 (** [substitute_instr opcode instr] substitutes
     a binary integer arithmetic operation [instr]
@@ -141,6 +159,30 @@ let mutate llm =
     | Before f -> f
     | At_end _ -> failwith "No function defined"
   in
+
+  let list =
+    Utils.fold_left_all_instr
+      (fun l g -> if Utils.is_arith_op (Llvm.instr_opcode g) then g :: l else l)
+      [] f
+  in
+  let i = Utils.random list in
+  
+  let arg_list = Utils.get_arguments_from_function f i in
+  let mutate_fun =
+    Utils.random
+      [
+        (fun i ->
+          Llvm.set_operand i 0 (random_change_int (Llvm.operand i 0) arg_list));
+        (fun i ->
+          Llvm.set_operand i 1 (random_change_int (Llvm.operand i 1) arg_list));
+        (fun i ->
+          substitute_instr i (Utils.random_change_op (Llvm.instr_opcode i)));
+      ]
+  in
+
+  mutate_fun i;
+
+  prerr_endline (Llvm.string_of_llvalue f);
   llm_clone
 
 let interesting cov1 cov2 = true
