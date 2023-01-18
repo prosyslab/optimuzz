@@ -49,20 +49,28 @@ let initialize () =
     a binary integer arithmetic operand 
     into another integer value *)
 let random_change_int operand list =
-  let inttype = Llvm.i64_type llctx in
+  let inttype = Llvm.i32_type llctx in
   let c =
     match Llvm.int64_of_const operand with
     | Some con -> (
         match Random.int 3 with
-        | 0 -> Int64.div con 2L
-        | 1 -> Int64.div con Int64.minus_one
-        | _ -> Int64.add con 1L)
-    | None -> Int64.of_int (Random.int 200 - 100)
+        | 0 -> Int64.to_int con * 2
+        | 1 -> Int64.to_int con * -1
+        | _ -> Int64.to_int con + 1)
+    | None -> Random.int 200 - 100
   in
+  match list with
+  | [] -> Llvm.const_int inttype c
+  | _ -> Utils.random [ Utils.random list; Llvm.const_int inttype c ]
 
-  Utils.random [ Utils.random list; Llvm.const_of_int64 inttype c true ]
+(** [creat_instr instr] create
+    a binary integer arithmetic operation [instr] with opcode [opcode].
+    It does not use extra keywords such as nsw, nuw, exact, etc. *)
+let create_instr instr =
+  let opcode = Utils.random_change_op Llvm.Opcode.Alloca in
+  ignore (Utils.new_arith_instr llctx instr opcode)
 
-(** [substitute_instr opcode instr] substitutes
+(** [substitute_instr instr opcode] substitutes
     a binary integer arithmetic operation [instr]
     into another operation (with opcode [opcode]).
     It does not use extra keywords such as nsw, nuw, exact, etc. *)
@@ -165,22 +173,31 @@ let mutate llm =
       (fun l g -> if Utils.is_arith_op (Llvm.instr_opcode g) then g :: l else l)
       [] f
   in
-  let i = Utils.random list in
 
-  let arg_list = Utils.get_arguments_from_function f i in
-  let mutate_fun =
-    Utils.random
-      [
-        (fun i ->
-          Llvm.set_operand i 0 (random_change_int (Llvm.operand i 0) arg_list));
-        (fun i ->
-          Llvm.set_operand i 1 (random_change_int (Llvm.operand i 1) arg_list));
-        (fun i ->
-          substitute_instr i (Utils.random_change_op (Llvm.instr_opcode i)));
-      ]
-  in
-
-  mutate_fun i;
+  (match list with
+  | [] ->
+      let mutate_fun =
+        Utils.random [ (fun _ -> create_instr (Utils.get_return_instr f)) ]
+      in
+      mutate_fun None
+  | _ ->
+      let i = Utils.random list in
+      let arg_list = Utils.get_arguments_from_function f i in
+      let mutate_fun =
+        Utils.random
+          [
+            (fun i ->
+              Llvm.set_operand i 0
+                (random_change_int (Llvm.operand i 0) arg_list));
+            (fun i ->
+              Llvm.set_operand i 1
+                (random_change_int (Llvm.operand i 1) arg_list));
+            (fun i ->
+              substitute_instr i (Utils.random_change_op (Llvm.instr_opcode i)));
+            (fun i -> create_instr i);
+          ]
+      in
+      mutate_fun i);
   llm_clone
 
 let interesting cov1 cov2 = true

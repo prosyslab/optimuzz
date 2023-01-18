@@ -1,6 +1,5 @@
 let is_arith_op = function
-  | Llvm.Opcode.Add | FAdd | Sub | FSub | Mul | FMul | UDiv | SDiv | FDiv ->
-      true
+  | Llvm.Opcode.Add | Sub | Mul | UDiv | SDiv | URem | SRem -> true
   | _ -> false
 
 let rec get_list_index l v i =
@@ -25,6 +24,14 @@ let fold_left_all_instr f a m =
       (fun a blk -> Llvm.fold_left_instrs (fun a instr -> f a instr) a blk)
       a m
 
+let get_return_instr f =
+  let list = fold_left_all_instr (fun l g -> g :: l) [] f in
+  List.find
+    (fun l ->
+      l |> Llvm.string_of_llvalue |> String.split_on_char ' '
+      |> List.exists (fun g -> compare g "ret" = 0))
+    list
+
 let rec get_arguments_from_list l i m =
   match l with
   | [] -> m
@@ -41,7 +48,7 @@ let get_arguments_from_function m i =
 
 let random list =
   match list with
-  | [] -> failwith "Unsupported"
+  | [] -> failwith "Empty list"
   | _ -> List.nth list (Random.int (List.length list))
 
 let random_change_op op =
@@ -50,5 +57,23 @@ let random_change_op op =
   match List.exists (fun l -> compare l op = 0) oplist with
   | true ->
       List.nth oplist
-        (get_list_index oplist op 0 + Random.int (List.length oplist - 1) + 1)
+        ((get_list_index oplist op 0 + Random.int (List.length oplist - 1) + 1)
+        mod List.length oplist)
   | false -> random oplist
+
+let new_arith_instr llctx instr opcode =
+  let open Llvm.Opcode in
+  let build_op =
+    match opcode with
+    | Add -> Llvm.build_add
+    | Sub -> Llvm.build_sub
+    | Mul -> Llvm.build_mul
+    | UDiv -> Llvm.build_udiv
+    | SDiv -> Llvm.build_sdiv
+    | URem -> Llvm.build_urem
+    | SRem -> Llvm.build_srem
+    | _ -> failwith "Unsupported"
+  in
+
+  build_op (Llvm.operand instr 0) (Llvm.operand instr 1) ""
+    (Llvm.builder_before llctx instr)
