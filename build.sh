@@ -23,7 +23,8 @@ else
 fi
 
 eval $(SHELL=bash opam config env --switch=$LLFUZZ_OPAM_SWITCH)
-opam pin git@github.com:prosyslab/logger.git
+opam pin https://github.com/prosyslab/logger.git
+opam install -j $NCPU llvm
 opam install -j $NCPU dune z3 yojson logger
 opam install -j $NCPU ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server # for development
 make
