@@ -63,12 +63,18 @@ let random_change_int operand list =
   | [] -> Llvm.const_int inttype c
   | _ -> Utils.random [ Utils.random list; Llvm.const_int inttype c ]
 
-(** [creat_instr instr] create
+(** [create_instr instr list] create
     a binary integer arithmetic operation [instr] with opcode [opcode].
     It does not use extra keywords such as nsw, nuw, exact, etc. *)
-let create_instr instr =
+let create_instr instr list =
   let opcode = Utils.random_change_op Llvm.Opcode.Alloca in
-  ignore (Utils.new_arith_instr llctx instr opcode)
+  let build_op = Utils.build_op opcode in
+  ignore
+    (build_op
+       (random_change_int (Llvm.operand instr 0) list)
+       (random_change_int (Llvm.operand instr 1) list)
+       ""
+       (Llvm.builder_before llctx instr))
 
 (** [substitute_instr instr opcode] substitutes
     a binary integer arithmetic operation [instr]
@@ -77,17 +83,7 @@ let create_instr instr =
 let substitute_instr instr opcode =
   (* Add, Sub, Mul, UDiv, SDiv, URem, SRem *)
   let open Llvm.Opcode in
-  let build_op =
-    match opcode with
-    | Add -> Llvm.build_add
-    | Sub -> Llvm.build_sub
-    | Mul -> Llvm.build_mul
-    | UDiv -> Llvm.build_udiv
-    | SDiv -> Llvm.build_sdiv
-    | URem -> Llvm.build_urem
-    | SRem -> Llvm.build_srem
-    | _ -> failwith "Unsupported"
-  in
+  let build_op = Utils.build_op opcode in
   let new_instr =
     build_op (Llvm.operand instr 0) (Llvm.operand instr 1) ""
       (Llvm.builder_before llctx instr)
@@ -177,7 +173,7 @@ let mutate llm =
   (match list with
   | [] ->
       let mutate_fun =
-        Utils.random [ (fun _ -> create_instr (Utils.get_return_instr f)) ]
+        Utils.random [ (fun _ -> create_instr (Utils.get_return_instr f) []) ]
       in
       mutate_fun None
   | _ ->
@@ -194,7 +190,7 @@ let mutate llm =
                 (random_change_int (Llvm.operand i 1) arg_list));
             (fun i ->
               substitute_instr i (Utils.random_change_op (Llvm.instr_opcode i)));
-            (fun i -> create_instr i);
+            (fun i -> create_instr i arg_list);
           ]
       in
       mutate_fun i);
