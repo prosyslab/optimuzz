@@ -46,7 +46,7 @@ let initialize () =
     usage
 
 (** [random_change_int operand list] substitutes
-    a binary integer arithmetic operand 
+    a binary integer arithmetic operand
     into another integer value *)
 let random_change_int operand list =
   let inttype = Llvm.i32_type llctx in

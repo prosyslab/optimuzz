@@ -53,13 +53,7 @@ let random list =
 
 let random_change_op op =
   let oplist = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ] in
-
-  match List.exists (fun l -> compare l op = 0) oplist with
-  | true ->
-      List.nth oplist
-        ((get_list_index oplist op 0 + Random.int (List.length oplist - 1) + 1)
-        mod List.length oplist)
-  | false -> random oplist
+  List.filter (fun x -> compare x op <> 0) oplist |> random
 
 let new_arith_instr llctx instr opcode =
   let open Llvm.Opcode in
