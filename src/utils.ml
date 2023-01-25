@@ -1,28 +1,60 @@
 let ( >> ) x f = f x |> ignore
 
 exception Out_of_integer_domain
+exception Unsupported
+
+(** [list_random l] returns a random element from a list [l]. *)
+let list_random l = List.nth l (Random.int (List.length l))
 
 module OpcodeClass = struct
-  type opcls_t = TER | ARITH | LOGIC | MEM | CAST | CMP | PHI | OTHER
+  type t = TER | ARITH | LOGIC | MEM | CAST | CMP | PHI | OTHER
 
+  (* use these lists to mark progress *)
   let ter_list = []
   let arith_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ]
-  let logic_list = []
-  let mem_list = []
+  let logic_list = [] (* Shl | LShr | AShr | And | Or | Xor *)
+  let mem_list = [] (* Alloca | Load | Store *)
   let cast_list = []
-  let phi_list = []
+  let cmp_list = [] (* ICmp *)
+  let phi_list = [] (* PHI *)
   let other_list = []
 
+  let total_list =
+    ter_list @ arith_list @ logic_list @ mem_list @ cast_list @ cmp_list
+    @ phi_list @ other_list
+
   let classify = function
-    | Llvm.Opcode.Ret | Br -> TER
-    | Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
-    | _ when false -> LOGIC (* Shl | LShr | AShr | And | Or | Xor *)
-    | _ when false -> MEM (* Alloca | Load | Store *)
+    | _ when false -> TER
+    | Llvm.Opcode.Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
+    | _ when false -> LOGIC
+    | _ when false -> MEM
     | _ when false -> CAST
-    | ICmp -> CMP
-    | PHI -> PHI
+    | _ when false -> CMP
+    | _ when false -> PHI
     | FAdd | FSub | FMul | FDiv | FRem | FCmp -> raise Out_of_integer_domain
     | _ -> OTHER
+
+  let oplist_of = function
+    | TER -> ter_list
+    | ARITH -> arith_list
+    | LOGIC -> logic_list
+    | MEM -> mem_list
+    | CAST -> cast_list
+    | CMP -> cmp_list
+    | PHI -> phi_list
+    | OTHER -> other_list
+
+  let random_op_of opcls = opcls |> oplist_of |> list_random
+
+  (** [random_opcode_except opcode] returns an opcode
+      of its class other than [opcode] if given,
+      else, it returns a totally random opcode. *)
+  let random_opcode_except opcode =
+    list_random
+      (match opcode with
+      | Some opcode ->
+          List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
+      | None -> total_list)
 
   let is_assignment opcode =
     match classify opcode with
@@ -38,8 +70,7 @@ module OpcodeClass = struct
             true
         | _ -> false)
 
-  (** [build_op opcode] get appropriate build function according to [opcode]. *)
-  let build_arith_op = function
+  let build_arith = function
     | Llvm.Opcode.Add -> Llvm.build_add
     | Sub -> Llvm.build_sub
     | Mul -> Llvm.build_mul
@@ -47,7 +78,7 @@ module OpcodeClass = struct
     | SDiv -> Llvm.build_sdiv
     | URem -> Llvm.build_urem
     | SRem -> Llvm.build_srem
-    | _ -> failwith "Unsupported"
+    | _ -> raise Unsupported
 end
 
 (** [get_list_index l v] returns the index of value [v] in list [l].
@@ -78,20 +109,26 @@ let get_return_instr f =
 (** [get_assignments_before i] returns
     a list of all assignments before [i] in its ancestral function. *)
 let get_assignments_before i =
-  let list =
-    fold_left_all_instr
-      (fun l g ->
-        if g |> Llvm.instr_opcode |> OpcodeClass.is_assignment then g :: l
-        else l)
-      []
-      (i |> Llvm.instr_parent |> Llvm.block_parent)
+  let rec aux rev_pos accu =
+    match rev_pos with
+    | Llvm.At_start _ -> accu
+    | After i ->
+        aux (Llvm.instr_pred i)
+          (if i |> Llvm.instr_opcode |> OpcodeClass.is_assignment then i :: accu
+          else accu)
   in
-  let rec aux l i accu =
-    match l with
-    | [] -> accu
-    | h :: t -> if i = h then accu else aux t i (h :: accu)
+  aux (Llvm.instr_pred i) []
+
+(** [get_blocks_after bb] returns
+    a list of all blocks after [bb] in its parent function. *)
+let get_blocks_after bb =
+  let rec aux rev_pos accu =
+    match rev_pos with
+    | Llvm.At_start _ -> failwith "NEVER OCCUR"
+    | After block ->
+        if block = bb then accu else aux (Llvm.block_pred block) (block :: accu)
   in
-  aux (List.rev list) i []
+  aux (bb |> Llvm.block_parent |> Llvm.block_end) []
 
 (** [get_alloca_from_function i] get all allocated ptr which is declared
     before i(instr) in its ancestral function. *)
@@ -109,20 +146,6 @@ let get_alloca_from_function i =
     | h :: t -> if i = h then accu else aux t i (h :: accu)
   in
   aux (List.rev list) i []
-
-(** [list_random l] returns a random element from a list [l]. *)
-let list_random l =
-  match l with
-  | [] -> failwith "Empty list"
-  | _ -> List.nth l (Random.int (List.length l))
-
-(** [random_opcode_except opcode] returns an opcode other than [opcode]. *)
-let random_opcode_except opcode =
-  let opcode_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ] in
-  list_random
-    (match opcode with
-    | Some opcode_ex -> List.filter (fun x -> x <> opcode_ex) opcode_list
-    | None -> opcode_list)
 
 let all_arith_instrs_of f =
   fold_left_all_instr
