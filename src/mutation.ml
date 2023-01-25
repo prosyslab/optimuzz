@@ -101,3 +101,32 @@ let negate_condition llctx instr =
         (Llvm.build_not cond "" (Llvm.builder_before llctx instr));
       instr
   | `Unconditional _ -> failwith "Unconditional branch"
+
+(** [build_alloca_instr llctx instr] create and return allocation instruction. *)
+let build_alloca_instr llctx instr =
+  let inttype = Llvm.i32_type llctx in
+  Llvm.build_alloca inttype "" (Llvm.builder_before llctx instr)
+
+(** [build_load_instr llctx instr] create load instruction
+    with randomly chosen pointer 
+    return instr[instr] when ptr does not exist. *)
+let build_load_instr llctx instr =
+  let list = Utils.get_alloca_from_function instr in
+  match list with
+  | [] -> instr
+  | _ ->
+      Llvm.build_load (Utils.list_random list) ""
+        (Llvm.builder_before llctx instr)
+
+(** [build_store_instr llctx instr] create store instruction which
+    store random variable to random ptr
+    return instr[instr] when variable or ptr does not exist. *)
+let build_store_instr llctx instr =
+  let arg_list = Utils.get_assignments_before instr in
+  let allo_list = Utils.get_alloca_from_function instr in
+  if arg_list <> [] && allo_list <> [] then
+    Llvm.build_store
+      (Utils.list_random arg_list)
+      (Utils.list_random allo_list)
+      (Llvm.builder_before llctx instr)
+  else instr

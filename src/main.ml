@@ -64,15 +64,28 @@ let modify_value v l =
   | [] -> Llvm.const_int inttype c
   | _ -> Utils.list_random [ Utils.list_random l; Llvm.const_int inttype c ]
 
-(** [create_random_instr instr l] create
+(** [create_random_instr instr] create
     a random binary integer arithmetic operation [instr]
-    with a list of possible operands [l].
+    with a list of arguments declared before instr.
     Returns the new instruction. *)
-let create_random_instr instr l =
+let create_random_instr instr =
+  let list = Utils.get_assignments_before instr in
   let opcode = Utils.random_opcode_except None in
   M.create_arith_instr llctx instr opcode
-    (modify_value (Llvm.operand instr 0) l)
-    (modify_value (Llvm.operand instr 1) l)
+    (modify_value (Llvm.operand instr 0) list)
+    (modify_value (Llvm.operand instr 1) list)
+
+(** [substitute_operand instr] substitutes
+    operand of instruction with another integer value 
+    Return origin instr[instr]. *)
+let substitute_operand instr =
+  let list = Utils.get_assignments_before instr in
+  (if Utils.OpcodeClass.classify (Llvm.instr_opcode instr) = ARITH && list <> []
+  then
+   (* If there is no previously declared argument, instruction is constant*)
+   let i = Random.int 2 in
+   Llvm.set_operand instr i (modify_value (Llvm.operand instr i) list));
+  instr
 
 let mutate llm =
   let llm_clone = Llvm_transform_utils.clone_module llm in
@@ -92,27 +105,26 @@ let mutate llm =
         else a)
       [] f
   in
-  (match arith_instr_list with
-  | [] -> ignore (create_random_instr (Utils.get_return_instr f) [])
-  | _ ->
-      let i = Utils.list_random arith_instr_list in
-      let assign_list = Utils.get_assignments_before i in
-      let mutate_fun =
-        Utils.list_random (* selecting the method of mutation *)
-          [
-            (fun i ->
-              Llvm.set_operand i 0 (modify_value (Llvm.operand i 0) assign_list));
-            (fun i ->
-              Llvm.set_operand i 1 (modify_value (Llvm.operand i 1) assign_list));
-            (fun i ->
-              i |> Llvm.instr_opcode |> Option.some
-              |> Utils.random_opcode_except
-              |> M.substitute_arith_instr llctx i
-              |> ignore);
-            (fun i -> ignore (create_random_instr i assign_list));
-          ]
-      in
-      mutate_fun i);
+  let i =
+    match arith_instr_list with
+    | [] -> Utils.get_return_instr f
+    | _ -> Utils.list_random arith_instr_list
+  in
+  let mutate_fun =
+    Utils.list_random
+      [
+        (fun i -> ignore (substitute_operand i));
+        (fun i ->
+          i |> Llvm.instr_opcode |> Option.some |> Utils.random_opcode_except
+          |> M.substitute_arith_instr llctx i
+          |> ignore);
+        (fun i -> ignore (create_random_instr i));
+        (fun i -> ignore (M.build_alloca_instr llctx i));
+        (fun i -> ignore (M.build_load_instr llctx i));
+        (fun i -> ignore (M.build_store_instr llctx i));
+      ]
+  in
+  mutate_fun i;
   llm_clone
 
 let interesting cov1 cov2 = true
@@ -130,6 +142,7 @@ let run llm =
       Unix.stdin Unix.stdout Unix.stderr
   in
   Unix.waitpid [] pid |> ignore;
+
   let result = true in
   let coverage = [] in
   (result, coverage)
