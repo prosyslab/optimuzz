@@ -4,7 +4,7 @@
     It does not use extra keywords such as nsw, nuw, exact, etc.
     Returns the new instruction. *)
 let create_arith_instr llctx instr opcode operand0 operand1 =
-  (Utils.OpcodeClass.build_arith_op opcode)
+  (Utils.OpcodeClass.build_arith opcode)
     operand0 operand1 ""
     (Llvm.builder_before llctx instr)
 
@@ -15,7 +15,7 @@ let create_arith_instr llctx instr opcode operand0 operand1 =
     Returns the new instruction. *)
 let substitute_arith_instr llctx instr opcode =
   let new_instr =
-    (Utils.OpcodeClass.build_arith_op opcode)
+    (Utils.OpcodeClass.build_arith opcode)
       (Llvm.operand instr 0) (Llvm.operand instr 1) ""
       (Llvm.builder_before llctx instr)
   in
@@ -154,7 +154,7 @@ let modify_value llctx v l =
     Returns the new instruction. *)
 let create_random_instr llctx instr =
   let list = Utils.get_assignments_before instr in
-  let opcode = Utils.random_opcode_except None in
+  let opcode = Utils.OpcodeClass.random_opcode_except None in
   create_arith_instr llctx instr opcode
     (modify_value llctx (Llvm.operand instr 0) list)
     (modify_value llctx (Llvm.operand instr 1) list)
@@ -186,7 +186,8 @@ let run llctx llm =
       [
         (fun i -> i >> substitute_operand llctx);
         (fun i ->
-          i |> Llvm.instr_opcode |> Option.some |> Utils.random_opcode_except
+          i |> Llvm.instr_opcode |> Option.some
+          |> Utils.OpcodeClass.random_opcode_except
           >> substitute_arith_instr llctx i);
         (fun i -> i >> create_random_instr llctx);
         (fun i -> i >> build_alloca_instr llctx);
