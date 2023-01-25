@@ -3,3 +3,7 @@ let out_dir = ref "llfuzz-out"
 let seed_dir = ref "seed"
 let alive2_bin = ref "alive2/build/alive-tv"
 let opts = [ ("-out_dir", Arg.Set_string out_dir, "Output directory") ]
+let bin = ref "llvm-project/build/bin/llc"
+let gcno = ref "llvm-project/build/tools/llc/CMakeFiles/llc.dir/llc.cpp.gcno"
+let gcda = ref "llvm-project/build/tools/llc/CMakeFiles/llc.dir/llc.cpp.gcda"
+let gcov = ref "llc.cpp.gcov"

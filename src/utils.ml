@@ -91,6 +91,23 @@ let get_assignments_before i =
   in
   aux (List.rev list) i []
 
+(** [get_alloca_from_function i] get all allocated ptr which is declared
+    before i(instr) in its ancestral function. *)
+let get_alloca_from_function i =
+  let list =
+    fold_left_all_instr
+      (fun l g ->
+        if Llvm.Opcode.Alloca = Llvm.instr_opcode g then g :: l else l)
+      []
+      (i |> Llvm.instr_parent |> Llvm.block_parent)
+  in
+  let rec aux l i accu =
+    match l with
+    | [] -> accu
+    | h :: t -> if i = h then accu else aux t i (h :: accu)
+  in
+  aux (List.rev list) i []
+
 (** [list_random l] returns a random element from a list [l]. *)
 let list_random l =
   match l with
