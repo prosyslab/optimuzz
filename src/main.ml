@@ -95,7 +95,8 @@ let get_coverage file =
   in
   let coverage = loop [] in
 
-  (*ignore (Sys.command "rm -rf *.gcov");*)
+  ignore (Sys.command "rm -rf *.gcov");
+
   coverage
 
 let run llm =
