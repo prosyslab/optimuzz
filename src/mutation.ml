@@ -130,6 +130,7 @@ let build_store_instr llctx instr =
       (Utils.list_random allo_list)
       (Llvm.builder_before llctx instr)
   else instr
+
 (** [modify_value llctx v l] slightly modifies value [v]
     or returns a random element of [l]. *)
 let modify_value llctx v l =
@@ -171,42 +172,27 @@ let substitute_operand llctx instr =
   instr
 
 let run llctx llm =
+  let open Utils in
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  let f =
-    (* assume the sole function *)
-    match Llvm.function_begin llm_clone with
-    | Before f -> f
-    | At_end _ -> failwith "No function defined"
-  in
-  let arith_instr_list =
-    Utils.fold_left_all_instr
-      (fun a i ->
-        if
-          i |> Llvm.instr_opcode |> Utils.OpcodeClass.classify
-          = Utils.OpcodeClass.ARITH
-        then i :: a
-        else a)
-      [] f
-  in
+  let f = Utils.choose_function llm_clone in
+  let arith_instrs = Utils.all_arith_instrs_of f in
   let i =
-    match arith_instr_list with
+    match arith_instrs with
     | [] -> Utils.get_return_instr f
-    | _ -> Utils.list_random arith_instr_list
+    | _ -> Utils.list_random arith_instrs
   in
   let mutate_fun =
     Utils.list_random
       [
-        (fun i -> ignore (substitute_operand llctx i));
+        (fun i -> i >> substitute_operand llctx);
         (fun i ->
           i |> Llvm.instr_opcode |> Option.some |> Utils.random_opcode_except
-          |> substitute_arith_instr llctx i
-          |> ignore);
-        (fun i -> ignore (create_random_instr llctx i));
-        (fun i -> ignore (build_alloca_instr llctx i));
-        (fun i -> ignore (build_load_instr llctx i));
-        (fun i -> ignore (build_store_instr llctx i));
+          >> substitute_arith_instr llctx i);
+        (fun i -> i >> create_random_instr llctx);
+        (fun i -> i >> build_alloca_instr llctx);
+        (fun i -> i >> build_load_instr llctx);
+        (fun i -> i >> build_store_instr llctx);
       ]
   in
   mutate_fun i;
   llm_clone
-

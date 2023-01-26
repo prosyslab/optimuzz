@@ -1,3 +1,5 @@
+let ( >> ) x f = f x |> ignore
+
 exception Out_of_integer_domain
 
 module OpcodeClass = struct
@@ -121,3 +123,17 @@ let random_opcode_except opcode =
     (match opcode with
     | Some opcode_ex -> List.filter (fun x -> x <> opcode_ex) opcode_list
     | None -> opcode_list)
+
+let all_arith_instrs_of f =
+  fold_left_all_instr
+    (fun a i ->
+      if i |> Llvm.instr_opcode |> OpcodeClass.classify = OpcodeClass.ARITH then
+        i :: a
+      else a)
+    [] f
+
+(** [choose_function llm] returns an arbitrary function in [llm]. *)
+let choose_function llm =
+  match Llvm.function_begin llm with
+  | Before f -> f
+  | At_end _ -> failwith "No function defined"
