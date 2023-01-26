@@ -30,7 +30,11 @@ end
 module Coverage = struct
   type t = int list
 
-  let join x y = x @ y
+  let join x y =
+    List.filter
+      (fun compare -> List.for_all (fun origin -> origin <> compare) x)
+      y
+    @ x
 end
 
 let initialize () =
@@ -47,7 +51,11 @@ let initialize () =
       Config.seed_dir := x)
     usage
 
-let interesting _cov1 _cov2 = true
+let interesting _cov1 _cov2 =
+  List.exists
+    (fun compare -> List.for_all (fun origin -> origin <> compare) _cov1)
+    _cov2
+
 let count = ref 0
 
 let get_coverage file =
@@ -55,8 +63,9 @@ let get_coverage file =
   if Sys.file_exists !Config.gcov then Unix.unlink !Config.gcov;
 
   let llc_pid =
-    Unix.create_process !Config.bin [| !Config.bin; file |] Unix.stdin
-      Unix.stdout Unix.stderr
+    Unix.create_process !Config.bin
+      [| !Config.bin; "-S"; file |]
+      Unix.stdin Unix.stdout Unix.stderr
   in
   Unix.waitpid [] llc_pid |> ignore;
 
@@ -106,21 +115,25 @@ let run llm =
   let coverage = get_coverage output_name in
   (result, coverage)
 
+let rec repeat_mutate seed num =
+  if num = 0 then seed else repeat_mutate (Mutation.run llctx seed) (num - 1)
+
 let rec fuzz pool coverage crashes =
   let seed, pool = SeedPool.pop pool in
-  let mutant = Mutation.run llctx seed in
+  let mutant = repeat_mutate seed 5 in
   let result, coverage' = run mutant in
   let pool =
     if interesting coverage coverage' then SeedPool.push mutant pool else pool
   in
   let coverage = Coverage.join coverage coverage' in
   let crashes = if result then mutant :: crashes else crashes in
-  fuzz pool coverage crashes
+  if SeedPool.cardinal pool = 0 then coverage else fuzz pool coverage crashes
 
 let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
-  fuzz seed_pool [] []
+  let coverage = fuzz seed_pool [] [] in
+  F.printf "coverage %d lines\n" (List.length coverage)
 
 let _ = main ()
