@@ -50,6 +50,45 @@ let initialize () =
 let interesting _cov1 _cov2 = true
 let count = ref 0
 
+let get_coverage file =
+  if Sys.file_exists !Config.gcda then Unix.unlink !Config.gcda;
+  if Sys.file_exists !Config.gcov then Unix.unlink !Config.gcov;
+
+  let llc_pid =
+    Unix.create_process !Config.bin [| !Config.bin; file |] Unix.stdin
+      Unix.stdout Unix.stderr
+  in
+  Unix.waitpid [] llc_pid |> ignore;
+
+  let llvm_pid =
+    Unix.create_process "llvm-cov"
+      [| "llvm-cov"; "gcov"; !Config.gcda |]
+      Unix.stdin Unix.stdout Unix.stderr
+  in
+  Unix.waitpid [] llvm_pid |> ignore;
+
+  let fp = open_in !Config.gcov in
+  let try_read () = try Some (input_line fp) with End_of_file -> None in
+  let rec loop acc =
+    match try_read () with
+    | Some s ->
+        let list = s |> String.split_on_char ':' in
+        let count =
+          try list |> List.hd |> String.trim |> int_of_string
+          with Failure "int_of_string" -> -1
+        in
+        if count > 0 then
+          loop ((List.nth list 1 |> String.trim |> int_of_string) :: acc)
+        else loop acc
+    | None ->
+        close_in fp;
+        List.rev acc
+  in
+  let coverage = loop [] in
+
+  ignore (Sys.command "rm -rf *.gcov");
+  coverage
+
 let run llm =
   count := !count + 1;
   let output_name =
@@ -64,7 +103,7 @@ let run llm =
    in
    Unix.waitpid [] pid |> ignore);
   let result = true in
-  let coverage = [] in
+  let coverage = get_coverage output_name in
   (result, coverage)
 
 let rec fuzz pool coverage crashes =
