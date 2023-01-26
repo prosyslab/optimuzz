@@ -56,13 +56,13 @@ let run llm =
     Filename.concat !Config.out_dir (string_of_int !count ^ ".ll")
   in
   Llvm.print_module output_name llm;
-  let pid =
-    Unix.create_process !Config.alive2_bin
-      [| !Config.alive2_bin; output_name |]
-      Unix.stdin Unix.stdout Unix.stderr
-  in
-  Unix.waitpid [] pid |> ignore;
-
+  (if not !Config.no_tv then
+   let pid =
+     Unix.create_process !Config.alive2_bin
+       [| !Config.alive2_bin; output_name |]
+       Unix.stdin Unix.stdout Unix.stderr
+   in
+   Unix.waitpid [] pid |> ignore);
   let result = true in
   let coverage = [] in
   (result, coverage)
