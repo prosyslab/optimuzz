@@ -76,7 +76,7 @@ let create_random_instr instr =
     (modify_value (Llvm.operand instr 1) list)
 
 (** [substitute_operand instr] substitutes
-    operand of instruction with another integer value 
+    operand of instruction with another integer value
     Return origin instr[instr]. *)
 let substitute_operand instr =
   let list = Utils.get_assignments_before instr in
@@ -127,7 +127,7 @@ let mutate llm =
   mutate_fun i;
   llm_clone
 
-let interesting cov1 cov2 = true
+let interesting _cov1 _cov2 = true
 let count = ref 0
 
 let run llm =
