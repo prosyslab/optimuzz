@@ -132,16 +132,14 @@ let get_return_instr f =
     (fun instr -> Llvm.instr_opcode instr = Llvm.Opcode.Ret)
     (fold_left_all_instr (fun l g -> g :: l) [] f)
 
-(** [get_assignments_before i] returns
-    a list of all assignments before [i] in its ancestral function. *)
-let get_assignments_before i =
+(** [get_type_before i t] returns
+    a list of all value which have type[t] before [i] in its ancestral function. *)
+let get_type_before i t =
   let rec aux rev_pos accu =
     match rev_pos with
     | Llvm.At_start _ -> accu
     | After i ->
-        aux (Llvm.instr_pred i)
-          (if i |> Llvm.instr_opcode |> OpcodeClass.is_assignment then i :: accu
-          else accu)
+        aux (Llvm.instr_pred i) (if Llvm.type_of i = t then i :: accu else accu)
   in
   aux (Llvm.instr_pred i) []
 
