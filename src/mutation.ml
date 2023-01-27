@@ -73,6 +73,25 @@ let substitute_cmp_instr llctx instr icmp =
   Llvm.delete_instruction instr;
   new_instr
 
+(** [create_alloca_instr llctx instr] creates
+    an alloca instruction right before [instr].
+    Returns the new instruction. *)
+let create_alloca_instr llctx instr =
+  Llvm.build_alloca (Llvm.i32_type llctx) "" (Llvm.builder_before llctx instr)
+
+(** [create_load_instr llctx instr ptr] creates
+    a load instruction right before [instr], with the operand [ptr].
+    Returns the new instruction. *)
+let create_load_instr llctx instr ptr =
+  Llvm.build_load ptr "" (Llvm.builder_before llctx instr)
+
+(** [create_store_instr llctx instr operand0 operand1] creates
+    a store instruction right before [instr],
+    with operands [operand0] (value) and [operand1] (pointer).
+    Return the new instruction. *)
+let create_store_instr llctx instr operand0 operand1 =
+  Llvm.build_store operand0 operand1 (Llvm.builder_before llctx instr)
+
 (** [lower_instr llctx instr] lowers
     the given instruction [instr] one step down within its parent block.
     Returns its updated predecessor, i.e., its previous successor.
@@ -152,35 +171,6 @@ let negate_condition llctx instr =
       instr
   | `Unconditional _ -> failwith "Unconditional branch"
 
-(** [build_alloca_instr llctx instr] create and return allocation instruction. *)
-let build_alloca_instr llctx instr =
-  let inttype = Llvm.i32_type llctx in
-  Llvm.build_alloca inttype "" (Llvm.builder_before llctx instr)
-
-(** [build_load_instr llctx instr] create load instruction
-    with randomly chosen pointer
-    return instr[instr] when ptr does not exist. *)
-let build_load_instr llctx instr =
-  let list = Utils.get_alloca_from_function instr in
-  match list with
-  | [] -> instr
-  | _ ->
-      Llvm.build_load (Utils.list_random list) ""
-        (Llvm.builder_before llctx instr)
-
-(** [build_store_instr llctx instr] create store instruction which
-    store random variable to random ptr
-    return instr[instr] when variable or ptr does not exist. *)
-let build_store_instr llctx instr =
-  let arg_list = Utils.get_assignments_before instr in
-  let allo_list = Utils.get_alloca_from_function instr in
-  if arg_list <> [] && allo_list <> [] then
-    Llvm.build_store
-      (Utils.list_random arg_list)
-      (Utils.list_random allo_list)
-      (Llvm.builder_before llctx instr)
-  else instr
-
 (** [modify_value llctx v l] slightly modifies value [v]
     or returns a random element of [l]. *)
 let modify_value llctx v l =
@@ -194,20 +184,55 @@ let modify_value llctx v l =
         | _ -> Int64.to_int con + 1)
     | None -> Random.int 200 - 100
   in
-  match l with
-  | [] -> Llvm.const_int inttype c
-  | _ -> Utils.list_random [ Utils.list_random l; Llvm.const_int inttype c ]
+  if l <> [] then
+    Utils.list_random [ Utils.list_random l; Llvm.const_int inttype c ]
+  else Llvm.const_int inttype c
 
-(** [create_random_instr instr] create
-    a random binary integer arithmetic operation [instr]
-    with a list of arguments declared before instr.
+(** [create_random_instr llctx instr] creates
+    a random instruction before [instr],
+    with lists of available arguments declared before [instr].
     Returns the new instruction. *)
 let create_random_instr llctx instr =
-  let list = Utils.get_assignments_before instr in
-  let opcode = Utils.OpcodeClass.random_opcode_except None in
-  create_arith_instr llctx instr opcode
-    (modify_value llctx (Llvm.operand instr 0) list)
-    (modify_value llctx (Llvm.operand instr 1) list)
+  let i32 = Llvm.i32_type llctx in
+  let zero = Llvm.const_int i32 0 in
+  let null = Llvm.const_pointer_null i32 in
+  let assignments = Utils.get_assignments_before instr in
+  let allocations = Utils.get_alloca_from_function instr in
+  let opcode = OpCls.random_opcode_except None in
+  match OpCls.classify opcode with
+  | OpCls.TER -> failwith "Not implemented"
+  | ARITH ->
+      create_arith_instr llctx instr opcode
+        (modify_value llctx zero assignments)
+        (modify_value llctx zero assignments)
+  | LOGIC ->
+      create_logic_instr llctx instr opcode
+        (modify_value llctx zero assignments)
+        (modify_value llctx zero assignments)
+  | MEM -> (
+      match opcode with
+      | Alloca -> create_alloca_instr llctx instr
+      | Load ->
+          create_load_instr llctx instr
+            (if allocations <> [] then Utils.list_random allocations else null)
+      | Store ->
+          create_store_instr llctx instr
+            (modify_value llctx zero assignments)
+            (if allocations <> [] then Utils.list_random allocations else null)
+      | _ -> failwith "NEVER OCCUR")
+  | CAST ->
+      (* TODO *)
+      create_cast_instr llctx instr opcode
+        (modify_value llctx zero assignments)
+        (Llvm.i32_type llctx)
+  | CMP ->
+      create_cmp_instr llctx instr
+        (Utils.list_random
+           [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
+        (modify_value llctx zero assignments)
+        (modify_value llctx zero assignments)
+  | PHI -> failwith "Not implemented"
+  | OTHER -> failwith "Not implemented"
 
 (** [substitute_operand instr] substitutes
     operand of instruction with another integer value
@@ -227,22 +252,17 @@ let run llctx llm =
   let f = Utils.choose_function llm_clone in
   let arith_instrs = Utils.all_arith_instrs_of f in
   let i =
-    match arith_instrs with
-    | [] -> Utils.get_return_instr f
-    | _ -> Utils.list_random arith_instrs
+    if arith_instrs <> [] then Utils.list_random arith_instrs
+    else Utils.get_return_instr f
   in
   let mutate_fun =
     Utils.list_random
       [
         (fun i -> i >> substitute_operand llctx);
         (fun i ->
-          i |> Llvm.instr_opcode |> Option.some
-          |> Utils.OpcodeClass.random_opcode_except
+          i |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
           >> substitute_arith_instr llctx i);
         (fun i -> i >> create_random_instr llctx);
-        (fun i -> i >> build_alloca_instr llctx);
-        (fun i -> i >> build_load_instr llctx);
-        (fun i -> i >> build_store_instr llctx);
       ]
   in
   mutate_fun i;
