@@ -1,42 +1,37 @@
 module OpCls = Utils.OpcodeClass
 
-(** [create_arith_instr llctx instr opcode operand0 operand1] creates
-    a binary integer arithmetic operation (opcode [opcode])
-    right before [instr], with operands [operand0] and [operand1].
-    It does not use extra keywords such as nsw, nuw, exact, etc.
+(** [create_arith_instr llctx loc opcode o0 o1] creates
+    an ARITH instruction (opcode [opcode]) right before instruction [loc],
+    with operands [o0] and [o1]. Does not use extra keywords.
     Returns the new instruction. *)
-let create_arith_instr llctx instr opcode operand0 operand1 =
-  (Utils.OpcodeClass.build_arith opcode)
-    operand0 operand1 ""
-    (Llvm.builder_before llctx instr)
+let create_arith_instr llctx loc opcode o0 o1 =
+  (OpCls.build_arith opcode) o0 o1 "" (Llvm.builder_before llctx loc)
 
-(** [substitute_instr llctx instr opcode] substitutes
-    a binary integer arithmetic operation [instr]
-    into another operation (with opcode [opcode]).
-    It does not use extra keywords such as nsw, nuw, exact, etc.
+(** [subst_arith_instr llctx instr opcode] substitutes
+    an arithmetic instruction [instr] into another one ([opcode]),
+    with the same operands. Does not use extra keywords.
     Returns the new instruction. *)
-let substitute_arith_instr llctx instr opcode =
+let subst_arith_instr llctx instr opcode =
   let new_instr =
-    (Utils.OpcodeClass.build_arith opcode)
-      (Llvm.operand instr 0) (Llvm.operand instr 1) ""
-      (Llvm.builder_before llctx instr)
+    create_arith_instr llctx instr opcode (Llvm.operand instr 0)
+      (Llvm.operand instr 1)
   in
   Llvm.replace_all_uses_with instr new_instr;
   Llvm.delete_instruction instr;
   new_instr
 
-(** [create_logic_instr llctx instr opcode operand0 operand1] creates
-    a logic instruction (opcode [opcode]) right before [instr],
-    with operands [operand0] and [operand1].
+(** [create_logic_instr llctx loc opcode o0 o1] creates
+    a LOGIC instruction (opcode [opcode]) right before instruction [loc],
+    with operands [o0] and [o1]. Does not use extra keywords.
     Returns the new instruction. *)
-let create_logic_instr llctx instr opcode operand0 operand1 =
-  (OpCls.build_logic opcode) operand0 operand1 ""
-    (Llvm.builder_before llctx instr)
+let create_logic_instr llctx loc opcode o0 o1 =
+  (OpCls.build_logic opcode) o0 o1 "" (Llvm.builder_before llctx loc)
 
-(** [substitute_logic_instr llctx instr opcode] substitutes
-    a logic instruction [instr] into another one (with opcode [opcode]).
+(** [subst_logic_instr llctx instr opcode] substitutes
+    a logic instruction [instr] into another one ([opcode]).
+    Does not use extra keywords.
     Returns the new instruction. *)
-let substitute_logic_instr llctx instr opcode =
+let subst_logic_instr llctx instr opcode =
   let new_instr =
     create_logic_instr llctx instr opcode (Llvm.operand instr 0)
       (Llvm.operand instr 1)
@@ -45,26 +40,26 @@ let substitute_logic_instr llctx instr opcode =
   Llvm.delete_instruction instr;
   new_instr
 
-(** [create_cast_instr llctx instr opcode operand ty] creates
-    a cast instruction (opcode [opcode]) right before [instr],
-    with operands [operand0] and [operand1].
+(** [create_cast_instr llctx loc opcode o ty] creates
+    a cast instruction (opcode [opcode]) right before instruction [loc],
+    with operands [o] and target type [ty].
     Returns the new instruction. *)
-let create_cast_instr llctx instr opcode operand ty =
-  (OpCls.build_cast opcode) operand ty "" (Llvm.builder_before llctx instr)
+let create_cast_instr llctx loc opcode o ty =
+  (OpCls.build_cast opcode) o ty "" (Llvm.builder_before llctx loc)
 
 (* TODO: substitution *)
 
-(** [create_cmp_instr llctx instr icmp operand0 operand1] creates
-    a comparison instruction ([icmp]) right before [instr],
-    with operands [operand0] and [operand1].
+(** [create_cmp_instr llctx loc icmp o0 o1] creates
+    a comparison instruction ([icmp]) right before instruction [loc],
+    with operands [o0] and [o1].
     Returns the new instruction. *)
-let create_cmp_instr llctx instr icmp operand0 operand1 =
-  (OpCls.build_cmp icmp) operand0 operand1 "" (Llvm.builder_before llctx instr)
+let create_cmp_instr llctx loc icmp o0 o1 =
+  (OpCls.build_cmp icmp) o0 o1 "" (Llvm.builder_before llctx loc)
 
-(** [substitute_cmp_instr llctx instr icmp] substitutes
+(** [subst_cmp_instr llctx instr icmp] substitutes
     a cmp instruction [instr] into another one ([icmp]).
     Returns the new instruction. *)
-let substitute_cmp_instr llctx instr icmp =
+let subst_cmp_instr llctx instr icmp =
   let new_instr =
     create_cmp_instr llctx instr icmp (Llvm.operand instr 0)
       (Llvm.operand instr 1)
@@ -73,24 +68,24 @@ let substitute_cmp_instr llctx instr icmp =
   Llvm.delete_instruction instr;
   new_instr
 
-(** [create_alloca_instr llctx instr] creates
-    an alloca instruction right before [instr].
+(** [create_alloca_instr llctx loc] creates
+    an alloca instruction right before instruction [loc].
     Returns the new instruction. *)
 let create_alloca_instr llctx instr =
   Llvm.build_alloca (Llvm.i32_type llctx) "" (Llvm.builder_before llctx instr)
 
-(** [create_load_instr llctx instr ptr] creates
-    a load instruction right before [instr], with the operand [ptr].
+(** [create_load_instr llctx loc o] creates
+    a load instruction right before instruction [loc], with operand [o].
     Returns the new instruction. *)
-let create_load_instr llctx instr ptr =
-  Llvm.build_load ptr "" (Llvm.builder_before llctx instr)
+let create_load_instr llctx loc o =
+  Llvm.build_load o "" (Llvm.builder_before llctx loc)
 
-(** [create_store_instr llctx instr operand0 operand1] creates
-    a store instruction right before [instr],
-    with operands [operand0] (value) and [operand1] (pointer).
+(** [create_store_instr llctx loc o0 o1] creates
+    a store instruction right before instruction [loc],
+    with operands [o0] (value) and [o1] (pointer).
     Return the new instruction. *)
-let create_store_instr llctx instr operand0 operand1 =
-  Llvm.build_store operand0 operand1 (Llvm.builder_before llctx instr)
+let create_store_instr llctx loc o0 o1 =
+  Llvm.build_store o0 o1 (Llvm.builder_before llctx loc)
 
 (** [lower_instr llctx instr] lowers
     the given instruction [instr] one step down within its parent block.
@@ -189,8 +184,8 @@ let modify_value llctx v l =
   else Llvm.const_int inttype c
 
 (** [create_random_instr llctx instr] creates
-    a random instruction before [instr],
-    with lists of available arguments declared before [instr].
+    a random instruction before instruction [loc],
+    with lists of available arguments declared prior to [loc].
     Returns the new instruction. *)
 let create_random_instr llctx instr =
   let i32 = Llvm.i32_type llctx in
@@ -234,10 +229,10 @@ let create_random_instr llctx instr =
   | PHI -> failwith "Not implemented"
   | OTHER -> failwith "Not implemented"
 
-(** [substitute_operand instr] substitutes
-    operand of instruction with another integer value
-    Return origin instr[instr]. *)
-let substitute_operand llctx instr =
+(** [subst_operand instr] substitutes
+    an operand of (arithmetic) instruction [instr] with another available one.
+    Returns [instr] (with its operand changed). *)
+let subst_operand llctx instr =
   let list = Utils.get_assignments_before instr in
   (if Utils.OpcodeClass.classify (Llvm.instr_opcode instr) = ARITH && list <> []
   then
@@ -258,10 +253,10 @@ let run llctx llm =
   let mutate_fun =
     Utils.list_random
       [
-        (fun i -> i >> substitute_operand llctx);
+        (fun i -> i >> subst_operand llctx);
         (fun i ->
           i |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
-          >> substitute_arith_instr llctx i);
+          >> subst_arith_instr llctx i);
         (fun i -> i >> create_random_instr llctx);
       ]
   in
