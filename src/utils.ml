@@ -13,7 +13,7 @@ module OpcodeClass = struct
   let ter_list = []
   let arith_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ]
   let logic_list = [ Llvm.Opcode.Shl; LShr; AShr; And; Or; Xor ]
-  let mem_list = [] (* Alloca | Load | Store *)
+  let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
   let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt; PtrToInt; IntToPtr; BitCast ]
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [] (* PHI *)
@@ -27,7 +27,7 @@ module OpcodeClass = struct
     | _ when false -> TER
     | Llvm.Opcode.Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
     | Shl | LShr | AShr | And | Or | Xor -> LOGIC
-    | _ when false -> MEM
+    | Alloca | Load | Store -> MEM
     | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
     | ICmp -> CMP
     | _ when false -> PHI
@@ -90,6 +90,10 @@ module OpcodeClass = struct
     | Or -> Llvm.build_or
     | Xor -> Llvm.build_xor
     | _ -> raise Unsupported
+
+  (* each MEM instruction has different operands *)
+  let build_mem = function
+    | _ -> failwith "Handle MEM instructions individually."
 
   let build_cast = function
     | Llvm.Opcode.Trunc -> Llvm.build_trunc
