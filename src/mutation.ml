@@ -191,7 +191,7 @@ let create_random_instr llctx instr =
   let i32 = Llvm.i32_type llctx in
   let zero = Llvm.const_int i32 0 in
   let null = Llvm.const_pointer_null i32 in
-  let assignments = Utils.get_assignments_before instr in
+  let assignments = Utils.get_type_before instr i32 in
   let allocations = Utils.get_alloca_from_function instr in
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
@@ -229,11 +229,35 @@ let create_random_instr llctx instr =
   | PHI -> failwith "Not implemented"
   | OTHER -> failwith "Not implemented"
 
+(** [subst_random_instr llctx instr] creates
+    a random instruction before instruction [loc],
+    with lists of available arguments declared prior to [loc].
+    Returns the new instruction. *)
+let subst_random_instr llctx instr =
+  let opcode =
+    instr |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
+  in
+  match OpCls.classify opcode with
+  | OpCls.TER -> failwith "Not implemented"
+  | ARITH -> subst_arith_instr llctx instr opcode
+  | LOGIC -> subst_logic_instr llctx instr opcode
+  | MEM -> instr
+  | CAST ->
+      (* TODO *)
+      instr
+  | CMP ->
+      subst_cmp_instr llctx instr
+        (Utils.list_random
+           [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
+  | PHI -> failwith "Not implemented"
+  | OTHER -> failwith "Not implemented"
+
 (** [subst_operand instr] substitutes
     an operand of (arithmetic) instruction [instr] with another available one.
     Returns [instr] (with its operand changed). *)
 let subst_operand llctx instr =
-  let list = Utils.get_assignments_before instr in
+  let i32 = Llvm.i32_type llctx in
+  let list = Utils.get_type_before instr i32 in
   (if Utils.OpcodeClass.classify (Llvm.instr_opcode instr) = ARITH && list <> []
   then
    (* If there is no previously declared argument, instruction is constant*)
@@ -254,9 +278,7 @@ let run llctx llm =
     Utils.list_random
       [
         (fun i -> i >> subst_operand llctx);
-        (fun i ->
-          i |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
-          >> subst_arith_instr llctx i);
+        (fun i -> i >> subst_random_instr llctx);
         (fun i -> i >> create_random_instr llctx);
       ]
   in
