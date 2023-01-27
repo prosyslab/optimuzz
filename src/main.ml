@@ -31,10 +31,13 @@ module Coverage = struct
   type t = int list
 
   let join x y =
-    List.filter
-      (fun compare -> List.for_all (fun origin -> origin <> compare) x)
-      y
-    @ x
+    let concat_cov a b =
+      List.filter
+        (fun compare -> List.for_all (fun origin -> origin <> compare) a)
+        b
+      @ a
+    in
+    if x = [] then y else List.mapi (fun i a -> concat_cov a (List.nth y i)) x
 end
 
 let initialize () =
@@ -52,34 +55,45 @@ let initialize () =
     usage
 
 let interesting _cov1 _cov2 =
-  List.exists
-    (fun compare -> List.for_all (fun origin -> origin <> compare) _cov1)
-    _cov2
+  let check_cov olist clist =
+    List.exists
+      (fun compare -> List.for_all (fun origin -> origin <> compare) olist)
+      clist
+  in
+  if _cov1 = [] then true
+  else List.exists2 (fun origin compare -> check_cov origin compare) _cov1 _cov2
 
 let count = ref 0
 
 let get_coverage file =
-  if Sys.file_exists !Config.gcda then Unix.unlink !Config.gcda;
-  if Sys.file_exists !Config.gcov then Unix.unlink !Config.gcov;
+  ignore
+    (Sys.command
+       "find ./llvm-project/build/lib/Transforms -type f -name '*.gcda' | \
+        xargs rm");
 
   let llc_pid =
     Unix.create_process !Config.bin
-      [| !Config.bin; "-S"; file |]
+      [| !Config.bin; "-O2"; "-S"; file |]
       Unix.stdin Unix.stdout Unix.stderr
   in
   Unix.waitpid [] llc_pid |> ignore;
 
-  let llvm_pid =
-    Unix.create_process "llvm-cov"
-      [| "llvm-cov"; "gcov"; !Config.gcda |]
-      Unix.stdin Unix.stdout Unix.stderr
+  let rec create_gcov list =
+    match list with
+    | [] -> None
+    | h :: t ->
+        let llvm_pid =
+          Unix.create_process "llvm-cov"
+            [| "llvm-cov"; "gcov"; h |]
+            Unix.stdin Unix.stdout Unix.stderr
+        in
+        Unix.waitpid [] llvm_pid |> ignore;
+        create_gcov t
   in
-  Unix.waitpid [] llvm_pid |> ignore;
-
-  let fp = open_in !Config.gcov in
-  let try_read () = try Some (input_line fp) with End_of_file -> None in
-  let rec loop acc =
-    match try_read () with
+  ignore (create_gcov !Config.gcda_list);
+  let try_read fp = try Some (input_line fp) with End_of_file -> None in
+  let rec loop acc fp =
+    match try_read fp with
     | Some s ->
         let list = s |> String.split_on_char ':' in
         let count =
@@ -87,15 +101,22 @@ let get_coverage file =
           with Failure "int_of_string" -> -1
         in
         if count > 0 then
-          loop ((List.nth list 1 |> String.trim |> int_of_string) :: acc)
-        else loop acc
+          loop ((List.nth list 1 |> String.trim |> int_of_string) :: acc) fp
+        else loop acc fp
     | None ->
         close_in fp;
         List.rev acc
   in
-  let coverage = loop [] in
+  let rec read_gcov list cov =
+    match list with
+    | h :: t ->
+        let fp = open_in h in
+        read_gcov t (loop [] fp :: cov)
+    | [] -> List.rev cov
+  in
 
-  ignore (Sys.command "rm -rf *.gcov");
+  let coverage = read_gcov !Config.gcov_list [] in
+
   coverage
 
 let run llm =
@@ -129,11 +150,15 @@ let rec fuzz pool coverage crashes =
   let crashes = if result then mutant :: crashes else crashes in
   if SeedPool.cardinal pool = 0 then coverage else fuzz pool coverage crashes
 
+let rec acc_cov list acc =
+  match list with [] -> acc | h :: t -> acc_cov t (acc + List.length h)
+
 let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
   let coverage = fuzz seed_pool [] [] in
-  F.printf "coverage %d lines\n" (List.length coverage)
+  ignore (Sys.command "rm *.gcov");
+  F.printf "total coverage %d lines\n" (acc_cov coverage 0)
 
 let _ = main ()
