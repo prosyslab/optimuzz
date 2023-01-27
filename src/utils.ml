@@ -12,10 +12,10 @@ module OpcodeClass = struct
   (* use these lists to mark progress *)
   let ter_list = []
   let arith_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ]
-  let logic_list = [] (* Shl | LShr | AShr | And | Or | Xor *)
+  let logic_list = [ Llvm.Opcode.Shl; LShr; AShr; And; Or; Xor ]
   let mem_list = [] (* Alloca | Load | Store *)
-  let cast_list = []
-  let cmp_list = [] (* ICmp *)
+  let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt; PtrToInt; IntToPtr; BitCast ]
+  let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [] (* PHI *)
   let other_list = []
 
@@ -26,12 +26,14 @@ module OpcodeClass = struct
   let classify = function
     | _ when false -> TER
     | Llvm.Opcode.Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
-    | _ when false -> LOGIC
+    | Shl | LShr | AShr | And | Or | Xor -> LOGIC
     | _ when false -> MEM
-    | _ when false -> CAST
-    | _ when false -> CMP
+    | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
+    | ICmp -> CMP
     | _ when false -> PHI
-    | FAdd | FSub | FMul | FDiv | FRem | FCmp -> raise Out_of_integer_domain
+    | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
+    | FPTrunc | FPExt | FCmp ->
+        raise Out_of_integer_domain
     | _ -> OTHER
 
   let oplist_of = function
@@ -79,6 +81,26 @@ module OpcodeClass = struct
     | URem -> Llvm.build_urem
     | SRem -> Llvm.build_srem
     | _ -> raise Unsupported
+
+  let build_logic = function
+    | Llvm.Opcode.Shl -> Llvm.build_shl
+    | LShr -> Llvm.build_lshr
+    | AShr -> Llvm.build_ashr
+    | And -> Llvm.build_and
+    | Or -> Llvm.build_or
+    | Xor -> Llvm.build_xor
+    | _ -> raise Unsupported
+
+  let build_cast = function
+    | Llvm.Opcode.Trunc -> Llvm.build_trunc
+    | ZExt -> Llvm.build_zext
+    | SExt -> Llvm.build_sext
+    | PtrToInt -> Llvm.build_ptrtoint
+    | IntToPtr -> Llvm.build_inttoptr
+    | BitCast -> Llvm.build_bitcast
+    | _ -> raise Unsupported
+
+  let build_cmp icmp = Llvm.build_icmp icmp
 end
 
 (** [get_list_index l v] returns the index of value [v] in list [l].

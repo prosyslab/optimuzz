@@ -1,3 +1,5 @@
+module OpCls = Utils.OpcodeClass
+
 (** [create_arith_instr llctx instr opcode operand0 operand1] creates
     a binary integer arithmetic operation (opcode [opcode])
     right before [instr], with operands [operand0] and [operand1].
@@ -18,6 +20,54 @@ let substitute_arith_instr llctx instr opcode =
     (Utils.OpcodeClass.build_arith opcode)
       (Llvm.operand instr 0) (Llvm.operand instr 1) ""
       (Llvm.builder_before llctx instr)
+  in
+  Llvm.replace_all_uses_with instr new_instr;
+  Llvm.delete_instruction instr;
+  new_instr
+
+(** [create_logic_instr llctx instr opcode operand0 operand1] creates
+    a logic instruction (opcode [opcode]) right before [instr],
+    with operands [operand0] and [operand1].
+    Returns the new instruction. *)
+let create_logic_instr llctx instr opcode operand0 operand1 =
+  (OpCls.build_logic opcode) operand0 operand1 ""
+    (Llvm.builder_before llctx instr)
+
+(** [substitute_logic_instr llctx instr opcode] substitutes
+    a logic instruction [instr] into another one (with opcode [opcode]).
+    Returns the new instruction. *)
+let substitute_logic_instr llctx instr opcode =
+  let new_instr =
+    create_logic_instr llctx instr opcode (Llvm.operand instr 0)
+      (Llvm.operand instr 1)
+  in
+  Llvm.replace_all_uses_with instr new_instr;
+  Llvm.delete_instruction instr;
+  new_instr
+
+(** [create_cast_instr llctx instr opcode operand ty] creates
+    a cast instruction (opcode [opcode]) right before [instr],
+    with operands [operand0] and [operand1].
+    Returns the new instruction. *)
+let create_cast_instr llctx instr opcode operand ty =
+  (OpCls.build_cast opcode) operand ty "" (Llvm.builder_before llctx instr)
+
+(* TODO: substitution *)
+
+(** [create_cmp_instr llctx instr icmp operand0 operand1] creates
+    a comparison instruction ([icmp]) right before [instr],
+    with operands [operand0] and [operand1].
+    Returns the new instruction. *)
+let create_cmp_instr llctx instr icmp operand0 operand1 =
+  (OpCls.build_cmp icmp) operand0 operand1 "" (Llvm.builder_before llctx instr)
+
+(** [substitute_cmp_instr llctx instr icmp] substitutes
+    a cmp instruction [instr] into another one ([icmp]).
+    Returns the new instruction. *)
+let substitute_cmp_instr llctx instr icmp =
+  let new_instr =
+    create_cmp_instr llctx instr icmp (Llvm.operand instr 0)
+      (Llvm.operand instr 1)
   in
   Llvm.replace_all_uses_with instr new_instr;
   Llvm.delete_instruction instr;
