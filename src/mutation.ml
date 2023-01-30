@@ -317,17 +317,20 @@ let run llctx llm =
   let open Utils in
   let llm_clone = Llvm_transform_utils.clone_module llm in
   let f = Utils.choose_function llm_clone in
-  let arith_instrs = Utils.all_arith_instrs_of f in
-  let i =
-    if arith_instrs <> [] then Utils.list_random arith_instrs
-    else Utils.get_return_instr f
-  in
+  let all_instrs = Utils.fold_left_all_instr (fun accu i -> i :: accu) [] f in
+  let is_arith i = i |> Llvm.instr_opcode |> OpCls.classify = OpCls.ARITH in
+  let i = Utils.list_random all_instrs in
   let mutate_fun =
     Utils.list_random
       [
-        (fun i -> i >> subst_operand llctx);
-        (fun i -> i >> subst_random_instr llctx);
+        (fun i -> if is_arith i then i >> subst_operand llctx);
+        (fun i ->
+          if is_arith i then
+            i |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
+            >> subst_arith_instr llctx i);
         (fun i -> i >> create_random_instr llctx);
+        (fun i -> i >> split_block llctx);
+        (fun i -> i >> lower_instr llctx);
       ]
   in
   mutate_fun i;
