@@ -90,40 +90,21 @@ let create_store_instr llctx loc o0 o1 =
 (** [lower_instr llctx instr] lowers
     the given instruction [instr] one step down within its parent block.
     Returns its updated predecessor, i.e., its previous successor.
-    If [instr] is the last instruction, does nothing and returns [instr]. *)
+    If [instr] is terminator or instruction right before terminator,
+    does nothing and returns [instr]. *)
 let lower_instr llctx instr =
   match Llvm.instr_succ instr with
   | At_end _ -> instr
   | Before instr_succ ->
-      let instr_succ_clone = Llvm.instr_clone instr_succ in
-      Llvm.insert_into_builder instr_succ_clone ""
-        (Llvm.builder_before llctx instr);
-      Llvm.replace_all_uses_with instr_succ instr_succ_clone;
-      Llvm.set_value_name (Llvm.value_name instr_succ) instr_succ_clone;
-      instr_succ_clone
-
-(** [split_block llctx instr] splits the parent block of [instr] into two blocks
-    and links them by unconditional branch.
-    [instr] becomes the first instruction of the latter block.
-    Returns the former block. *)
-let split_block llctx instr =
-  let block = Llvm.instr_parent instr in
-  let new_block = Llvm.insert_block llctx "" block in
-  let builder = Llvm.builder_at_end llctx new_block in
-  Llvm.position_before (Llvm.build_br block builder) builder;
-  let rec aux () =
-    match Llvm.instr_begin block with
-    | Llvm.Before i when i = instr -> ()
-    | Llvm.Before i ->
-        let i_clone = Llvm.instr_clone i in
-        Llvm.insert_into_builder i_clone "" builder;
-        Llvm.replace_all_uses_with i i_clone;
-        Llvm.delete_instruction i;
-        aux ()
-    | Llvm.At_end _ -> failwith "NEVER OCCUR"
-  in
-  aux ();
-  new_block
+      if instr_succ |> Llvm.instr_opcode |> OpCls.classify = OpCls.TER then
+        instr
+      else
+        let instr_succ_clone = Llvm.instr_clone instr_succ in
+        Llvm.insert_into_builder instr_succ_clone ""
+          (Llvm.builder_before llctx instr);
+        Llvm.replace_all_uses_with instr_succ instr_succ_clone;
+        Llvm.set_value_name (Llvm.value_name instr_succ) instr_succ_clone;
+        instr_succ_clone
 
 (** [make_conditional llctx instr] substitutes
     an unconditional branch instruction [instr]
@@ -135,7 +116,7 @@ let make_conditional llctx instr =
   | `Unconditional target_block ->
       let fbb = Llvm.append_block llctx "" (Llvm.block_parent block) in
       Llvm.move_block_after target_block fbb;
-      ignore (Llvm.build_unreachable (Llvm.builder_at_end llctx fbb));
+      fbb |> Llvm.builder_at_end llctx |> Llvm.build_unreachable |> ignore;
       Llvm.delete_instruction instr;
       Llvm.build_cond_br
         (Llvm.const_int (Llvm.i1_type llctx) 1)
@@ -165,6 +146,73 @@ let negate_condition llctx instr =
         (Llvm.build_not cond "" (Llvm.builder_before llctx instr));
       instr
   | `Unconditional _ -> failwith "Unconditional branch"
+
+(** [set_unconditional_dest llctx instr bb] sets
+    the destinations of the unconditional branch instruction [instr] to [bb].
+    Returns the new instruction. *)
+let set_unconditional_dest llctx instr bb =
+  match instr |> Llvm.get_branch |> Option.get with
+  | `Unconditional _ ->
+      let result = Llvm.build_br bb (Llvm.builder_before llctx instr) in
+      Llvm.delete_instruction instr;
+      result
+  | `Conditional _ -> failwith "Conditional branch"
+
+(** [set_conditional_dest llctx instr tbb fbb] sets
+    the destinations of the conditional branch instruction [instr].
+    If given as [None], retains the original destination.
+    Returns the new instruction. *)
+let set_conditional_dest llctx instr tbb fbb =
+  match instr |> Llvm.get_branch |> Option.get with
+  | `Conditional (cond, old_tbb, old_fbb) ->
+      let result =
+        Llvm.build_cond_br cond
+          (match tbb with Some tbb -> tbb | None -> old_tbb)
+          (match fbb with Some fbb -> fbb | None -> old_fbb)
+          (Llvm.builder_before llctx instr)
+      in
+      Llvm.delete_instruction instr;
+      result
+  | `Unconditional _ -> failwith "Unconditional branch"
+
+(** [split_block llctx loc] splits the parent block of [loc] into two blocks
+    and links them by unconditional branch.
+    [loc] becomes the first instruction of the latter block.
+    Returns the former block. *)
+let split_block llctx loc =
+  let block = Llvm.instr_parent loc in
+  let new_block = Llvm.insert_block llctx "" block in
+  let builder = Llvm.builder_at_end llctx new_block in
+
+  (* initial setting *)
+  let dummy = Llvm.build_unreachable builder in
+  Llvm.position_before dummy builder;
+
+  (* migrating instructions *)
+  let rec aux () =
+    match Llvm.instr_begin block with
+    | Llvm.Before i when i = loc -> ()
+    | Llvm.Before i ->
+        let i_clone = Llvm.instr_clone i in
+        Llvm.insert_into_builder i_clone "" builder;
+        Llvm.replace_all_uses_with i i_clone;
+        Llvm.delete_instruction i;
+        aux ()
+    | Llvm.At_end _ -> failwith "NEVER OCCUR"
+  in
+  aux ();
+
+  (* modifying all branches targets original block *)
+  Llvm.replace_all_uses_with
+    (Llvm.value_of_block block)
+    (Llvm.value_of_block new_block);
+
+  (* linking and cleaning *)
+  Llvm.build_br block builder |> ignore;
+  Llvm.delete_instruction dummy;
+
+  (* finally done *)
+  new_block
 
 (** [modify_value llctx v l] slightly modifies value [v]
     or returns a random element of [l]. *)

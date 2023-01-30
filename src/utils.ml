@@ -24,8 +24,8 @@ module OpcodeClass = struct
     @ phi_list @ other_list
 
   let classify = function
-    | _ when false -> TER
-    | Llvm.Opcode.Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
+    | Llvm.Opcode.Ret | Br -> TER
+    | Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
     | Shl | LShr | AShr | And | Or | Xor -> LOGIC
     | Alloca | Load | Store -> MEM
     | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
