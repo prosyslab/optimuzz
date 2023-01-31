@@ -288,13 +288,11 @@ let subst_random_instr llctx instr =
     instr |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
   in
   match OpCls.classify opcode with
-  | OpCls.TER -> failwith "Not implemented"
+  | OpCls.TER -> instr (* TODO *)
   | ARITH -> subst_arith_instr llctx instr opcode
   | LOGIC -> subst_logic_instr llctx instr opcode
   | MEM -> instr (* cannot substitute to others *)
-  | CAST ->
-      (* TODO *)
-      instr
+  | CAST -> instr (* TODO *)
   | CMP ->
       subst_cmp_instr llctx instr
         (Utils.list_random
@@ -306,19 +304,18 @@ let subst_random_instr llctx instr =
     an operand of instruction [instr] with another available one.
     Returns [instr] (with its operand changed). *)
 let subst_random_operand llctx instr =
-  let i32 = Llvm.i32_type llctx in
-  let assgs_i32 =
-    instr |> Utils.get_assignments_before |> Utils.filter_by_type i32
-  in
-  (if
-   instr |> Llvm.instr_opcode |> Utils.OpcodeClass.classify = ARITH
-   && assgs_i32 <> []
-  then
-   (* If there is no previously declared argument, instruction is constant *)
-   let i = Random.int 2 in
-   Llvm.set_operand instr i
-     (modify_value llctx (Llvm.operand instr i) assgs_i32));
-  instr
+  let num_operands = Llvm.num_operands instr in
+  if num_operands > 0 then (
+    let i = Random.int num_operands in
+    let old_o = Llvm.operand instr i in
+    let candidates =
+      Utils.filter_by_type (Llvm.type_of old_o)
+        (Utils.get_assignments_before instr)
+    in
+    if candidates <> [] then
+      Llvm.set_operand instr i (modify_value llctx old_o candidates);
+    instr)
+  else instr
 
 let run llctx llm =
   let open Utils in
