@@ -8,7 +8,7 @@ let create_arith_instr llctx loc opcode o0 o1 =
   (OpCls.build_arith opcode) o0 o1 "" (Llvm.builder_before llctx loc)
 
 (** [subst_arith_instr llctx instr opcode] substitutes
-    an arithmetic instruction [instr] into another one ([opcode]),
+    an ARITH instruction [instr] into another one ([opcode]),
     with the same operands. Does not use extra keywords.
     Returns the new instruction. *)
 let subst_arith_instr llctx instr opcode =
@@ -28,7 +28,7 @@ let create_logic_instr llctx loc opcode o0 o1 =
   (OpCls.build_logic opcode) o0 o1 "" (Llvm.builder_before llctx loc)
 
 (** [subst_logic_instr llctx instr opcode] substitutes
-    a logic instruction [instr] into another one ([opcode]).
+    a LOGIC instruction [instr] into another one ([opcode]).
     Does not use extra keywords.
     Returns the new instruction. *)
 let subst_logic_instr llctx instr opcode =
@@ -41,23 +41,23 @@ let subst_logic_instr llctx instr opcode =
   new_instr
 
 (** [create_cast_instr llctx loc opcode o ty] creates
-    a cast instruction (opcode [opcode]) right before instruction [loc],
-    with operands [o] and target type [ty].
+    a CAST instruction (opcode [opcode]) right before instruction [loc],
+    with operand [o] and target type [ty].
     Returns the new instruction. *)
 let create_cast_instr llctx loc opcode o ty =
   (OpCls.build_cast opcode) o ty "" (Llvm.builder_before llctx loc)
 
-(* TODO: substitution *)
+(* TODO: what is the 'substitution' of cast instruction? *)
 
 (** [create_cmp_instr llctx loc icmp o0 o1] creates
-    a comparison instruction ([icmp]) right before instruction [loc],
+    a CMP instruction ([icmp]) right before instruction [loc],
     with operands [o0] and [o1].
     Returns the new instruction. *)
 let create_cmp_instr llctx loc icmp o0 o1 =
   (OpCls.build_cmp icmp) o0 o1 "" (Llvm.builder_before llctx loc)
 
 (** [subst_cmp_instr llctx instr icmp] substitutes
-    a cmp instruction [instr] into another one ([icmp]).
+    a CMP instruction [instr] into another one ([icmp]).
     Returns the new instruction. *)
 let subst_cmp_instr llctx instr icmp =
   let new_instr =
@@ -217,7 +217,7 @@ let split_block llctx loc =
 (** [modify_value llctx v l] slightly modifies value [v]
     or returns a random element of [l]. *)
 let modify_value llctx v l =
-  let inttype = Llvm.i32_type llctx in
+  let i32 = Llvm.i32_type llctx in
   let c =
     match Llvm.int64_of_const v with
     | Some con -> (
@@ -228,58 +228,60 @@ let modify_value llctx v l =
     | None -> Random.int 200 - 100
   in
   if l <> [] then
-    Utils.list_random [ Utils.list_random l; Llvm.const_int inttype c ]
-  else Llvm.const_int inttype c
+    Utils.list_random [ Utils.list_random l; Llvm.const_int i32 c ]
+  else Llvm.const_int i32 c
 
-(** [create_random_instr llctx instr] creates
+(** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc].
     Returns the new instruction. *)
-let create_random_instr llctx instr =
+let create_random_instr llctx loc =
   let i32 = Llvm.i32_type llctx in
   let zero = Llvm.const_int i32 0 in
   let null = Llvm.const_pointer_null i32 in
-  let assignments = Utils.get_type_before instr i32 in
-  let allocations = Utils.get_alloca_from_function instr in
+  let assgs_all = Utils.get_assignments_before loc in
+  let assgs_i32 = Utils.filter_by_type i32 assgs_all in
+  let allocations = Utils.get_alloca_before loc in
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
   | OpCls.TER -> failwith "Not implemented"
   | ARITH ->
-      create_arith_instr llctx instr opcode
-        (modify_value llctx zero assignments)
-        (modify_value llctx zero assignments)
+      create_arith_instr llctx loc opcode
+        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero assgs_i32)
   | LOGIC ->
-      create_logic_instr llctx instr opcode
-        (modify_value llctx zero assignments)
-        (modify_value llctx zero assignments)
+      create_logic_instr llctx loc opcode
+        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero assgs_i32)
   | MEM -> (
       match opcode with
-      | Alloca -> create_alloca_instr llctx instr
+      | Alloca -> create_alloca_instr llctx loc
       | Load ->
-          create_load_instr llctx instr
+          create_load_instr llctx loc
             (if allocations <> [] then Utils.list_random allocations else null)
       | Store ->
-          create_store_instr llctx instr
-            (modify_value llctx zero assignments)
+          create_store_instr llctx loc
+            (modify_value llctx zero assgs_i32)
             (if allocations <> [] then Utils.list_random allocations else null)
       | _ -> failwith "NEVER OCCUR")
   | CAST ->
-      (* TODO *)
-      create_cast_instr llctx instr opcode
-        (modify_value llctx zero assignments)
+      (* TODO: each cast instruction claims certain type size relation *)
+      create_cast_instr llctx loc opcode
+        (modify_value llctx zero assgs_i32)
         (Llvm.i32_type llctx)
   | CMP ->
-      create_cmp_instr llctx instr
+      (* TODO: random might be the same as before *)
+      create_cmp_instr llctx loc
         (Utils.list_random
            [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
-        (modify_value llctx zero assignments)
-        (modify_value llctx zero assignments)
+        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero assgs_i32)
   | PHI -> failwith "Not implemented"
   | OTHER -> failwith "Not implemented"
 
-(** [subst_random_instr llctx instr] creates
-    a random instruction before instruction [loc],
-    with lists of available arguments declared prior to [loc].
+(** [subst_random_instr llctx instr] substitutes
+    the instruction [instr] into another random instruction in its class,
+    with the same operands.
     Returns the new instruction. *)
 let subst_random_instr llctx instr =
   let opcode =
@@ -289,7 +291,7 @@ let subst_random_instr llctx instr =
   | OpCls.TER -> failwith "Not implemented"
   | ARITH -> subst_arith_instr llctx instr opcode
   | LOGIC -> subst_logic_instr llctx instr opcode
-  | MEM -> instr
+  | MEM -> instr (* cannot substitute to others *)
   | CAST ->
       (* TODO *)
       instr
@@ -300,17 +302,22 @@ let subst_random_instr llctx instr =
   | PHI -> failwith "Not implemented"
   | OTHER -> failwith "Not implemented"
 
-(** [subst_operand instr] substitutes
-    an operand of (arithmetic) instruction [instr] with another available one.
+(** [subst_random_operand instr] substitutes
+    an operand of instruction [instr] with another available one.
     Returns [instr] (with its operand changed). *)
-let subst_operand llctx instr =
+let subst_random_operand llctx instr =
   let i32 = Llvm.i32_type llctx in
-  let list = Utils.get_type_before instr i32 in
-  (if Utils.OpcodeClass.classify (Llvm.instr_opcode instr) = ARITH && list <> []
+  let assgs_i32 =
+    instr |> Utils.get_assignments_before |> Utils.filter_by_type i32
+  in
+  (if
+   instr |> Llvm.instr_opcode |> Utils.OpcodeClass.classify = ARITH
+   && assgs_i32 <> []
   then
-   (* If there is no previously declared argument, instruction is constant*)
+   (* If there is no previously declared argument, instruction is constant *)
    let i = Random.int 2 in
-   Llvm.set_operand instr i (modify_value llctx (Llvm.operand instr i) list));
+   Llvm.set_operand instr i
+     (modify_value llctx (Llvm.operand instr i) assgs_i32));
   instr
 
 let run llctx llm =
@@ -318,16 +325,12 @@ let run llctx llm =
   let llm_clone = Llvm_transform_utils.clone_module llm in
   let f = Utils.choose_function llm_clone in
   let all_instrs = Utils.fold_left_all_instr (fun accu i -> i :: accu) [] f in
-  let is_arith i = i |> Llvm.instr_opcode |> OpCls.classify = OpCls.ARITH in
   let i = Utils.list_random all_instrs in
   let mutate_fun =
     Utils.list_random
       [
-        (fun i -> if is_arith i then i >> subst_operand llctx);
-        (fun i ->
-          if is_arith i then
-            i |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
-            >> subst_arith_instr llctx i);
+        (fun i -> i >> subst_random_operand llctx);
+        (fun i -> i >> subst_random_instr llctx);
         (fun i -> i >> create_random_instr llctx);
         (fun i -> i >> split_block llctx);
         (fun i -> i >> lower_instr llctx);
