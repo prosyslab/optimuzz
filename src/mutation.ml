@@ -108,15 +108,20 @@ let lower_instr llctx instr =
 
 (** [make_conditional llctx instr] substitutes
     an unconditional branch instruction [instr]
-    into trivial conditional branch instruction.
+    into always-true conditional branch instruction.
+    (Block instructions are cloned between both destinations, except names.)
     Returns the conditional branch instruction. *)
 let make_conditional llctx instr =
-  let block = Llvm.instr_parent instr in
   match instr |> Llvm.get_branch |> Option.get with
   | `Unconditional target_block ->
+      let block = Llvm.instr_parent instr in
       let fbb = Llvm.append_block llctx "" (Llvm.block_parent block) in
       Llvm.move_block_after target_block fbb;
-      fbb |> Llvm.builder_at_end llctx |> Llvm.build_unreachable |> ignore;
+      Llvm.iter_instrs
+        (fun i ->
+          Llvm.insert_into_builder (Llvm.instr_clone i) ""
+            (Llvm.builder_at_end llctx fbb))
+        target_block;
       Llvm.delete_instruction instr;
       Llvm.build_cond_br
         (Llvm.const_int (Llvm.i1_type llctx) 1)
@@ -130,22 +135,11 @@ let make_conditional llctx instr =
     Returns the unconditional branch instruction. *)
 let make_unconditional llctx instr =
   match instr |> Llvm.get_branch |> Option.get with
-  | `Conditional (_, target_block, _) ->
+  | `Conditional (_, tbb, _) ->
+      let block = Llvm.instr_parent instr in
       Llvm.delete_instruction instr;
-      Llvm.build_br target_block
-        (Llvm.builder_at_end llctx (Llvm.instr_parent instr))
+      Llvm.build_br tbb (Llvm.builder_at_end llctx block)
   | `Unconditional _ -> failwith "Unconditional branch already"
-
-(** [negate_condition llctx instr] negates the condition of
-    the conditional branch instruction [instr].
-    Returns [instr] (with its condition negated). *)
-let negate_condition llctx instr =
-  match instr |> Llvm.get_branch |> Option.get with
-  | `Conditional (cond, _, _) ->
-      Llvm.set_condition instr
-        (Llvm.build_not cond "" (Llvm.builder_before llctx instr));
-      instr
-  | `Unconditional _ -> failwith "Unconditional branch"
 
 (** [set_unconditional_dest llctx instr bb] sets
     the destinations of the unconditional branch instruction [instr] to [bb].
@@ -244,7 +238,7 @@ let create_random_instr llctx loc =
   let allocations = Utils.get_alloca_before loc in
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
-  | OpCls.TER -> failwith "Not implemented"
+  | OpCls.TER -> loc (* respect the sole terminator *)
   | ARITH ->
       create_arith_instr llctx loc opcode
         (modify_value llctx zero assgs_i32)
@@ -284,13 +278,16 @@ let create_random_instr llctx loc =
     with the same operands.
     Returns the new instruction. *)
 let subst_random_instr llctx instr =
-  let opcode =
-    instr |> Llvm.instr_opcode |> Option.some |> OpCls.random_opcode_except
-  in
-  match OpCls.classify opcode with
-  | OpCls.TER -> instr (* TODO *)
-  | ARITH -> subst_arith_instr llctx instr opcode
-  | LOGIC -> subst_logic_instr llctx instr opcode
+  let old_opcode = Llvm.instr_opcode instr in
+  let new_opcode = OpCls.random_opcode_except (Some old_opcode) in
+  match OpCls.classify new_opcode with
+  | OpCls.TER ->
+      (* cannot substitute to others *)
+      if old_opcode = Llvm.Opcode.Ret then instr
+      else if Llvm.is_conditional instr then make_unconditional llctx instr
+      else make_conditional llctx instr
+  | ARITH -> subst_arith_instr llctx instr new_opcode
+  | LOGIC -> subst_logic_instr llctx instr new_opcode
   | MEM -> instr (* cannot substitute to others *)
   | CAST -> instr (* TODO *)
   | CMP ->
