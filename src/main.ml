@@ -141,13 +141,24 @@ let rec repeat_mutate seed num =
 
 let rec fuzz pool coverage crashes =
   let seed, pool = SeedPool.pop pool in
-  let mutant = repeat_mutate seed 5 in
-  let result, coverage' = run mutant in
-  let pool =
-    if interesting coverage coverage' then SeedPool.push mutant pool else pool
+
+  let rec fuz_loop pool coverage crashes count =
+    if count = 0 then (pool, coverage, crashes)
+    else
+      let mutant = repeat_mutate seed !Config.mutate_times in
+      let result, coverage' = run mutant in
+      let pool =
+        if interesting coverage coverage' then SeedPool.push mutant pool
+        else pool
+      in
+      let coverage = Coverage.join coverage coverage' in
+      let crashes = if result then mutant :: crashes else crashes in
+      fuz_loop pool coverage crashes (count - 1)
   in
-  let coverage = Coverage.join coverage coverage' in
-  let crashes = if result then mutant :: crashes else crashes in
+  let pool, coverage, crashes =
+    fuz_loop pool coverage crashes !Config.fuzzing_times
+  in
+
   if SeedPool.cardinal pool = 0 then coverage else fuzz pool coverage crashes
 
 let rec acc_cov list acc =
