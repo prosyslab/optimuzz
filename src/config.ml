@@ -4,6 +4,8 @@ let seed_dir = ref "seed"
 let alive2_bin = ref "alive2/build/alive-tv"
 let bin = ref "llvm-project/build/bin/opt"
 let no_tv = ref false
+let mutate_times = ref 5
+let fuzzing_times = ref 5
 
 let opts =
   [
