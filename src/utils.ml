@@ -10,7 +10,7 @@ module OpcodeClass = struct
   type t = TER | ARITH | LOGIC | MEM | CAST | CMP | PHI | OTHER
 
   (* use these lists to mark progress *)
-  let ter_list = []
+  let ter_list = [ Llvm.Opcode.Ret; Br ]
   let arith_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ]
   let logic_list = [ Llvm.Opcode.Shl; LShr; AShr; And; Or; Xor ]
   let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
