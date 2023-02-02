@@ -68,6 +68,19 @@ let subst_cmp_instr llctx instr icmp =
   Llvm.delete_instruction instr;
   new_instr
 
+(** [create_phi_instr llctx loc incoming] creates
+    a PHI instruction instruction at the beginning of block [loc],
+    with [incoming].
+    Returns the new instruction. *)
+let create_phi_instr llctx loc incoming =
+  OpCls.build_phi incoming ""
+    (Llvm.builder_before llctx
+       (match Llvm.instr_begin loc with
+       | Before i -> i
+       | At_end _ -> failwith "NEVER OCCUR"))
+
+(* TODO: what is the 'substitution' of phi instruction? *)
+
 (** [create_alloca_instr llctx loc] creates
     an alloca instruction right before instruction [loc].
     Returns the new instruction. *)
@@ -197,9 +210,14 @@ let split_block llctx loc =
   aux ();
 
   (* modifying all branches targets original block *)
-  Llvm.replace_all_uses_with
-    (Llvm.value_of_block block)
-    (Llvm.value_of_block new_block);
+  Llvm.iter_blocks
+    (fun b ->
+      let ter = b |> Llvm.block_terminator |> Option.get in
+      let succs = ter |> Llvm.successors in
+      Array.iteri
+        (fun i elem -> if elem = block then Llvm.set_successor ter i new_block)
+        succs)
+    (loc |> Llvm.instr_parent |> Llvm.block_parent);
 
   (* linking and cleaning *)
   Llvm.build_br block builder |> ignore;
@@ -274,7 +292,28 @@ let create_random_instr llctx loc =
            [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
-  | PHI -> failwith "Not implemented"
+  | PHI ->
+      let block = Llvm.instr_parent loc in
+      let incoming =
+        let rec aux accu rev_pos =
+          match rev_pos with
+          | Llvm.At_start _ -> accu
+          | After b ->
+              let ter = b |> Llvm.block_terminator |> Option.get in
+              aux
+                (if ter |> Llvm.successors |> Array.mem block then
+                 let vl =
+                   ter
+                   |> Utils.get_instrs_before ~wide:false
+                   |> Utils.list_filter_type i32
+                 in
+                 if vl <> [] then (Utils.list_random vl, b) :: accu else accu
+                else accu)
+                (Llvm.block_pred b)
+        in
+        aux [] (Llvm.block_pred block)
+      in
+      if incoming <> [] then create_phi_instr llctx block incoming else loc
   | OTHER -> failwith "Not implemented"
 
 (** [subst_random_instr llctx instr] substitutes
@@ -299,7 +338,7 @@ let subst_random_instr llctx instr =
       subst_cmp_instr llctx instr
         (Utils.list_random
            [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
-  | PHI -> failwith "Not implemented"
+  | PHI -> instr (* TODO *)
   | OTHER -> failwith "Not implemented"
 
 (** [subst_random_operand instr] substitutes
