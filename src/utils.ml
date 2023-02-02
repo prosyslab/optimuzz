@@ -16,7 +16,7 @@ module OpcodeClass = struct
   let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
   let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt; PtrToInt; IntToPtr; BitCast ]
   let cmp_list = [ Llvm.Opcode.ICmp ]
-  let phi_list = [] (* PHI *)
+  let phi_list = [ Llvm.Opcode.PHI ] (* PHI *)
   let other_list = []
 
   let total_list =
@@ -30,7 +30,7 @@ module OpcodeClass = struct
     | Alloca | Load | Store -> MEM
     | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
     | ICmp -> CMP
-    | _ when false -> PHI
+    | PHI -> PHI
     | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
     | FPTrunc | FPExt | FCmp ->
         raise Out_of_integer_domain
@@ -107,6 +107,7 @@ module OpcodeClass = struct
     | _ -> raise Unsupported
 
   let build_cmp icmp = Llvm.build_icmp icmp
+  let build_phi = Llvm.build_phi
 end
 
 (** [get_list_index l v] returns the index of value [v] in list [l].
