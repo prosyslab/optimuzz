@@ -119,6 +119,25 @@ let get_coverage file =
 
   coverage
 
+let check_result log =
+  let file = open_in log in
+  let try_read fp = try Some (input_line fp) with End_of_file -> None in
+  let rec loop acc fp =
+    match try_read fp with
+    | Some s -> loop (s :: acc) fp
+    | None ->
+        close_in fp;
+        List.rev acc
+  in
+  try
+    (List.find
+       (fun l -> (l |> String.split_on_char ' ' |> List.nth) 3 = "incorrect")
+       (loop [] file)
+    |> String.split_on_char ' ' |> List.nth)
+      2
+    = "1"
+  with Failure "nth" -> false
+
 let run llm =
   count := !count + 1;
   let output_name =
@@ -129,10 +148,12 @@ let run llm =
    let pid =
      Unix.create_process !Config.alive2_bin
        [| !Config.alive2_bin; output_name |]
-       Unix.stdin Unix.stdout Unix.stderr
+       Unix.stdin
+       (Unix.openfile !Config.alive2_log [ O_CREAT; O_WRONLY ] 0o640)
+       Unix.stderr
    in
    Unix.waitpid [] pid |> ignore);
-  let result = true in
+  let result = check_result !Config.alive2_log in
   let coverage = get_coverage output_name in
   (result, coverage)
 
@@ -159,17 +180,17 @@ let rec fuzz pool coverage crashes =
     fuz_loop pool coverage crashes !Config.fuzzing_times
   in
 
-  if SeedPool.cardinal pool = 0 then coverage else fuzz pool coverage crashes
-
-let rec acc_cov list acc =
-  match list with [] -> acc | h :: t -> acc_cov t (acc + List.length h)
+  if SeedPool.cardinal pool = 0 then (coverage, crashes)
+  else fuzz pool coverage crashes
 
 let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
-  let coverage = fuzz seed_pool [] [] in
+  let coverage, crashes = fuzz seed_pool [] [] in
   ignore (Sys.command "rm *.gcov");
-  F.printf "total coverage %d lines\n" (acc_cov coverage 0)
+  Unix.unlink !Config.alive2_log;
+  Utils.note_module_list crashes !Config.crash_log;
+  F.printf "total coverage %d lines\n" (Utils.acc_list_length coverage)
 
 let _ = main ()
