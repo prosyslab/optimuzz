@@ -6,11 +6,14 @@ let bin = ref "llvm-project/build/bin/opt"
 let no_tv = ref false
 let mutate_times = ref 5
 let fuzzing_times = ref 5
+let alive2_log = ref "alive-tv.txt"
 
 let opts =
   [
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
+    ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
   ]
 
 let gcda_list =
