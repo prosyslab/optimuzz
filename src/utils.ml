@@ -192,3 +192,16 @@ let choose_function llm =
   match Llvm.function_begin llm with
   | Before f -> f
   | At_end _ -> failwith "No function defined"
+
+(** [acc_list_length l] combine the lengths of the elements in list[l]. *)
+let acc_list_length l =
+  let rec loop list acc =
+    match list with [] -> acc | h :: t -> loop t (acc + List.length h)
+  in
+  loop l 0
+
+(** [note_module_list l file] print all modules in list[l] to [file]. *)
+let note_module_list l file =
+  let fp = open_out file in
+  List.iter (fun i -> i |> Llvm.string_of_llmodule |> output_string fp) l;
+  close_out fp

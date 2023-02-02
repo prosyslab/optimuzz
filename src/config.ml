@@ -7,6 +7,7 @@ let no_tv = ref false
 let mutate_times = ref 5
 let fuzzing_times = ref 5
 let alive2_log = ref "alive-tv.txt"
+let crash_log = ref "crashes.txt"
 
 let opts =
   [
@@ -14,6 +15,7 @@ let opts =
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
+    ("-crash-log", Arg.Set_string crash_log, "Output of crashed mutations");
   ]
 
 let gcda_list =

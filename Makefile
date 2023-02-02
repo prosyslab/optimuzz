@@ -13,4 +13,4 @@ test: all
 
 clean:
 	$(DUNE) clean
-	$(RM) -rf $(EXE)
+	$(RM) -rf $(EXE) *.txt
