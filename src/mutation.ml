@@ -103,7 +103,7 @@ let lower_instr llctx instr =
         Llvm.insert_into_builder instr_succ_clone ""
           (Llvm.builder_before llctx instr);
         Llvm.replace_all_uses_with instr_succ instr_succ_clone;
-        Llvm.set_value_name (Llvm.value_name instr_succ) instr_succ_clone;
+        Llvm.delete_instruction instr_succ;
         instr_succ_clone
 
 (** [make_conditional llctx instr] substitutes
@@ -210,20 +210,26 @@ let split_block llctx loc =
 
 (** [modify_value llctx v l] slightly modifies value [v]
     or returns a random element of [l]. *)
-let modify_value llctx v l =
-  let i32 = Llvm.i32_type llctx in
-  let c =
-    match Llvm.int64_of_const v with
-    | Some con -> (
-        match Random.int 3 with
-        | 0 -> Int64.to_int con * 2
-        | 1 -> Int64.to_int con * -1
-        | _ -> Int64.to_int con + 1)
-    | None -> Random.int 200 - 100
-  in
-  if l <> [] then
-    Utils.list_random [ Utils.list_random l; Llvm.const_int i32 c ]
-  else Llvm.const_int i32 c
+let modify_value _ v l =
+  let ty = Llvm.type_of v in
+  match Llvm.classify_type ty with
+  | Llvm.TypeKind.Integer ->
+      let c =
+        match Llvm.int64_of_const v with
+        | Some c -> (
+            match Random.int 3 with
+            | 0 -> Int64.to_int c * 2
+            | 1 -> Int64.to_int c * -1
+            | _ -> Int64.to_int c + 1)
+        | None -> Random.int 100 - 50
+      in
+      if l <> [] then
+        Utils.list_random [ Llvm.const_int ty c; Utils.list_random l ]
+      else Llvm.const_int ty c
+  | Llvm.TypeKind.Pointer ->
+      (* nothing can be done *)
+      if l <> [] then Utils.list_random [ v; Utils.list_random l ] else v
+  | _ -> failwith "Not implemented"
 
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
@@ -231,45 +237,43 @@ let modify_value llctx v l =
     Returns the new instruction. *)
 let create_random_instr llctx loc =
   let i32 = Llvm.i32_type llctx in
+  let ptr = Llvm.pointer_type i32 in
   let zero = Llvm.const_int i32 0 in
-  let null = Llvm.const_pointer_null i32 in
-  let assgs_all = Utils.get_assignments_before loc in
-  let assgs_i32 = Utils.filter_by_type i32 assgs_all in
-  let allocations = Utils.get_alloca_before loc in
+  let null = Llvm.const_pointer_null ptr in
+  let preds = Utils.get_instrs_before ~wide:true loc in
+  let preds_i32 = Utils.list_filter_type i32 preds in
+  let preds_ptr = Utils.list_filter_type ptr preds in
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
   | OpCls.TER -> loc (* respect the sole terminator *)
   | ARITH ->
       create_arith_instr llctx loc opcode
-        (modify_value llctx zero assgs_i32)
-        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero preds_i32)
+        (modify_value llctx zero preds_i32)
   | LOGIC ->
       create_logic_instr llctx loc opcode
-        (modify_value llctx zero assgs_i32)
-        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero preds_i32)
+        (modify_value llctx zero preds_i32)
   | MEM -> (
       match opcode with
       | Alloca -> create_alloca_instr llctx loc
-      | Load ->
-          create_load_instr llctx loc
-            (if allocations <> [] then Utils.list_random allocations else null)
+      | Load -> create_load_instr llctx loc (modify_value llctx null preds_ptr)
       | Store ->
           create_store_instr llctx loc
-            (modify_value llctx zero assgs_i32)
-            (if allocations <> [] then Utils.list_random allocations else null)
+            (modify_value llctx zero preds_i32)
+            (modify_value llctx null preds_ptr)
       | _ -> failwith "NEVER OCCUR")
   | CAST ->
       (* TODO: each cast instruction claims certain type size relation *)
       create_cast_instr llctx loc opcode
-        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero preds_i32)
         (Llvm.i32_type llctx)
   | CMP ->
-      (* TODO: random might be the same as before *)
       create_cmp_instr llctx loc
         (Utils.list_random
            [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
-        (modify_value llctx zero assgs_i32)
-        (modify_value llctx zero assgs_i32)
+        (modify_value llctx zero preds_i32)
+        (modify_value llctx zero preds_i32)
   | PHI -> failwith "Not implemented"
   | OTHER -> failwith "Not implemented"
 
@@ -291,6 +295,7 @@ let subst_random_instr llctx instr =
   | MEM -> instr (* cannot substitute to others *)
   | CAST -> instr (* TODO *)
   | CMP ->
+      (* TODO: random might be the same as before *)
       subst_cmp_instr llctx instr
         (Utils.list_random
            [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
@@ -306,8 +311,8 @@ let subst_random_operand llctx instr =
     let i = Random.int num_operands in
     let old_o = Llvm.operand instr i in
     let candidates =
-      Utils.filter_by_type (Llvm.type_of old_o)
-        (Utils.get_assignments_before instr)
+      Utils.list_filter_type (Llvm.type_of old_o)
+        (Utils.get_instrs_before ~wide:true instr)
     in
     if candidates <> [] then
       Llvm.set_operand instr i (modify_value llctx old_o candidates);
