@@ -134,39 +134,25 @@ let get_return_instr f =
     (fun instr -> Llvm.instr_opcode instr = Llvm.Opcode.Ret)
     (fold_left_all_instr (fun l g -> g :: l) [] f)
 
-(** [get_assignments_before i] returns
-    a list of all assignments before [i] in its ancestral function. *)
-let get_assignments_before i =
-  let rec aux rev_pos accu =
+(** [get_instrs_before wide i] returns a list of all instrs before [i].
+    If [wide], includes all instructions in the ancestral function of [i].
+    Else, includes instructions only within the parental block of [i]. *)
+let get_instrs_before ~wide i =
+  let rec aux accu rev_pos =
     match rev_pos with
-    | Llvm.At_start _ -> accu
-    | After i ->
-        aux (Llvm.instr_pred i)
-          (if i |> Llvm.instr_opcode |> OpcodeClass.is_assignment then i :: accu
-          else accu)
+    | Llvm.At_start b ->
+        if wide then
+          match Llvm.block_pred b with
+          | At_start _ -> accu
+          | After b -> aux accu (Llvm.instr_end b)
+        else accu
+    | After i -> aux (i :: accu) (Llvm.instr_pred i)
   in
-  aux (Llvm.instr_pred i) []
+  aux [] (Llvm.instr_pred i)
 
-(** [get_alloca_before i] returns
-    a list of all allocation pointers before [i] in its ancestral function. *)
-let get_alloca_before i =
-  let list =
-    fold_left_all_instr
-      (fun l g ->
-        if Llvm.Opcode.Alloca = Llvm.instr_opcode g then g :: l else l)
-      []
-      (i |> Llvm.instr_parent |> Llvm.block_parent)
-  in
-  let rec aux l i accu =
-    match l with
-    | [] -> accu
-    | h :: t -> if i = h then accu else aux t i (h :: accu)
-  in
-  aux (List.rev list) i []
-
-(** [filter_by_type ty vl] returns
+(** [list_filter_type ty vl] returns
     a filtered version of [vl]; only llvalues with type [ty] remains. *)
-let filter_by_type ty vl = List.filter (fun v -> Llvm.type_of v = ty) vl
+let list_filter_type ty vl = List.filter (fun v -> Llvm.type_of v = ty) vl
 
 (** [get_blocks_after bb] returns
     a list of all blocks after [bb] in its parent function. *)
@@ -178,14 +164,6 @@ let get_blocks_after bb =
         if block = bb then accu else aux (Llvm.block_pred block) (block :: accu)
   in
   aux (bb |> Llvm.block_parent |> Llvm.block_end) []
-
-let all_arith_instrs_of f =
-  fold_left_all_instr
-    (fun a i ->
-      if i |> Llvm.instr_opcode |> OpcodeClass.classify = OpcodeClass.ARITH then
-        i :: a
-      else a)
-    [] f
 
 (** [choose_function llm] returns an arbitrary function in [llm]. *)
 let choose_function llm =
