@@ -66,18 +66,6 @@ let interesting _cov1 _cov2 =
 let count = ref 0
 
 let get_coverage file =
-  ignore
-    (Sys.command
-       "find ./llvm-project/build/lib/Transforms -type f -name '*.gcda' | \
-        xargs rm");
-
-  let llc_pid =
-    Unix.create_process !Config.bin
-      [| !Config.bin; "-O2"; "-S"; file |]
-      Unix.stdin Unix.stdout Unix.stderr
-  in
-  Unix.waitpid [] llc_pid |> ignore;
-
   let rec create_gcov list =
     match list with
     | [] -> None
@@ -131,7 +119,9 @@ let check_result log =
   in
   try
     (List.find
-       (fun l -> (l |> String.split_on_char ' ' |> List.nth) 3 = "incorrect")
+       (fun l ->
+         let l = l |> String.split_on_char ' ' in
+         if List.length l > 3 then List.nth l 3 = "incorrect" else false)
        (loop [] file)
     |> String.split_on_char ' ' |> List.nth)
       2
@@ -139,6 +129,11 @@ let check_result log =
   with Failure "nth" -> false
 
 let run llm =
+  ignore
+    (Sys.command
+       ("find " ^ !Config.project_home
+      ^ "./llvm-project/build/lib/Transforms -type f -name '*.gcda' | xargs rm"
+       ));
   count := !count + 1;
   let output_name =
     Filename.concat !Config.out_dir (string_of_int !count ^ ".ll")
