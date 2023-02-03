@@ -40,6 +40,8 @@ let subst_logic_instr llctx instr opcode =
   Llvm.delete_instruction instr;
   new_instr
 
+(* There is no aggregated helper for building MEM instructions. *)
+
 (** [create_cast_instr llctx loc opcode o ty] creates
     a CAST instruction (opcode [opcode]) right before instruction [loc],
     with operand [o] and target type [ty].
@@ -145,6 +147,7 @@ let make_conditional llctx instr =
 (** [make_unconditional llctx instr] substitutes
     a conditional branch instruction [instr]
     into unconditional branch instruction targets for true-branch.
+    (False branch block remains in the module; just not used by the branch.)
     Returns the unconditional branch instruction. *)
 let make_unconditional llctx instr =
   match instr |> Llvm.get_branch |> Option.get with
@@ -198,8 +201,8 @@ let split_block llctx loc =
   (* migrating instructions *)
   let rec aux () =
     match Llvm.instr_begin block with
-    | Llvm.Before i when i = loc -> ()
-    | Llvm.Before i ->
+    | Before i when i = loc -> ()
+    | Before i ->
         let i_clone = Llvm.instr_clone i in
         Llvm.insert_into_builder i_clone "" builder;
         Llvm.replace_all_uses_with i i_clone;
@@ -252,7 +255,8 @@ let modify_value _ v l =
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc].
-    Returns the new instruction. *)
+    Returns the new instruction.
+    If rejected, returns [loc] instead. *)
 let create_random_instr llctx loc =
   let i32 = Llvm.i32_type llctx in
   let ptr = Llvm.pointer_type i32 in
@@ -288,8 +292,7 @@ let create_random_instr llctx loc =
         (Llvm.i32_type llctx)
   | CMP ->
       create_cmp_instr llctx loc
-        (Utils.list_random
-           [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
+        (Utils.list_random OpCls.cmp_kind)
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
   | PHI ->
@@ -334,16 +337,19 @@ let subst_random_instr llctx instr =
   | MEM -> instr (* cannot substitute to others *)
   | CAST -> instr (* TODO *)
   | CMP ->
-      (* TODO: random might be the same as before *)
-      subst_cmp_instr llctx instr
-        (Utils.list_random
-           [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ])
+      let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
+      let rec aux () =
+        let cmp = Utils.list_random OpCls.cmp_kind in
+        if cmp = old_cmp then aux () else subst_cmp_instr llctx instr cmp
+      in
+      aux ()
   | PHI -> instr (* TODO *)
   | OTHER -> failwith "Not implemented"
 
 (** [subst_random_operand instr] substitutes
-    an operand of instruction [instr] with another available one.
-    Returns [instr] (with its operand changed). *)
+    a random operand of instruction [instr] into another available one.
+    Returns [instr] (with its operand changed).
+    If there is no operand, returns [instr] without changes. *)
 let subst_random_operand llctx instr =
   let num_operands = Llvm.num_operands instr in
   if num_operands > 0 then (

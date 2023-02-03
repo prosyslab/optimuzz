@@ -3,8 +3,11 @@ let ( >> ) x f = f x |> ignore
 exception Out_of_integer_domain
 exception Unsupported
 
-(** [list_random l] returns a random element from a list [l]. *)
-let list_random l = List.nth l (Random.int (List.length l))
+(** [list_random l] returns a random element from a list [l].
+    @raise Invalid_argument if [l] is empty. *)
+let list_random l =
+  if l <> [] then List.nth l (Random.int (List.length l))
+  else raise (Invalid_argument "empty list")
 
 module OpcodeClass = struct
   type t = TER | ARITH | LOGIC | MEM | CAST | CMP | PHI | OTHER
@@ -18,6 +21,7 @@ module OpcodeClass = struct
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [ Llvm.Opcode.PHI ] (* PHI *)
   let other_list = []
+  let cmp_kind = [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
 
   let total_list =
     ter_list @ arith_list @ logic_list @ mem_list @ cast_list @ cmp_list
@@ -61,20 +65,6 @@ module OpcodeClass = struct
         if l <> [] then list_random l else opcode
     | None -> list_random total_list
 
-  let is_assignment opcode =
-    match classify opcode with
-    | ARITH | LOGIC | CMP | PHI -> true
-    | _ -> (
-        (* temporaily except alloca *)
-        match opcode with
-        | Invoke | Invalid2 | Load | GetElementPtr | Trunc | ZExt | SExt
-        | FPToUI | FPToSI | UIToFP | SIToFP | FPTrunc | FPExt | PtrToInt
-        | IntToPtr | BitCast | Select | UserOp1 | UserOp2 | VAArg
-        | ExtractElement | InsertElement | ShuffleVector | ExtractValue
-        | InsertValue | Call | LandingPad ->
-            true
-        | _ -> false)
-
   let build_arith = function
     | Llvm.Opcode.Add -> Llvm.build_add
     | Sub -> Llvm.build_sub
@@ -109,16 +99,6 @@ module OpcodeClass = struct
   let build_cmp icmp = Llvm.build_icmp icmp
   let build_phi = Llvm.build_phi
 end
-
-(** [get_list_index l v] returns the index of value [v] in list [l].
-    Raises [Not_found] if does not exist. *)
-let get_list_index l v =
-  let rec aux l i =
-    match l with
-    | [] -> raise Not_found
-    | h :: t -> if h = v then i else aux t (i + 1)
-  in
-  aux l 0
 
 (** [fold_left_all_instr f a m] returns [f (... f (f (f a i1) i2) i3 ...) iN],
     where [i1 ... iN] are the instructions in function [m]. *)
@@ -160,9 +140,9 @@ let list_filter_type ty vl = List.filter (fun v -> Llvm.type_of v = ty) vl
 let get_blocks_after bb =
   let rec aux rev_pos accu =
     match rev_pos with
-    | Llvm.At_start _ -> failwith "NEVER OCCUR"
-    | After block ->
+    | Llvm.After block ->
         if block = bb then accu else aux (Llvm.block_pred block) (block :: accu)
+    | At_start _ -> failwith "NEVER OCCUR"
   in
   aux (bb |> Llvm.block_parent |> Llvm.block_end) []
 
