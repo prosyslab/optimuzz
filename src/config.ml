@@ -21,7 +21,7 @@ let opts =
 let gcda_list =
   ref
     [
-      "llvm-project/build/tools/opt/CMakeFiles/opt.dir/opt.cpp.gcda";
+      (* "llvm-project/build/tools/opt/CMakeFiles/opt.dir/opt.cpp.gcda";
       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/InstrOrderFile.cpp.gcda";
       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/BoundsChecking.cpp.gcda";
       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/ThreadSanitizer.cpp.gcda";
@@ -106,7 +106,7 @@ let gcda_list =
       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/AlwaysInliner.cpp.gcda";
       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/HotColdSplitting.cpp.gcda";
       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/OpenMPOpt.cpp.gcda";
-      "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/LowerTypeTests.cpp.gcda";
+      "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/LowerTypeTests.cpp.gcda"; *)
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineVectorOps.cpp.gcda";
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineSelect.cpp.gcda";
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineMulDivRem.cpp.gcda";
@@ -122,7 +122,7 @@ let gcda_list =
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineNegator.cpp.gcda";
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombinePHI.cpp.gcda";
       "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineLoadStoreAlloca.cpp.gcda";
-      "llvm-project/build/lib/Transforms/CFGuard/CMakeFiles/LLVMCFGuard.dir/CFGuard.cpp.gcda";
+      (* "llvm-project/build/lib/Transforms/CFGuard/CMakeFiles/LLVMCFGuard.dir/CFGuard.cpp.gcda";
       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroSplit.cpp.gcda";
       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/Coroutines.cpp.gcda";
       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroCleanup.cpp.gcda";
@@ -210,13 +210,13 @@ let gcda_list =
       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SimpleLoopUnswitch.cpp.gcda";
       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Sink.cpp.gcda";
       "llvm-project/build/lib/Transforms/AggressiveInstCombine/CMakeFiles/LLVMAggressiveInstCombine.dir/AggressiveInstCombine.cpp.gcda";
-      "llvm-project/build/lib/Transforms/AggressiveInstCombine/CMakeFiles/LLVMAggressiveInstCombine.dir/TruncInstCombine.cpp.gcda";
+      "llvm-project/build/lib/Transforms/AggressiveInstCombine/CMakeFiles/LLVMAggressiveInstCombine.dir/TruncInstCombine.cpp.gcda"; *)
     ]
 
 let gcov_list =
   ref
     [
-      "./opt.cpp.gcov";
+      (* "./opt.cpp.gcov";
       "./InstrOrderFile.cpp.gcov";
       "./BoundsChecking.cpp.gcov";
       "./ThreadSanitizer.cpp.gcov";
@@ -301,7 +301,7 @@ let gcov_list =
       "./AlwaysInliner.cpp.gcov";
       "./HotColdSplitting.cpp.gcov";
       "./OpenMPOpt.cpp.gcov";
-      "./LowerTypeTests.cpp.gcov";
+      "./LowerTypeTests.cpp.gcov"; *)
       "./InstCombineVectorOps.cpp.gcov";
       "./InstCombineSelect.cpp.gcov";
       "./InstCombineMulDivRem.cpp.gcov";
@@ -317,7 +317,7 @@ let gcov_list =
       "./InstCombineNegator.cpp.gcov";
       "./InstCombinePHI.cpp.gcov";
       "./InstCombineLoadStoreAlloca.cpp.gcov";
-      "./CFGuard.cpp.gcov";
+      (* "./CFGuard.cpp.gcov";
       "./CoroSplit.cpp.gcov";
       "./Coroutines.cpp.gcov";
       "./CoroCleanup.cpp.gcov";
@@ -405,5 +405,5 @@ let gcov_list =
       "./SimpleLoopUnswitch.cpp.gcov";
       "./Sink.cpp.gcov";
       "./AggressiveInstCombine.cpp.gcov";
-      "./TruncInstCombine.cpp.gcov";
+      "./TruncInstCombine.cpp.gcov"; *)
     ]
