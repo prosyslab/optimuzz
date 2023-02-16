@@ -2,6 +2,8 @@ module F = Format
 
 let _ = Random.init 1234
 let llctx = Llvm.create_context ()
+let time = ref 0.0
+let start_time = ref 0.0
 
 module M = Mutation
 
@@ -42,6 +44,8 @@ end
 
 let initialize () =
   Random.self_init ();
+  time := Unix.time ();
+  start_time := Unix.time ();
   (try Sys.mkdir "llfuzz-out" 0o755 with _ -> ());
   let usage = "Usage: llfuzz [seed_dir]" in
   Arg.parse Config.opts
@@ -174,6 +178,16 @@ let rec fuzz pool coverage crashes =
   let pool, coverage, crashes =
     fuz_loop pool coverage crashes !Config.fuzzing_times
   in
+  if Float.sub (Unix.time ()) !time > !Config.log_time then (
+    let fp = open_out_gen [ Open_creat; Open_append ] 0o755 "timeLog" in
+    output_string fp
+      ("create " ^ string_of_int !count ^ " files, cover "
+      ^ (coverage |> Utils.acc_list_length |> string_of_int)
+      ^ " lines, during "
+      ^ (!start_time |> Float.sub (Unix.time ()) |> string_of_float)
+      ^ "seconds\n");
+    time := Unix.time ();
+    close_out fp);
 
   if SeedPool.cardinal pool = 0 then (coverage, crashes)
   else fuzz pool coverage crashes
