@@ -82,7 +82,7 @@ let get_coverage file =
         Unix.waitpid [] llvm_pid |> ignore;
         create_gcov t
   in
-  ignore (create_gcov !Config.gcda_list);
+  ignore (create_gcov Config.gcda_list);
   let try_read fp = try Some (input_line fp) with End_of_file -> None in
   let rec loop acc fp =
     match try_read fp with
@@ -107,7 +107,7 @@ let get_coverage file =
     | [] -> List.rev cov
   in
 
-  let coverage = read_gcov !Config.gcov_list [] in
+  let coverage = read_gcov Config.gcov_list [] in
 
   coverage
 
