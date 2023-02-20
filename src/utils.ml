@@ -3,6 +3,16 @@ let ( >> ) x f = f x |> ignore
 exception Out_of_integer_domain
 exception Unsupported
 
+(** [repeat_fun f init t] is [f (... (f (f init)) ...)] ([t] times).
+    @raise Invalid_argument if [t] is negative. *)
+let repeat_fun f init t =
+  if t < 0 then raise (Invalid_argument "Negative t")
+  else
+    let rec aux accu count =
+      if count = 0 then accu else aux (f accu) (count - 1)
+    in
+    aux init t
+
 (** [list_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
 let list_random l =
@@ -152,12 +162,9 @@ let choose_function llm =
   | Before f -> f
   | At_end _ -> failwith "No function defined"
 
-(** [acc_list_length l] combine the lengths of the elements in list[l]. *)
-let acc_list_length l =
-  let rec loop list acc =
-    match list with [] -> acc | h :: t -> loop t (acc + List.length h)
-  in
-  loop l 0
+(** [list_aggr_length l] aggregates the lengths of all elements in list [l]. *)
+let list_aggr_length l =
+  List.fold_left (fun accu elem -> accu + List.length elem) 0 l
 
 (** [note_module_list l file] print all modules in list[l] to [file]. *)
 let note_module_list l file =
