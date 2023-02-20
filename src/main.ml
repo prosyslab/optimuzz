@@ -5,8 +5,6 @@ let llctx = Llvm.create_context ()
 let time = ref 0.0
 let start_time = ref 0.0
 
-module M = Mutation
-
 module SeedPool = struct
   type t = Llvm.llmodule Queue.t
 
@@ -29,6 +27,7 @@ module SeedPool = struct
          (Queue.create ())
 end
 
+(* TODO: make set *)
 module Coverage = struct
   type t = int list
 
@@ -108,7 +107,6 @@ let get_coverage file =
   in
 
   let coverage = read_gcov Config.gcov_list [] in
-
   coverage
 
 let check_result log =
@@ -156,41 +154,32 @@ let run llm =
   let coverage = get_coverage output_name in
   (result, coverage)
 
-let rec repeat_mutate seed num =
-  if num = 0 then seed else repeat_mutate (Mutation.run llctx seed) (num - 1)
-
 let rec fuzz pool coverage crashes =
-  let seed, pool = SeedPool.pop pool in
-
-  let rec fuz_loop pool coverage crashes count =
-    if count = 0 then (pool, coverage, crashes)
-    else
-      let mutant = repeat_mutate seed !Config.mutate_times in
-      let result, coverage' = run mutant in
-      let pool =
-        if interesting coverage coverage' then SeedPool.push mutant pool
-        else pool
-      in
-      let coverage = Coverage.join coverage coverage' in
-      let crashes = if result then mutant :: crashes else crashes in
-      fuz_loop pool coverage crashes (count - 1)
+  let seed, pool_popped = SeedPool.pop pool in
+  (* update pool, coverage, and crashes
+     by generating n mutants from single seed *)
+  let pool_new, coverage_new, crashes_new =
+    Utils.repeat_fun
+      (fun (p, co, cr) ->
+        (* a mutant is mutated n times from the seed *)
+        let mutant =
+          Utils.repeat_fun
+            (fun llm -> Mutation.run llctx llm)
+            seed !Config.mutate_times
+        in
+        let result, coverage' = run mutant in
+        let p_step =
+          if interesting co coverage' then SeedPool.push mutant p else p
+        in
+        let co_step = Coverage.join co coverage' in
+        let cr_step = if result then mutant :: cr else cr in
+        (p_step, co_step, cr_step))
+      (pool_popped, coverage, crashes)
+      !Config.fuzzing_times
   in
-  let pool, coverage, crashes =
-    fuz_loop pool coverage crashes !Config.fuzzing_times
-  in
-  if Float.sub (Unix.time ()) !time > !Config.log_time then (
-    let fp = open_out_gen [ Open_creat; Open_append ] 0o755 "timeLog" in
-    output_string fp
-      ("create " ^ string_of_int !count ^ " files, cover "
-      ^ (coverage |> Utils.acc_list_length |> string_of_int)
-      ^ " lines, during "
-      ^ (!start_time |> Float.sub (Unix.time ()) |> string_of_float)
-      ^ "seconds\n");
-    time := Unix.time ();
-    close_out fp);
-
-  if SeedPool.cardinal pool = 0 then (coverage, crashes)
-  else fuzz pool coverage crashes
+  (* repeat until the seed pool exhausts *)
+  if SeedPool.cardinal pool_new = 0 then (coverage_new, crashes_new)
+  else fuzz pool_new coverage_new crashes_new
 
 let main () =
   initialize ();
@@ -200,6 +189,6 @@ let main () =
   ignore (Sys.command "rm *.gcov");
   Unix.unlink !Config.alive2_log;
   Utils.note_module_list crashes !Config.crash_log;
-  F.printf "total coverage %d lines\n" (Utils.acc_list_length coverage)
+  F.printf "total coverage: %d lines\n" (Utils.list_aggr_length coverage)
 
 let _ = main ()
