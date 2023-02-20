@@ -2,6 +2,7 @@ module F = Format
 
 let _ = Random.init 1234
 let llctx = Llvm.create_context ()
+let count = ref 0
 let time = ref 0.0
 let start_time = ref 0.0
 
@@ -27,18 +28,57 @@ module SeedPool = struct
          (Queue.create ())
 end
 
-(* TODO: make set *)
 module Coverage = struct
-  type t = int list
+  module FNameMap = Map.Make (String)
+  module LineSet = Set.Make (Int)
 
+  type t = LineSet.t FNameMap.t
+
+  let empty = FNameMap.empty
+  let add = FNameMap.add
+  let find_opt = FNameMap.find_opt
+  let fold = FNameMap.fold
+  let for_all = FNameMap.for_all
+  let empty_set = LineSet.empty
+  let add_set = LineSet.add
+
+  (** [join x y] adds all coverage in [y] into [x]. *)
   let join x y =
-    let concat_cov a b =
-      List.filter
-        (fun compare -> List.for_all (fun origin -> origin <> compare) a)
-        b
-      @ a
-    in
-    if x = [] then y else List.mapi (fun i a -> concat_cov a (List.nth y i)) x
+    fold
+      (fun k d_y accu ->
+        add k
+          (match find_opt k accu with
+          | Some d_x -> LineSet.union d_x d_y
+          | None -> d_y)
+          accu)
+      y x
+
+  (** [is_sub x y] returns whether [y] is a total subset of [x]. *)
+  let is_sub x y =
+    for_all
+      (fun k d_y ->
+        match find_opt k x with
+        | Some d_x -> LineSet.subset d_y d_x
+        | None -> false)
+      y
+
+  (** [total_cardinal x] returns the sum of cardinals of all bindings in [x]. *)
+  let total_cardinal x = fold (fun _ d accu -> accu + LineSet.cardinal d) x 0
+
+  let print x =
+    print_endline "[";
+    FNameMap.iter
+      (fun k d ->
+        print_string k;
+        print_string ": {";
+        LineSet.iter
+          (fun elem ->
+            print_int elem;
+            print_string " ")
+          d;
+        print_endline "}")
+      x;
+    print_endline "]"
 end
 
 let initialize () =
@@ -57,57 +97,38 @@ let initialize () =
       Config.seed_dir := x)
     usage
 
-let interesting _cov1 _cov2 =
-  let check_cov olist clist =
-    List.exists
-      (fun compare -> List.for_all (fun origin -> origin <> compare) olist)
-      clist
+let get_coverage () =
+  List.iter
+    (fun elem ->
+      let llvm_pid =
+        Unix.create_process "llvm-cov"
+          [| "llvm-cov"; "gcov"; elem |]
+          Unix.stdin Unix.stdout Unix.stderr
+      in
+      Unix.waitpid [] llvm_pid |> ignore)
+    Config.gcda_list;
+  let rec aux fp accu =
+    try
+      (* each line is the form of [COVERED_TIMES:LINE_NUM:CODE] *)
+      let chunks = String.split_on_char ':' (input_line fp) in
+      if
+        (try chunks |> List.hd |> String.trim |> int_of_string
+         with Failure _ -> -1)
+        > 0
+      then
+        aux fp
+          (Coverage.add_set
+             (List.nth chunks 1 |> String.trim |> int_of_string)
+             accu)
+      else aux fp accu
+    with End_of_file ->
+      close_in fp;
+      accu
   in
-  if _cov1 = [] then true
-  else List.exists2 (fun origin compare -> check_cov origin compare) _cov1 _cov2
-
-let count = ref 0
-
-let get_coverage file =
-  let rec create_gcov list =
-    match list with
-    | [] -> None
-    | h :: t ->
-        let llvm_pid =
-          Unix.create_process "llvm-cov"
-            [| "llvm-cov"; "gcov"; h |]
-            Unix.stdin Unix.stdout Unix.stderr
-        in
-        Unix.waitpid [] llvm_pid |> ignore;
-        create_gcov t
-  in
-  ignore (create_gcov Config.gcda_list);
-  let try_read fp = try Some (input_line fp) with End_of_file -> None in
-  let rec loop acc fp =
-    match try_read fp with
-    | Some s ->
-        let list = s |> String.split_on_char ':' in
-        let count =
-          try list |> List.hd |> String.trim |> int_of_string
-          with Failure "int_of_string" -> -1
-        in
-        if count > 0 then
-          loop ((List.nth list 1 |> String.trim |> int_of_string) :: acc) fp
-        else loop acc fp
-    | None ->
-        close_in fp;
-        List.rev acc
-  in
-  let rec read_gcov list cov =
-    match list with
-    | h :: t ->
-        let fp = open_in h in
-        read_gcov t (loop [] fp :: cov)
-    | [] -> List.rev cov
-  in
-
-  let coverage = read_gcov Config.gcov_list [] in
-  coverage
+  List.fold_left
+    (fun accu elem ->
+      Coverage.add elem (aux (open_in elem) Coverage.empty_set) accu)
+    Coverage.empty Config.gcov_list
 
 let check_result log =
   let file = open_in log in
@@ -128,7 +149,7 @@ let check_result log =
     |> String.split_on_char ' ' |> List.nth)
       2
     = "1"
-  with Failure "nth" -> false
+  with Failure _ -> false
 
 let run llm =
   ignore
@@ -151,7 +172,7 @@ let run llm =
    in
    Unix.waitpid [] pid |> ignore);
   let result = check_result !Config.alive2_log in
-  let coverage = get_coverage output_name in
+  let coverage = get_coverage () in
   (result, coverage)
 
 let rec fuzz pool coverage crashes =
@@ -167,11 +188,11 @@ let rec fuzz pool coverage crashes =
             (fun llm -> Mutation.run llctx llm)
             seed !Config.mutate_times
         in
-        let result, coverage' = run mutant in
+        let result, co' = run mutant in
         let p_step =
-          if interesting co coverage' then SeedPool.push mutant p else p
+          if Coverage.is_sub co co' then p else SeedPool.push mutant p
         in
-        let co_step = Coverage.join co coverage' in
+        let co_step = Coverage.join co co' in
         let cr_step = if result then mutant :: cr else cr in
         (p_step, co_step, cr_step))
       (pool_popped, coverage, crashes)
@@ -185,10 +206,10 @@ let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
-  let coverage, crashes = fuzz seed_pool [] [] in
+  let coverage, crashes = fuzz seed_pool Coverage.empty [] in
   ignore (Sys.command "rm *.gcov");
   Unix.unlink !Config.alive2_log;
   Utils.note_module_list crashes !Config.crash_log;
-  F.printf "total coverage: %d lines\n" (Utils.list_aggr_length coverage)
+  F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage)
 
 let _ = main ()

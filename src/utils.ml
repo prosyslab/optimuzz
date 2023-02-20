@@ -162,10 +162,6 @@ let choose_function llm =
   | Before f -> f
   | At_end _ -> failwith "No function defined"
 
-(** [list_aggr_length l] aggregates the lengths of all elements in list [l]. *)
-let list_aggr_length l =
-  List.fold_left (fun accu elem -> accu + List.length elem) 0 l
-
 (** [note_module_list l file] print all modules in list[l] to [file]. *)
 let note_module_list l file =
   let fp = open_out file in
