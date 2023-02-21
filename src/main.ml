@@ -36,18 +36,15 @@ module Coverage = struct
 
   let empty = FNameMap.empty
   let add = FNameMap.add
-  let find_opt = FNameMap.find_opt
-  let fold = FNameMap.fold
-  let for_all = FNameMap.for_all
   let empty_set = LineSet.empty
   let add_set = LineSet.add
 
   (** [join x y] adds all coverage in [y] into [x]. *)
   let join x y =
-    fold
+    FNameMap.fold
       (fun k d_y accu ->
         add k
-          (match find_opt k accu with
+          (match FNameMap.find_opt k accu with
           | Some d_x -> LineSet.union d_x d_y
           | None -> d_y)
           accu)
@@ -55,15 +52,16 @@ module Coverage = struct
 
   (** [is_sub x y] returns whether [y] is a total subset of [x]. *)
   let is_sub x y =
-    for_all
+    FNameMap.for_all
       (fun k d_y ->
-        match find_opt k x with
+        match FNameMap.find_opt k x with
         | Some d_x -> LineSet.subset d_y d_x
         | None -> false)
       y
 
   (** [total_cardinal x] returns the sum of cardinals of all bindings in [x]. *)
-  let total_cardinal x = fold (fun _ d accu -> accu + LineSet.cardinal d) x 0
+  let total_cardinal x =
+    FNameMap.fold (fun _ d accu -> accu + LineSet.cardinal d) x 0
 
   let print x =
     print_endline "[";
