@@ -41,14 +41,13 @@ module Coverage = struct
 
   (** [join x y] adds all coverage in [y] into [x]. *)
   let join x y =
-    FNameMap.fold
-      (fun k d_y accu ->
-        add k
-          (match FNameMap.find_opt k accu with
-          | Some d_x -> LineSet.union d_x d_y
-          | None -> d_y)
-          accu)
-      y x
+    FNameMap.merge
+      (fun _ d_x d_y ->
+        match (d_x, d_y) with
+        | Some d_x, Some d_y -> Some (LineSet.union d_x d_y)
+        | Some d, None | None, Some d -> Some d
+        | None, None -> None)
+      x y
 
   (** [is_sub x y] returns whether [y] is a total subset of [x]. *)
   let is_sub x y =
