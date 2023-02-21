@@ -10,6 +10,10 @@ let alive2_log = ref "alive-tv.txt"
 let crash_log = ref "crashes.txt"
 let log_time = ref 30.0
 
+(* whitelist
+   refer to: https://llvm.org/docs/Passes.html *)
+let _instCombine = ref true
+
 let opts =
   [
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
@@ -20,392 +24,63 @@ let opts =
     ( "-log-time",
       Arg.Set_float log_time,
       "Change time interval for creating logs" );
+    (* whitelist *)
+    ( "-instcombine",
+      Arg.Set _instCombine,
+      "[register whitelist] Combine instructions to form fewer, simple \
+       instructions" );
   ]
+
+let to_gcda category code =
+  "llvm-project/build/lib/Transforms/" ^ category ^ "/CMakeFiles/LLVM"
+  ^ category ^ ".dir/" ^ code ^ ".cpp.gcda"
+
+let to_gcov code = "./" ^ code ^ ".cpp.gcov"
+
+(* whitelist members *)
+
+let instCombine =
+  ( "InstCombine",
+    [
+      "InstCombineVectorOps";
+      "InstCombineSelect";
+      "InstCombineMulDivRem";
+      "InstCombineAddSub";
+      "InstCombineSimplifyDemanded";
+      "InstCombineCalls";
+      "InstCombineCasts";
+      "InstCombineCompares";
+      "InstCombineAtomicRMW";
+      "InstCombineShifts";
+      "InstCombineAndOrXor";
+      "InstructionCombining";
+      "InstCombineNegator";
+      "InstCombinePHI";
+      "InstCombineLoadStoreAlloca";
+    ] )
+
+let optimizations = [ (_instCombine, instCombine) ]
+
+(* Followings are lazy properties;
+   they are not and must not be used
+   before the command line arguments are parsed. *)
+
+let whitelist =
+  lazy
+    (optimizations
+    |> List.filter (fun elem -> !(fst elem))
+    |> List.map (fun elem -> snd elem))
 
 let gcda_list =
-  [
-    (* "llvm-project/build/tools/opt/CMakeFiles/opt.dir/opt.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/InstrOrderFile.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/BoundsChecking.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/ThreadSanitizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/MemorySanitizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/InstrProfiling.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/PGOInstrumentation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/SanitizerCoverage.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/CGProfile.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/ValueProfileCollector.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/Instrumentation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/DataFlowSanitizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/AddressSanitizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/PGOMemOPSizeOpt.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/HWAddressSanitizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/GCOVProfiling.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/PoisonChecking.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/IndirectCallPromotion.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/ControlHeightReduction.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/MemProfiler.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/KCFI.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Instrumentation/CMakeFiles/LLVMInstrumentation.dir/SanitizerBinaryMetadata.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/PtrState.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ObjCARC.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCOpts.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ProvenanceAnalysisEvaluator.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCAPElim.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ProvenanceAnalysis.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/DependencyAnalysis.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCExpand.cpp.gcda";
-       "llvm-project/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCContract.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/LoadStoreVectorizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlanSLP.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlanTransforms.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlanVerifier.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/Vectorize.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VectorCombine.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlanRecipes.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlan.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/LoopVectorizationLegality.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/LoopVectorize.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/SLPVectorizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Vectorize/CMakeFiles/LLVMVectorize.dir/VPlanHCFGBuilder.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/PassManagerBuilder.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/InferFunctionAttrs.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ElimAvailExtern.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/FunctionAttrs.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ConstantMerge.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/SampleProfileProbe.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/InlineSimple.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/PartialInlining.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/Internalize.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/GlobalOpt.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/StripSymbols.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/DeadArgumentElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/FunctionImport.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/Inliner.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/SampleContextTracker.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/SyntheticCountsPropagation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ArgumentPromotion.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ExtractGV.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ForceFunctionAttrs.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/StripDeadPrototypes.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ModuleInliner.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/WholeProgramDevirt.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/GlobalSplit.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/AttributorAttributes.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/MergeFunctions.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/IROutliner.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/GlobalDCE.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/LoopExtractor.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/ThinLTOBitcodeWriter.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/CalledValuePropagation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/BarrierNoopPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/SCCP.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/SampleProfile.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/IPO.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/Attributor.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/BlockExtractor.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/Annotation2Metadata.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/FunctionSpecialization.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/CrossDSOCFI.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/AlwaysInliner.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/HotColdSplitting.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/OpenMPOpt.cpp.gcda";
-       "llvm-project/build/lib/Transforms/IPO/CMakeFiles/LLVMipo.dir/LowerTypeTests.cpp.gcda"; *)
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineVectorOps.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineSelect.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineMulDivRem.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineAddSub.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineSimplifyDemanded.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineCalls.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineCasts.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineCompares.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineAtomicRMW.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineShifts.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineAndOrXor.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstructionCombining.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineNegator.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombinePHI.cpp.gcda";
-    "llvm-project/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/InstCombineLoadStoreAlloca.cpp.gcda";
-    (* "llvm-project/build/lib/Transforms/CFGuard/CMakeFiles/LLVMCFGuard.dir/CFGuard.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroSplit.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/Coroutines.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroCleanup.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroConditionalWrapper.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroEarly.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroElide.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Coroutines/CMakeFiles/LLVMCoroutines.dir/CoroFrame.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Reg2Mem.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/ConstantHoisting.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopLoadElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/GVNHoist.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopStrengthReduce.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopSimplifyCFG.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/TLSVariableHoist.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/IVUsersPrinter.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/InferAddressSpaces.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/GVN.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopPredication.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/WarnMissedTransforms.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SimplifyCFGPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/JumpThreading.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/MemCpyOptimizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopFuse.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/PlaceSafepoints.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/PartiallyInlineLibCalls.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/NaryReassociate.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopPassManager.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerAtomicPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/RewriteStatepointsForGC.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SROA.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Float2Int.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/ADCE.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopVersioningLICM.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopInstSimplify.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerMatrixIntrinsics.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/BDCE.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerGuardIntrinsic.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerExpectIntrinsic.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SpeculativeExecution.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/StraightLineStrengthReduce.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopUnrollPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopBoundSplit.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/DCE.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopDataPrefetch.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Scalar.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/GVNSink.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/TailRecursionElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/InstSimplifyPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SeparateConstOffsetFromGEP.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/MergedLoadStoreMotion.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/AlignmentFromAssumptions.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/InductiveRangeCheckElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopSink.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/ScalarizeMaskedMemIntrin.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/GuardWidening.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/DFAJumpThreading.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopRotation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/ConstraintElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/IndVarSimplify.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/NewGVN.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LICM.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopInterchange.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/StructurizeCFG.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/CorrelatedValuePropagation.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopFlatten.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/DivRemPairs.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/DeadStoreElimination.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopUnrollAndJamPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopAccessAnalysisPrinter.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopIdiomRecognize.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/CallSiteSplitting.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopDistribute.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/MakeGuardsExplicit.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/EarlyCSE.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerWidenableCondition.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/AnnotationRemarks.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/MergeICmps.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Reassociate.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Scalarizer.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SCCP.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LowerConstantIntrinsics.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopRerollPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/FlattenCFGPass.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/LoopDeletion.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/SimpleLoopUnswitch.cpp.gcda";
-       "llvm-project/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/Sink.cpp.gcda";
-       "llvm-project/build/lib/Transforms/AggressiveInstCombine/CMakeFiles/LLVMAggressiveInstCombine.dir/AggressiveInstCombine.cpp.gcda";
-       "llvm-project/build/lib/Transforms/AggressiveInstCombine/CMakeFiles/LLVMAggressiveInstCombine.dir/TruncInstCombine.cpp.gcda"; *)
-  ]
+  lazy
+    (whitelist |> Lazy.force
+    |> List.map (fun elem ->
+           let category = fst elem in
+           List.map (fun code -> to_gcda category code) (snd elem))
+    |> List.concat)
 
 let gcov_list =
-  [
-    (* "./opt.cpp.gcov";
-       "./InstrOrderFile.cpp.gcov";
-       "./BoundsChecking.cpp.gcov";
-       "./ThreadSanitizer.cpp.gcov";
-       "./MemorySanitizer.cpp.gcov";
-       "./InstrProfiling.cpp.gcov";
-       "./PGOInstrumentation.cpp.gcov";
-       "./SanitizerCoverage.cpp.gcov";
-       "./CGProfile.cpp.gcov";
-       "./ValueProfileCollector.cpp.gcov";
-       "./Instrumentation.cpp.gcov";
-       "./DataFlowSanitizer.cpp.gcov";
-       "./AddressSanitizer.cpp.gcov";
-       "./PGOMemOPSizeOpt.cpp.gcov";
-       "./HWAddressSanitizer.cpp.gcov";
-       "./GCOVProfiling.cpp.gcov";
-       "./PoisonChecking.cpp.gcov";
-       "./IndirectCallPromotion.cpp.gcov";
-       "./ControlHeightReduction.cpp.gcov";
-       "./MemProfiler.cpp.gcov";
-       "./KCFI.cpp.gcov";
-       "./SanitizerBinaryMetadata.cpp.gcov";
-       "./PtrState.cpp.gcov";
-       "./ObjCARC.cpp.gcov";
-       "./ObjCARCOpts.cpp.gcov";
-       "./ProvenanceAnalysisEvaluator.cpp.gcov";
-       "./ObjCARCAPElim.cpp.gcov";
-       "./ProvenanceAnalysis.cpp.gcov";
-       "./DependencyAnalysis.cpp.gcov";
-       "./ObjCARCExpand.cpp.gcov";
-       "./ObjCARCContract.cpp.gcov";
-       "./LoadStoreVectorizer.cpp.gcov";
-       "./VPlanSLP.cpp.gcov";
-       "./VPlanTransforms.cpp.gcov";
-       "./VPlanVerifier.cpp.gcov";
-       "./Vectorize.cpp.gcov";
-       "./VectorCombine.cpp.gcov";
-       "./VPlanRecipes.cpp.gcov";
-       "./VPlan.cpp.gcov";
-       "./LoopVectorizationLegality.cpp.gcov";
-       "./LoopVectorize.cpp.gcov";
-       "./SLPVectorizer.cpp.gcov";
-       "./VPlanHCFGBuilder.cpp.gcov";
-       "./PassManagerBuilder.cpp.gcov";
-       "./InferFunctionAttrs.cpp.gcov";
-       "./ElimAvailExtern.cpp.gcov";
-       "./FunctionAttrs.cpp.gcov";
-       "./ConstantMerge.cpp.gcov";
-       "./SampleProfileProbe.cpp.gcov";
-       "./InlineSimple.cpp.gcov";
-       "./PartialInlining.cpp.gcov";
-       "./Internalize.cpp.gcov";
-       "./GlobalOpt.cpp.gcov";
-       "./StripSymbols.cpp.gcov";
-       "./DeadArgumentElimination.cpp.gcov";
-       "./FunctionImport.cpp.gcov";
-       "./Inliner.cpp.gcov";
-       "./SampleContextTracker.cpp.gcov";
-       "./SyntheticCountsPropagation.cpp.gcov";
-       "./ArgumentPromotion.cpp.gcov";
-       "./ExtractGV.cpp.gcov";
-       "./ForceFunctionAttrs.cpp.gcov";
-       "./StripDeadPrototypes.cpp.gcov";
-       "./ModuleInliner.cpp.gcov";
-       "./WholeProgramDevirt.cpp.gcov";
-       "./GlobalSplit.cpp.gcov";
-       "./AttributorAttributes.cpp.gcov";
-       "./MergeFunctions.cpp.gcov";
-       "./IROutliner.cpp.gcov";
-       "./GlobalDCE.cpp.gcov";
-       "./LoopExtractor.cpp.gcov";
-       "./ThinLTOBitcodeWriter.cpp.gcov";
-       "./CalledValuePropagation.cpp.gcov";
-       "./BarrierNoopPass.cpp.gcov";
-       "./SCCP.cpp.gcov";
-       "./SampleProfile.cpp.gcov";
-       "./IPO.cpp.gcov";
-       "./Attributor.cpp.gcov";
-       "./BlockExtractor.cpp.gcov";
-       "./Annotation2Metadata.cpp.gcov";
-       "./FunctionSpecialization.cpp.gcov";
-       "./CrossDSOCFI.cpp.gcov";
-       "./AlwaysInliner.cpp.gcov";
-       "./HotColdSplitting.cpp.gcov";
-       "./OpenMPOpt.cpp.gcov";
-       "./LowerTypeTests.cpp.gcov"; *)
-    "./InstCombineVectorOps.cpp.gcov";
-    "./InstCombineSelect.cpp.gcov";
-    "./InstCombineMulDivRem.cpp.gcov";
-    "./InstCombineAddSub.cpp.gcov";
-    "./InstCombineSimplifyDemanded.cpp.gcov";
-    "./InstCombineCalls.cpp.gcov";
-    "./InstCombineCasts.cpp.gcov";
-    "./InstCombineCompares.cpp.gcov";
-    "./InstCombineAtomicRMW.cpp.gcov";
-    "./InstCombineShifts.cpp.gcov";
-    "./InstCombineAndOrXor.cpp.gcov";
-    "./InstructionCombining.cpp.gcov";
-    "./InstCombineNegator.cpp.gcov";
-    "./InstCombinePHI.cpp.gcov";
-    "./InstCombineLoadStoreAlloca.cpp.gcov";
-    (* "./CFGuard.cpp.gcov";
-       "./CoroSplit.cpp.gcov";
-       "./Coroutines.cpp.gcov";
-       "./CoroCleanup.cpp.gcov";
-       "./CoroConditionalWrapper.cpp.gcov";
-       "./CoroEarly.cpp.gcov";
-       "./CoroElide.cpp.gcov";
-       "./CoroFrame.cpp.gcov";
-       "./Reg2Mem.cpp.gcov";
-       "./ConstantHoisting.cpp.gcov";
-       "./LoopLoadElimination.cpp.gcov";
-       "./GVNHoist.cpp.gcov";
-       "./LoopStrengthReduce.cpp.gcov";
-       "./LoopSimplifyCFG.cpp.gcov";
-       "./TLSVariableHoist.cpp.gcov";
-       "./IVUsersPrinter.cpp.gcov";
-       "./InferAddressSpaces.cpp.gcov";
-       "./GVN.cpp.gcov";
-       "./LoopPredication.cpp.gcov";
-       "./WarnMissedTransforms.cpp.gcov";
-       "./SimplifyCFGPass.cpp.gcov";
-       "./JumpThreading.cpp.gcov";
-       "./MemCpyOptimizer.cpp.gcov";
-       "./LoopFuse.cpp.gcov";
-       "./PlaceSafepoints.cpp.gcov";
-       "./PartiallyInlineLibCalls.cpp.gcov";
-       "./NaryReassociate.cpp.gcov";
-       "./LoopPassManager.cpp.gcov";
-       "./LowerAtomicPass.cpp.gcov";
-       "./RewriteStatepointsForGC.cpp.gcov";
-       "./SROA.cpp.gcov";
-       "./Float2Int.cpp.gcov";
-       "./ADCE.cpp.gcov";
-       "./LoopVersioningLICM.cpp.gcov";
-       "./LoopInstSimplify.cpp.gcov";
-       "./LowerMatrixIntrinsics.cpp.gcov";
-       "./BDCE.cpp.gcov";
-       "./LowerGuardIntrinsic.cpp.gcov";
-       "./LowerExpectIntrinsic.cpp.gcov";
-       "./SpeculativeExecution.cpp.gcov";
-       "./StraightLineStrengthReduce.cpp.gcov";
-       "./LoopUnrollPass.cpp.gcov";
-       "./LoopBoundSplit.cpp.gcov";
-       "./DCE.cpp.gcov";
-       "./LoopDataPrefetch.cpp.gcov";
-       "./Scalar.cpp.gcov";
-       "./GVNSink.cpp.gcov";
-       "./TailRecursionElimination.cpp.gcov";
-       "./InstSimplifyPass.cpp.gcov";
-       "./SeparateConstOffsetFromGEP.cpp.gcov";
-       "./MergedLoadStoreMotion.cpp.gcov";
-       "./AlignmentFromAssumptions.cpp.gcov";
-       "./InductiveRangeCheckElimination.cpp.gcov";
-       "./LoopSink.cpp.gcov";
-       "./ScalarizeMaskedMemIntrin.cpp.gcov";
-       "./GuardWidening.cpp.gcov";
-       "./DFAJumpThreading.cpp.gcov";
-       "./LoopRotation.cpp.gcov";
-       "./ConstraintElimination.cpp.gcov";
-       "./IndVarSimplify.cpp.gcov";
-       "./NewGVN.cpp.gcov";
-       "./LICM.cpp.gcov";
-       "./LoopInterchange.cpp.gcov";
-       "./StructurizeCFG.cpp.gcov";
-       "./CorrelatedValuePropagation.cpp.gcov";
-       "./LoopFlatten.cpp.gcov";
-       "./DivRemPairs.cpp.gcov";
-       "./DeadStoreElimination.cpp.gcov";
-       "./LoopUnrollAndJamPass.cpp.gcov";
-       "./LoopAccessAnalysisPrinter.cpp.gcov";
-       "./LoopIdiomRecognize.cpp.gcov";
-       "./CallSiteSplitting.cpp.gcov";
-       "./LoopDistribute.cpp.gcov";
-       "./MakeGuardsExplicit.cpp.gcov";
-       "./EarlyCSE.cpp.gcov";
-       "./LowerWidenableCondition.cpp.gcov";
-       "./AnnotationRemarks.cpp.gcov";
-       "./MergeICmps.cpp.gcov";
-       "./Reassociate.cpp.gcov";
-       "./Scalarizer.cpp.gcov";
-       "./SCCP.cpp.gcov";
-       "./LowerConstantIntrinsics.cpp.gcov";
-       "./LoopRerollPass.cpp.gcov";
-       "./FlattenCFGPass.cpp.gcov";
-       "./LoopDeletion.cpp.gcov";
-       "./SimpleLoopUnswitch.cpp.gcov";
-       "./Sink.cpp.gcov";
-       "./AggressiveInstCombine.cpp.gcov";
-       "./TruncInstCombine.cpp.gcov"; *)
-  ]
+  lazy
+    (whitelist |> Lazy.force
+    |> List.map (fun elem -> List.map to_gcov (snd elem))
+    |> List.concat)
