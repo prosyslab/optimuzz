@@ -79,7 +79,6 @@ module Coverage = struct
 end
 
 let initialize () =
-  Random.self_init ();
   time := Unix.time ();
   start_time := Unix.time ();
   (try Sys.mkdir "llfuzz-out" 0o755 with _ -> ());
