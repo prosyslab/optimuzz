@@ -1,13 +1,21 @@
 let project_home = ref ""
-let out_dir = ref "llfuzz-out"
+
+(* directories *)
 let seed_dir = ref "seed"
-let alive2_bin = ref "alive2/build/alive-tv"
+let out_dir = ref "llfuzz-out"
+let crash_dir = ref "llfuzz-crash"
+
+(* binary files and flags *)
 let bin = ref "llvm-project/build/bin/opt"
+let alive2_bin = ref "alive2/build/alive-tv"
 let no_tv = ref false
+
+(* fuzzing options *)
 let mutate_times = ref 5
 let fuzzing_times = ref 5
 let alive2_log = ref "alive-tv.txt"
-let crash_log = ref "crashes.txt"
+
+(* logging options *)
 let log_time = ref 30.0
 
 (* whitelist
@@ -17,14 +25,15 @@ let _instCombine = ref true
 let opts =
   [
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
+    ( "-crash-dir",
+      Arg.Set_string crash_dir,
+      "Output directory for crashing mutants" );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
-    ("-crash-log", Arg.Set_string crash_log, "Output of crashed mutations");
     ( "-log-time",
       Arg.Set_float log_time,
       "Change time interval for creating logs" );
-    (* whitelist *)
     ( "-instcombine",
       Arg.Set _instCombine,
       "[register whitelist] Combine instructions to form fewer, simple \
