@@ -3,8 +3,6 @@ module F = Format
 let _ = Random.init 1234
 let llctx = Llvm.create_context ()
 let count = ref 0
-let time = ref 0.0
-let start_time = ref 0.0
 
 module SeedPool = struct
   type t = Llvm.llmodule Queue.t
@@ -79,9 +77,6 @@ module Coverage = struct
 end
 
 let initialize () =
-  time := Unix.time ();
-  start_time := Unix.time ();
-  (try Sys.mkdir "llfuzz-out" 0o755 with _ -> ());
   let usage = "Usage: llfuzz [seed_dir]" in
   Arg.parse Config.opts
     (fun x ->
@@ -91,7 +86,9 @@ let initialize () =
       Config.alive2_bin :=
         Filename.concat !Config.project_home "alive2/build/alive-tv";
       Config.seed_dir := x)
-    usage
+    usage;
+  (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
+  try Sys.mkdir !Config.crash_dir 0o755 with _ -> ()
 
 let get_coverage () =
   List.iter
@@ -127,8 +124,16 @@ let get_coverage () =
     Coverage.empty
     (Lazy.force Config.gcov_list)
 
-let check_result log =
-  let file = open_in log in
+let check_crashed filename =
+  let pid =
+    Unix.create_process !Config.alive2_bin
+      [| !Config.alive2_bin; filename |]
+      Unix.stdin
+      (Unix.openfile !Config.alive2_log [ O_CREAT; O_WRONLY ] 0o640)
+      Unix.stderr
+  in
+  Unix.waitpid [] pid |> ignore;
+  let file = open_in !Config.alive2_log in
   let try_read fp = try Some (input_line fp) with End_of_file -> None in
   let rec loop acc fp =
     match try_read fp with
@@ -159,54 +164,53 @@ let run llm =
     Filename.concat !Config.out_dir (string_of_int !count ^ ".ll")
   in
   Llvm.print_module output_name llm;
-  (if not !Config.no_tv then
-   let pid =
-     Unix.create_process !Config.alive2_bin
-       [| !Config.alive2_bin; output_name |]
-       Unix.stdin
-       (Unix.openfile !Config.alive2_log [ O_CREAT; O_WRONLY ] 0o640)
-       Unix.stderr
-   in
-   Unix.waitpid [] pid |> ignore);
-  let result = check_result !Config.alive2_log in
-  let coverage = get_coverage () in
-  (result, coverage)
+  (* FIXME: this code could detect crash only if alive2 is active. *)
+  let crashed = if !Config.no_tv then false else check_crashed output_name in
+  if crashed then
+    Llvm.print_module
+      (Filename.concat !Config.crash_dir (string_of_int !count ^ ".ll"))
+      llm;
+  (crashed, get_coverage ())
 
-let rec fuzz pool coverage crashes =
+let rec fuzz pool coverage =
   let seed, pool_popped = SeedPool.pop pool in
   (* update pool, coverage, and crashes
      by generating n mutants from single seed *)
-  let pool_new, coverage_new, crashes_new =
+  let pool_new, coverage_new =
     Utils.repeat_fun
-      (fun (p, co, cr) ->
+      (fun (p, co) ->
         (* a mutant is mutated n times from the seed *)
         let mutant =
           Utils.repeat_fun
             (fun llm -> Mutation.run llctx llm)
             seed !Config.mutate_times
         in
-        let result, co' = run mutant in
+        (* TODO: not using crash flag during fuzzing? *)
+        let _, co' = run mutant in
         let p_step =
           if Coverage.is_sub co co' then p else SeedPool.push mutant p
         in
         let co_step = Coverage.join co co' in
-        let cr_step = if result then mutant :: cr else cr in
-        (p_step, co_step, cr_step))
-      (pool_popped, coverage, crashes)
-      !Config.fuzzing_times
+        (p_step, co_step))
+      (pool_popped, coverage) !Config.fuzzing_times
   in
   (* repeat until the seed pool exhausts *)
-  if SeedPool.cardinal pool_new = 0 then (coverage_new, crashes_new)
-  else fuzz pool_new coverage_new crashes_new
+  if SeedPool.cardinal pool_new = 0 then coverage_new
+  else fuzz pool_new coverage_new
 
 let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
-  let coverage, crashes = fuzz seed_pool Coverage.empty [] in
+
+  let start_time = Unix.time () |> int_of_float in
+  let coverage = fuzz seed_pool Coverage.empty in
+  let end_time = Unix.time () |> int_of_float in
+
   ignore (Sys.command "rm *.gcov");
-  Unix.unlink !Config.alive2_log;
-  Utils.note_module_list crashes !Config.crash_log;
-  F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage)
+  if not !Config.no_tv then Unix.unlink !Config.alive2_log;
+
+  F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
+  F.printf "time spend: %ds\n" (end_time - start_time)
 
 let _ = main ()
