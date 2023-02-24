@@ -13,10 +13,9 @@ let no_tv = ref false
 (* fuzzing options *)
 let mutate_times = ref 5
 let fuzzing_times = ref 5
-let alive2_log = ref "alive-tv.txt"
 
 (* logging options *)
-let log_time = ref 30.0
+let log_time = ref 30
 
 (* whitelist
    refer to: https://llvm.org/docs/Passes.html *)
@@ -31,9 +30,7 @@ let opts =
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
-    ( "-log-time",
-      Arg.Set_float log_time,
-      "Change time interval for creating logs" );
+    ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
     ( "-instcombine",
       Arg.Set _instCombine,
       "[register whitelist] Combine instructions to form fewer, simple \

@@ -4,6 +4,14 @@ let _ = Random.init 1234
 let llctx = Llvm.create_context ()
 let count = ref 0
 
+(* for logging *)
+let alive2_log = "alive-tv.txt"
+let timestamp = "timestamp.txt"
+let start_time = ref 0
+let recent_time = ref 0
+let timestamp_fp = open_out timestamp
+let now () = Unix.time () |> int_of_float
+
 module SeedPool = struct
   type t = Llvm.llmodule Queue.t
 
@@ -129,11 +137,11 @@ let check_crashed filename =
     Unix.create_process !Config.alive2_bin
       [| !Config.alive2_bin; filename |]
       Unix.stdin
-      (Unix.openfile !Config.alive2_log [ O_CREAT; O_WRONLY ] 0o640)
+      (Unix.openfile alive2_log [ O_CREAT; O_WRONLY ] 0o640)
       Unix.stderr
   in
   Unix.waitpid [] pid |> ignore;
-  let file = open_in !Config.alive2_log in
+  let file = open_in alive2_log in
   let try_read fp = try Some (input_line fp) with End_of_file -> None in
   let rec loop acc fp =
     match try_read fp with
@@ -191,6 +199,15 @@ let rec fuzz pool coverage =
           if Coverage.is_sub co co' then p else SeedPool.push mutant p
         in
         let co_step = Coverage.join co co' in
+
+        if now () - !recent_time > !Config.log_time then (
+          recent_time := now ();
+          output_string timestamp_fp
+            (string_of_int (now () - !start_time)
+            ^ " "
+            ^ string_of_int (Coverage.total_cardinal co_step)
+            ^ "\n"));
+
         (p_step, co_step))
       (pool_popped, coverage) !Config.fuzzing_times
   in
@@ -203,14 +220,14 @@ let main () =
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
 
-  let start_time = Unix.time () |> int_of_float in
+  start_time := now ();
   let coverage = fuzz seed_pool Coverage.empty in
-  let end_time = Unix.time () |> int_of_float in
+  let end_time = now () in
 
   ignore (Sys.command "rm *.gcov");
-  if not !Config.no_tv then Unix.unlink !Config.alive2_log;
+  if not !Config.no_tv then Unix.unlink alive2_log;
 
   F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
-  F.printf "time spend: %ds\n" (end_time - start_time)
+  F.printf "time spend: %ds\n" (end_time - !start_time)
 
 let _ = main ()
