@@ -38,3 +38,12 @@ llfuzz
 *.aux
 *.log
 *.gz
+
+# coverage files
+*.gcda
+*.gcno
+*.gcov
+
+# log & memo
+memo/
+logs/
