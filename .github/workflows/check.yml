@@ -23,6 +23,15 @@ jobs:
           eval $(opam env)
           scripts/check-format
 
+      - name: Use cached dependencies
+        id: cache-opam
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-opam
+        with:
+          path: ~/.opam
+          key: ${{ env.cache-name }}-build-${{ hashFiles('build.sh') }}
+
       - name: Build LLFuzz
         run: |
           ./build.sh || eval $(opam env) && make
