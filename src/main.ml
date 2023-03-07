@@ -211,8 +211,10 @@ let rec fuzz pool coverage =
         (p_step, co_step))
       (pool_popped, coverage) !Config.fuzzing_times
   in
-  (* repeat until the seed pool exhausts *)
-  if SeedPool.cardinal pool_new = 0 then coverage_new
+  (* repeat until the time budget or seed pool exhausts *)
+  if
+    now () - !start_time > !Config.time_budget || SeedPool.cardinal pool_new = 0
+  then coverage_new
   else fuzz pool_new coverage_new
 
 let main () =

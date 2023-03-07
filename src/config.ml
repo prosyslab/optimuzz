@@ -11,8 +11,9 @@ let alive2_bin = ref "alive2/build/alive-tv"
 let no_tv = ref false
 
 (* fuzzing options *)
-let mutate_times = ref 5
-let fuzzing_times = ref 5
+let time_budget = ref (60 * 60 * 4)
+let mutate_times = ref 1
+let fuzzing_times = ref 10
 
 (* logging options *)
 let log_time = ref 30
@@ -28,6 +29,7 @@ let opts =
       Arg.Set_string crash_dir,
       "Output directory for crashing mutants" );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
