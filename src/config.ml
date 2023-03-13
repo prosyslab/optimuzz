@@ -10,6 +10,12 @@ let bin = ref "llvm-project/build/bin/opt"
 let alive2_bin = ref "alive2/build/alive-tv"
 let no_tv = ref false
 
+(* seed *)
+let seed = ref 1234
+
+(* csmith *)
+let using_cmith = ref false
+
 (* fuzzing options *)
 let time_budget = ref (60 * 60 * 4)
 let mutate_times = ref 1
@@ -29,6 +35,8 @@ let opts =
       Arg.Set_string crash_dir,
       "Output directory for crashing mutants" );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ("-seed", Arg.Set_int seed, "Set random seed");
+    ("-csmith", Arg.Set using_cmith, "Use csmith instead of llfuzz");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");

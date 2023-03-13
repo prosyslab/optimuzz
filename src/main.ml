@@ -1,6 +1,5 @@
 module F = Format
 
-let _ = Random.init 1234
 let llctx = Llvm.create_context ()
 let count = ref 0
 
@@ -96,7 +95,8 @@ let initialize () =
       Config.seed_dir := x)
     usage;
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
-  try Sys.mkdir !Config.crash_dir 0o755 with _ -> ()
+  (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
+  Random.init !Config.seed
 
 let get_coverage () =
   List.iter
@@ -217,19 +217,37 @@ let rec fuzz pool coverage =
   then coverage_new
   else fuzz pool_new coverage_new
 
+let fuzz_csmith () =
+  let output_name_c = Filename.concat !Config.out_dir "test.c" in
+  let output_name_ll = Filename.concat !Config.out_dir "test.ll" in
+  if Sys.command ("csmith > " ^ output_name_c) <> 0 then failwith "Csmith error"
+  else if
+    Sys.command
+      ("clang -S " ^ output_name_c ^ " -emit-llvm -O0 -I\"csmith-runtime\" -o"
+     ^ output_name_ll)
+    <> 0
+  then failwith "Clang error"
+  else
+    Llvm.MemoryBuffer.of_file (output_name_ll) |> Llvm_irreader.parse_ir llctx |> run
+
 let main () =
   initialize ();
-  let seed_pool = SeedPool.of_dir !Config.seed_dir in
-  F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
 
-  start_time := now ();
-  let coverage = fuzz seed_pool Coverage.empty in
-  let end_time = now () in
+  if not !Config.using_cmith then (
+    let seed_pool = SeedPool.of_dir !Config.seed_dir in
+    F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
+    start_time := now ();
+    let coverage = fuzz seed_pool Coverage.empty in
+    let end_time = now () in
 
-  ignore (Sys.command "rm *.gcov");
-  if not !Config.no_tv then Unix.unlink alive2_log;
+    ignore (Sys.command "rm *.gcov");
+    if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
-  F.printf "time spend: %ds\n" (end_time - !start_time)
+    F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
+    F.printf "time spend: %ds\n" (end_time - !start_time))
+  else
+    let coverage = fuzz_csmith () |> snd in
+    ignore (Sys.command "rm *.gcov");
+    F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage)
 
 let _ = main ()
