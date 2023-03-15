@@ -4,17 +4,15 @@ let project_home = ref ""
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "llfuzz-crash"
-
-(* binary files and flags *)
 let bin = ref "llvm-project/build/bin/opt"
 let alive2_bin = ref "alive2/build/alive-tv"
-let no_tv = ref false
 
 (* fuzzing options *)
-let seed = ref 0
+let random_seed = ref 0
 let time_budget = ref (60 * 60 * 4)
 let mutate_times = ref 1
 let fuzzing_times = ref 10
+let no_tv = ref false
 
 (* logging options *)
 let log_time = ref 30
@@ -25,12 +23,13 @@ let _instCombine = ref true
 
 let opts =
   [
+    ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ( "-crash-dir",
       Arg.Set_string crash_dir,
       "Output directory for crashing mutants" );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
-    ("-seed", Arg.Set_int seed, "Set random seed");
+    ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
     ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
     ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
@@ -41,9 +40,12 @@ let opts =
        instructions" );
   ]
 
+(* * only called after arguments are parsed. *)
+(* TODO: is there optimization files other than ones under Transforms? *)
 let to_gcda category code =
-  "llvm-project/build/lib/Transforms/" ^ category ^ "/CMakeFiles/LLVM"
-  ^ category ^ ".dir/" ^ code ^ ".cpp.gcda"
+  Filename.concat !project_home
+    ("llvm-project/build/lib/Transforms/" ^ category ^ "/CMakeFiles/LLVM"
+   ^ category ^ ".dir/" ^ code ^ ".cpp.gcda")
 
 let to_gcov code = "./" ^ code ^ ".cpp.gcov"
 
