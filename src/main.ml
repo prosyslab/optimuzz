@@ -9,6 +9,10 @@ let timestamp = "timestamp.txt"
 let start_time = ref 0
 let recent_time = ref 0
 let timestamp_fp = open_out timestamp
+
+(* helpers *)
+let concat_home s = Filename.concat !Config.project_home s
+let ll_of_count () = string_of_int !count ^ ".ll"
 let now () = Unix.time () |> int_of_float
 
 module SeedPool = struct
@@ -84,19 +88,22 @@ module Coverage = struct
 end
 
 let initialize () =
-  let usage = "Usage: llfuzz [seed_dir]" in
   Arg.parse Config.opts
-    (fun x ->
-      Config.project_home :=
-        Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
-        |> Filename.dirname |> Filename.dirname;
-      Config.alive2_bin :=
-        Filename.concat !Config.project_home "alive2/build/alive-tv";
-      Config.seed_dir := x)
-    usage;
+    (fun _ -> failwith "There must be no anonymous arguments.")
+    "Usage: llfuzz [options]";
+
+  (* these files are bound to llfuzz project *)
+  Config.project_home :=
+    Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
+    |> Filename.dirname |> Filename.dirname;
+  Config.bin := concat_home !Config.bin;
+  Config.alive2_bin := concat_home !Config.alive2_bin;
+
+  (* these files are bound to (outer) workspace *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
-  Random.init !Config.seed
+
+  Random.init !Config.random_seed
 
 let get_coverage () =
   List.iter
@@ -164,20 +171,16 @@ let check_crashed filename =
 let run llm =
   ignore
     (Sys.command
-       ("find " ^ !Config.project_home
-      ^ "./llvm-project/build/lib/Transforms -type f -name '*.gcda' | xargs rm"
-       ));
+       ("find "
+       ^ concat_home "./llvm-project/build/lib/Transforms"
+       ^ " -type f -name '*.gcda' | xargs rm"));
   count := !count + 1;
-  let output_name =
-    Filename.concat !Config.out_dir (string_of_int !count ^ ".ll")
-  in
+  let output_name = Filename.concat !Config.out_dir (ll_of_count ()) in
   Llvm.print_module output_name llm;
   (* FIXME: this code could detect crash only if alive2 is active. *)
   let crashed = if !Config.no_tv then false else check_crashed output_name in
   if crashed then
-    Llvm.print_module
-      (Filename.concat !Config.crash_dir (string_of_int !count ^ ".ll"))
-      llm;
+    Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
   (crashed, get_coverage ())
 
 let rec fuzz pool coverage =
