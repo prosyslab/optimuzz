@@ -4,7 +4,9 @@ let project_home = ref ""
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "llfuzz-crash"
-let bin = ref "llvm-project/build/bin/opt"
+
+(* build/binaries *)
+let opt_bin = ref "llvm-project/build/bin/opt"
 let alive2_bin = ref "alive2/build/alive-tv"
 
 (* fuzzing options *)
