@@ -1,5 +1,7 @@
 module F = Format
 
+type opt_res_t = CRASH | INVALID | VALID
+
 let llctx = Llvm.create_context ()
 let count = ref 0
 
@@ -96,7 +98,7 @@ let initialize () =
   Config.project_home :=
     Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
     |> Filename.dirname |> Filename.dirname;
-  Config.bin := concat_home !Config.bin;
+  Config.opt_bin := concat_home !Config.opt_bin;
   Config.alive2_bin := concat_home !Config.alive2_bin;
 
   (* these files are bound to (outer) workspace *)
@@ -139,7 +141,8 @@ let get_coverage () =
     Coverage.empty
     (Lazy.force Config.gcov_list)
 
-let check_crashed filename =
+let run_alive2 filename =
+  (* run alive2 *)
   let pid =
     Unix.create_process !Config.alive2_bin
       [| !Config.alive2_bin; filename |]
@@ -148,40 +151,64 @@ let check_crashed filename =
       Unix.stderr
   in
   Unix.waitpid [] pid |> ignore;
+
+  (* review result *)
   let file = open_in alive2_log in
-  let try_read fp = try Some (input_line fp) with End_of_file -> None in
-  let rec loop acc fp =
-    match try_read fp with
-    | Some s -> loop (s :: acc) fp
-    | None ->
-        close_in fp;
-        List.rev acc
+  let rec loop accu =
+    try loop (input_line file :: accu) with End_of_file -> accu
   in
-  try
-    (List.find
-       (fun l ->
-         let l = l |> String.split_on_char ' ' in
-         if List.length l > 3 then List.nth l 3 = "incorrect" else false)
-       (loop [] file)
-    |> String.split_on_char ' ' |> List.nth)
-      2
-    = "1"
-  with Failure _ -> false
+  (* FIXME: magic number *)
+  let all_lines = loop [] |> List.rev |> List.filteri (fun i _ -> i < 6) in
+  close_in file;
+  let search src tgt =
+    let re_tgt = Str.regexp_string tgt in
+    try Str.search_forward re_tgt src 0 with Not_found -> -1
+  in
+  let rec aux accu = function
+    | [] -> accu
+    | hd :: tl ->
+        if
+          search hd "failed-to-prove transformations" = -1
+          || hd |> String.split_on_char ' ' |> Fun.flip List.nth 0
+             |> int_of_string = 0
+        then
+          if
+            search hd "incorrect transformations" = -1
+            || hd |> String.split_on_char ' ' |> Fun.flip List.nth 0
+               |> int_of_string = 0
+          then aux accu tl
+          else INVALID
+        else CRASH
+  in
+  aux VALID all_lines
 
 let run llm =
+  (* reset all previous coverages *)
+  (* FIXME: magic path *)
   ignore
     (Sys.command
        ("find "
-       ^ concat_home "./llvm-project/build/lib/Transforms"
+       ^ concat_home "./llvm-project/build/"
        ^ " -type f -name '*.gcda' | xargs rm"));
+
   count := !count + 1;
   let output_name = Filename.concat !Config.out_dir (ll_of_count ()) in
   Llvm.print_module output_name llm;
-  (* FIXME: this code could detect crash only if alive2 is active. *)
-  let crashed = if !Config.no_tv then false else check_crashed output_name in
-  if crashed then
-    Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
-  (crashed, get_coverage ())
+
+  (* run opt/alive2 and evaluate *)
+  if !Config.no_tv then (
+    let exit_code =
+      Sys.command (!Config.opt_bin ^ " -S --passes=instcombine " ^ output_name)
+    in
+    let crashed = exit_code <> 0 in
+    if crashed then
+      Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
+    ((if crashed then CRASH else VALID), get_coverage ()))
+  else
+    let alive2_result = run_alive2 output_name in
+    if alive2_result <> VALID then
+      Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
+    (alive2_result, get_coverage ())
 
 let rec fuzz pool coverage =
   let seed, pool_popped = SeedPool.pop pool in

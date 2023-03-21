@@ -44,6 +44,10 @@ llfuzz
 *.gcno
 *.gcov
 
+# internal files
+alive-tv.txt
+timestamp.txt
+
 # log & memo
 memo/
 logs/
