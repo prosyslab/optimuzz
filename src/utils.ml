@@ -1,5 +1,6 @@
 let ( >> ) x f = f x |> ignore
 
+exception Improper_class
 exception Out_of_integer_domain
 exception Unsupported
 
@@ -94,6 +95,8 @@ module OpcodeClass = struct
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [ Llvm.Opcode.PHI ] (* PHI *)
   let other_list = []
+
+  (* helper for cmp instruction *)
   let cmp_kind = [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
 
   let total_list =
@@ -138,7 +141,8 @@ module OpcodeClass = struct
         if l <> [] then list_random l else opcode
     | None -> list_random total_list
 
-  let build_arith = function
+  let build_arith opcode o0 o1 llb =
+    (match opcode with
     | Llvm.Opcode.Add -> Llvm.build_add
     | Sub -> Llvm.build_sub
     | Mul -> Llvm.build_mul
@@ -146,41 +150,55 @@ module OpcodeClass = struct
     | SDiv -> Llvm.build_sdiv
     | URem -> Llvm.build_urem
     | SRem -> Llvm.build_srem
-    | _ -> raise Unsupported
+    | _ -> raise Improper_class)
+      o0 o1 "" llb
 
-  let build_logic = function
+  let build_logic opcode o0 o1 llb =
+    (match opcode with
     | Llvm.Opcode.Shl -> Llvm.build_shl
     | LShr -> Llvm.build_lshr
     | AShr -> Llvm.build_ashr
     | And -> Llvm.build_and
     | Or -> Llvm.build_or
     | Xor -> Llvm.build_xor
-    | _ -> raise Unsupported
+    | _ -> raise Improper_class)
+      o0 o1 "" llb
 
   (* each MEM instruction has different operands *)
   let build_mem _ = raise Unsupported
 
-  let build_cast = function
+  let build_cast opcode o ty llb =
+    (match opcode with
     | Llvm.Opcode.Trunc -> Llvm.build_trunc
     | ZExt -> Llvm.build_zext
     | SExt -> Llvm.build_sext
     | PtrToInt -> Llvm.build_ptrtoint
     | IntToPtr -> Llvm.build_inttoptr
     | BitCast -> Llvm.build_bitcast
-    | _ -> raise Unsupported
+    | _ -> raise Improper_class)
+      o ty "" llb
 
-  let build_cmp icmp = Llvm.build_icmp icmp
+  let build_cmp icmp o0 o1 llb = Llvm.build_icmp icmp o0 o1 "" llb
+
+  (* TODO: embed empty quotes *)
   let build_phi = Llvm.build_phi
+
+  let string_of_opcls = function
+    | TER -> "TER"
+    | ARITH -> "ARITH"
+    | LOGIC -> "LOGIC"
+    | MEM -> "MEM"
+    | CAST -> "CAST"
+    | CMP -> "CMP"
+    | PHI -> "PHI"
+    | OTHER -> "OTHER"
 end
 
 (** [fold_left_all_instr f a m] returns [f (... f (f (f a i1) i2) i3 ...) iN],
     where [i1 ... iN] are the instructions in function [m]. *)
 let fold_left_all_instr f a m =
   if Llvm.is_declaration m then a
-  else
-    Llvm.fold_left_blocks
-      (fun a blk -> Llvm.fold_left_instrs (fun a instr -> f a instr) a blk)
-      a m
+  else Llvm.fold_left_blocks (Llvm.fold_left_instrs f) a m
 
 (** [get_return_instr f] returns ret instruction from [f]. *)
 let get_return_instr f =
@@ -221,6 +239,7 @@ let get_blocks_after bb =
 
 (** [choose_function llm] returns an arbitrary function in [llm]. *)
 let choose_function llm =
+  (* assume the sole function for now *)
   match Llvm.function_begin llm with
   | Before f -> f
   | At_end _ -> failwith "No function defined"
