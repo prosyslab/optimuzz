@@ -366,21 +366,31 @@ let subst_random_operand llctx instr =
     instr)
   else instr
 
-let run llctx llm =
+(* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
+
+(* CFG-related mutation *)
+let mutate_CFG _ = Fun.id
+
+(* inner-basicblock mutation (independent of block CFG) *)
+let mutate_inner_bb llctx llm =
   let open Utils in
-  let llm_clone = Llvm_transform_utils.clone_module llm in
-  let f = Utils.choose_function llm_clone in
-  let all_instrs = Utils.fold_left_all_instr (fun accu i -> i :: accu) [] f in
-  let i = Utils.list_random all_instrs in
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu i -> i :: accu) [] f in
+  let i = list_random all_instrs in
   let mutate_fun =
-    Utils.list_random
+    list_random
       [
         (fun i -> i >> subst_random_operand llctx);
         (fun i -> i >> subst_random_instr llctx);
         (fun i -> i >> create_random_instr llctx);
-        (fun i -> i >> split_block llctx);
-        (fun i -> i >> lower_instr llctx);
       ]
   in
   mutate_fun i;
-  llm_clone
+  llm
+
+(* possible reflection of inner-basicblock mutation to CFG *)
+let mutate_transmission _ = Fun.id
+
+let run llctx llm =
+  llm |> Llvm_transform_utils.clone_module |> mutate_CFG llctx
+  |> mutate_inner_bb llctx |> mutate_transmission llctx
