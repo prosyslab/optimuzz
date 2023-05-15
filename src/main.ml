@@ -181,14 +181,15 @@ let run_alive2 filename =
   in
   aux VALID all_lines
 
+(* run opt (and tv) and measure coverage *)
 let run llm =
   (* reset all previous coverages *)
   (* FIXME: magic path *)
-  ignore
-    (Sys.command
-       ("find "
-       ^ concat_home "./llvm-project/build/"
-       ^ " -type f -name '*.gcda' | xargs rm"));
+  Sys.command
+    ("find "
+    ^ concat_home "./llvm-project/build/"
+    ^ " -type f -name '*.gcda' | xargs rm")
+  |> ignore;
 
   count := !count + 1;
   let output_name = Filename.concat !Config.out_dir (ll_of_count ()) in
@@ -209,42 +210,39 @@ let run llm =
       Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
     (alive2_result, get_coverage ())
 
-let rec fuzz pool coverage =
+let rec fuzz pool cov =
   let seed, pool_popped = SeedPool.pop pool in
-  (* update pool, coverage, and crashes
-     by generating n mutants from single seed *)
-  let pool_new, coverage_new =
-    Utils.repeat_fun
-      (fun (p, co) ->
-        (* a mutant is mutated n times from the seed *)
-        let mutant =
-          Utils.repeat_fun
-            (fun llm -> Mutation.run llctx llm)
-            seed !Config.mutate_times
-        in
-        (* TODO: not using crash flag during fuzzing? *)
-        let _, co' = run mutant in
-        let p_step =
-          if Coverage.is_sub co co' then p else SeedPool.push mutant p
-        in
-        let co_step = Coverage.join co co' in
 
-        if now () - !recent_time > !Config.log_time then (
-          recent_time := now ();
-          output_string timestamp_fp
-            (string_of_int (now () - !start_time)
-            ^ " "
-            ^ string_of_int (Coverage.total_cardinal co_step)
-            ^ "\n"));
+  (* single mutation unit *)
+  let mutate_seed (pool, cov) =
+    let mutant = Mutation.run llctx seed in
+    (* TODO: not using run result, only caring coverage *)
+    let _, cov_mutant = run mutant in
+    let pool' =
+      if Coverage.is_sub cov cov_mutant then pool else SeedPool.push mutant pool
+    in
+    let cov' = Coverage.join cov cov_mutant in
 
-        (p_step, co_step))
-      (pool_popped, coverage) !Config.fuzzing_times
+    (* timestamp *)
+    if now () - !recent_time > !Config.log_time then (
+      recent_time := now ();
+      output_string timestamp_fp
+        (string_of_int (now () - !start_time)
+        ^ " "
+        ^ string_of_int (Coverage.total_cardinal cov')
+        ^ "\n"));
+    (pool', cov')
   in
+
+  (* single seed is mutated n times *)
+  let pool', cov' =
+    Utils.repeat_fun mutate_seed (pool_popped, cov) !Config.fuzzing_times
+  in
+
   (* repeat until the time budget or seed pool exhausts *)
-  if
-    now () - !start_time > !Config.time_budget || SeedPool.cardinal pool_new = 0
-  then coverage_new
-  else fuzz pool_new coverage_new
+  if now () - !start_time > !Config.time_budget || SeedPool.cardinal pool' = 0
+  then cov'
+  else fuzz pool' cov'
 
 let main () =
   initialize ();
@@ -255,7 +253,7 @@ let main () =
   let coverage = fuzz seed_pool Coverage.empty in
   let end_time = now () in
 
-  ignore (Sys.command "rm *.gcov");
+  Sys.command "rm *.gcov" |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
   F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
