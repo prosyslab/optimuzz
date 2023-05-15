@@ -1,3 +1,4 @@
+open Domain
 module F = Format
 
 type opt_res_t = CRASH | INVALID | VALID
@@ -39,56 +40,6 @@ module SeedPool = struct
          (Queue.create ())
 end
 
-module Coverage = struct
-  module FNameMap = Map.Make (String)
-  module LineSet = Set.Make (Int)
-
-  type t = LineSet.t FNameMap.t
-
-  let empty = FNameMap.empty
-  let add = FNameMap.add
-  let empty_set = LineSet.empty
-  let add_set = LineSet.add
-
-  (** [join x y] adds all coverage in [y] into [x]. *)
-  let join x y =
-    FNameMap.merge
-      (fun _ d_x d_y ->
-        match (d_x, d_y) with
-        | Some d_x, Some d_y -> Some (LineSet.union d_x d_y)
-        | Some d, None | None, Some d -> Some d
-        | None, None -> None)
-      x y
-
-  (** [is_sub x y] returns whether [y] is a total subset of [x]. *)
-  let is_sub x y =
-    FNameMap.for_all
-      (fun k d_y ->
-        match FNameMap.find_opt k x with
-        | Some d_x -> LineSet.subset d_y d_x
-        | None -> false)
-      y
-
-  (** [total_cardinal x] returns the sum of cardinals of all bindings in [x]. *)
-  let total_cardinal x =
-    FNameMap.fold (fun _ d accu -> accu + LineSet.cardinal d) x 0
-
-  let print x =
-    print_endline "[";
-    FNameMap.iter
-      (fun k d ->
-        print_string k;
-        print_string ": {";
-        LineSet.iter
-          (fun elem ->
-            print_int elem;
-            print_string " ")
-          d;
-        print_endline "}")
-      x;
-    print_endline "]"
-end
-
 let initialize () =
   Arg.parse Config.opts
     (fun _ -> failwith "There must be no anonymous arguments.")
@@ -127,9 +78,7 @@ let get_coverage () =
         > 0
       then
         aux fp
-          (Coverage.add_set
-             (List.nth chunks 1 |> String.trim |> int_of_string)
-             accu)
+          (LineSet.add (List.nth chunks 1 |> String.trim |> int_of_string) accu)
       else aux fp accu
     with End_of_file ->
       close_in fp;
@@ -137,8 +86,8 @@ let get_coverage () =
   in
   List.fold_left
     (fun accu elem ->
-      Coverage.add elem (aux (open_in elem) Coverage.empty_set) accu)
-    Coverage.empty (Config.gcov_list ())
+      LineCoverage.add elem (aux (open_in elem) LineSet.empty) accu)
+    LineCoverage.empty (Config.gcov_list ())
 
 let run_alive2 filename =
   (* run alive2 *)
@@ -219,9 +168,10 @@ let rec fuzz pool cov =
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = run mutant in
     let pool' =
-      if Coverage.is_sub cov cov_mutant then pool else SeedPool.push mutant pool
+      if LineCoverage.subset cov cov_mutant then pool
+      else SeedPool.push mutant pool
     in
-    let cov' = Coverage.join cov cov_mutant in
+    let cov' = LineCoverage.join cov cov_mutant in
 
     (* timestamp *)
     if now () - !recent_time > !Config.log_time then (
@@ -229,7 +179,7 @@ let rec fuzz pool cov =
       output_string timestamp_fp
         (string_of_int (now () - !start_time)
         ^ " "
-        ^ string_of_int (Coverage.total_cardinal cov')
+        ^ string_of_int (LineCoverage.total_cardinal cov')
         ^ "\n"));
     (pool', cov')
   in
@@ -250,13 +200,13 @@ let main () =
   F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
 
   start_time := now ();
-  let coverage = fuzz seed_pool Coverage.empty in
+  let coverage = fuzz seed_pool LineCoverage.empty in
   let end_time = now () in
 
   Sys.command "rm *.gcov" |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "total coverage: %d lines\n" (Coverage.total_cardinal coverage);
+  F.printf "total coverage: %d lines\n" (LineCoverage.total_cardinal coverage);
   F.printf "time spend: %ds\n" (end_time - !start_time)
 
 let _ = main ()

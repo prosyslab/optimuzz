@@ -1,4 +1,4 @@
 (executable
  (name main)
- (modules config main utils mutation)
+ (modules config main domain utils mutation)
  (libraries llvm llvm.bitreader llvm.irreader llvm.transform_utils str unix))
