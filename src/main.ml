@@ -63,7 +63,7 @@ let get_coverage () =
     (fun elem ->
       let llvm_pid =
         Unix.create_process "llvm-cov"
-          [| "llvm-cov"; "gcov"; elem |]
+          [| "llvm-cov"; "gcov"; "-b"; "-c"; elem |]
           Unix.stdin Unix.stdout Unix.stderr
       in
       Unix.waitpid [] llvm_pid |> ignore)
