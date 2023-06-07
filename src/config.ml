@@ -12,8 +12,8 @@ let alive2_bin = ref "alive2/build/alive-tv"
 (* fuzzing options *)
 let random_seed = ref 0
 let time_budget = ref (60 * 60 * 4)
-let mutate_times = ref 1
-let fuzzing_times = ref 10
+let num_mutation = ref 1
+let num_mutant = ref 10
 let no_tv = ref false
 
 (* logging options *)
@@ -33,8 +33,8 @@ let opts =
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
-    ("-mut-time", Arg.Set_int mutate_times, "Change mutation times");
-    ("-fuz-time", Arg.Set_int fuzzing_times, "Change fuzzing times");
+    ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
+    ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
     ( "-instcombine",
       Arg.Set _instCombine,
