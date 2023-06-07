@@ -69,20 +69,23 @@ let get_coverage () =
       Unix.waitpid [] llvm_pid |> ignore)
     (Config.gcda_list ());
   let rec aux fp accu =
-    try
-      (* each line is the form of [COVERED_TIMES:LINE_NUM:CODE] *)
-      let chunks = String.split_on_char ':' (input_line fp) in
-      if
-        (try chunks |> List.hd |> String.trim |> int_of_string
-         with Failure _ -> -1)
-        > 0
-      then
-        aux fp
-          (LineSet.add (List.nth chunks 1 |> String.trim |> int_of_string) accu)
-      else aux fp accu
-    with End_of_file ->
-      close_in fp;
-      accu
+    match input_line fp with
+    | line ->
+        (* each line is the form of [COVERED_TIMES:LINE_NUM:CODE] *)
+        let chunks = String.split_on_char ':' line in
+        if
+          (try chunks |> List.hd |> String.trim |> int_of_string
+           with Failure _ -> -1)
+          > 0
+        then
+          aux fp
+            (LineSet.add
+               (List.nth chunks 1 |> String.trim |> int_of_string)
+               accu)
+        else aux fp accu
+    | exception End_of_file ->
+        close_in fp;
+        accu
   in
   List.fold_left
     (fun accu elem ->
