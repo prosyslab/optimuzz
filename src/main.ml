@@ -162,9 +162,11 @@ let run llm =
 let rec fuzz pool cov =
   let seed, pool_popped = SeedPool.pop pool in
 
-  (* single mutation unit *)
+  (* each mutant is mutated m times *)
   let mutate_seed (pool, cov) =
-    let mutant = Mutation.run llctx seed in
+    let mutant =
+      Utils.repeat_fun (Mutation.run llctx) seed !Config.num_mutation
+    in
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = run mutant in
     let pool' =
@@ -184,9 +186,9 @@ let rec fuzz pool cov =
     (pool', cov')
   in
 
-  (* single seed is mutated n times *)
+  (* each seed is mutated into n mutants *)
   let pool', cov' =
-    Utils.repeat_fun mutate_seed (pool_popped, cov) !Config.fuzzing_times
+    Utils.repeat_fun mutate_seed (pool_popped, cov) !Config.num_mutant
   in
 
   (* repeat until the time budget or seed pool exhausts *)
