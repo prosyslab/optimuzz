@@ -116,7 +116,7 @@ let get_coverage () =
           Unix.stdin Unix.stdout Unix.stderr
       in
       Unix.waitpid [] llvm_pid |> ignore)
-    (Lazy.force Config.gcda_list);
+    (Config.gcda_list ());
   let rec aux fp accu =
     try
       (* each line is the form of [COVERED_TIMES:LINE_NUM:CODE] *)
@@ -138,8 +138,7 @@ let get_coverage () =
   List.fold_left
     (fun accu elem ->
       Coverage.add elem (aux (open_in elem) Coverage.empty_set) accu)
-    Coverage.empty
-    (Lazy.force Config.gcov_list)
+    Coverage.empty (Config.gcov_list ())
 
 let run_alive2 filename =
   (* run alive2 *)

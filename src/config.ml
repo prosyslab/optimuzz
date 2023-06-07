@@ -79,22 +79,19 @@ let optimizations = [ (_instCombine, instCombine) ]
    they are not and must not be used
    before the command line arguments are parsed. *)
 
-let whitelist =
-  lazy
-    (optimizations
-    |> List.filter (fun elem -> !(fst elem))
-    |> List.map (fun elem -> snd elem))
+let whitelist () =
+  optimizations
+  |> List.filter (fun elem -> !(fst elem))
+  |> List.map (fun elem -> snd elem)
 
-let gcda_list =
-  lazy
-    (whitelist |> Lazy.force
-    |> List.map (fun elem ->
-           let category = fst elem in
-           List.map (fun code -> to_gcda category code) (snd elem))
-    |> List.concat)
+let gcda_list () =
+  whitelist ()
+  |> List.map (fun elem ->
+         let category = fst elem in
+         List.map (fun code -> to_gcda category code) (snd elem))
+  |> List.concat
 
-let gcov_list =
-  lazy
-    (whitelist |> Lazy.force
-    |> List.map (fun elem -> List.map to_gcov (snd elem))
-    |> List.concat)
+let gcov_list () =
+  whitelist ()
+  |> List.map (fun elem -> List.map to_gcov (snd elem))
+  |> List.concat
