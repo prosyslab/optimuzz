@@ -60,16 +60,20 @@ let initialize () =
 
   Random.init !Config.random_seed
 
-let get_coverage () =
+let run_gcov () =
+  let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0o644 in
   List.iter
     (fun elem ->
       let llvm_pid =
         Unix.create_process "llvm-cov"
           [| "llvm-cov"; "gcov"; "-b"; "-c"; elem |]
-          Unix.stdin Unix.stdout Unix.stderr
+          Unix.stdin devnull devnull
       in
       Unix.waitpid [] llvm_pid |> ignore)
-    !Config.gcda_list;
+    !Config.gcda_list
+
+let get_coverage () =
+  run_gcov ();
   let rec aux fp accu =
     match input_line fp with
     | line ->
