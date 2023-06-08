@@ -3,7 +3,8 @@ let project_home = ref ""
 (* directories *)
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
-let crash_dir = ref "llfuzz-crash"
+let crash_dir = ref "crash"
+let corpus_dir = ref "corpus"
 let gcov_dir = ref "gcov"
 let workspace = ref ""
 
@@ -29,9 +30,6 @@ let opts =
   [
     ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
-    ( "-crash-dir",
-      Arg.Set_string crash_dir,
-      "Output directory for crashing mutants" );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");

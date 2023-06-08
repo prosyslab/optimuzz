@@ -15,7 +15,11 @@ let timestamp_fp = open_out timestamp
 
 (* helpers *)
 let concat_home s = Filename.concat !Config.project_home s
-let ll_of_count () = string_of_int !count ^ ".ll"
+
+let new_ll () =
+  count := !count + 1;
+  string_of_int !count ^ ".ll"
+
 let now () = Unix.time () |> int_of_float
 
 module SeedPool = struct
@@ -53,10 +57,13 @@ let initialize () =
   Config.alive2_bin := concat_home !Config.alive2_bin;
   Config.workspace := Unix.getcwd ();
   Config.gcov_dir := Filename.concat !Config.out_dir !Config.gcov_dir;
+  Config.crash_dir := Filename.concat !Config.out_dir !Config.crash_dir;
+  Config.corpus_dir := Filename.concat !Config.out_dir !Config.corpus_dir;
   (* these files are bound to (outer) workspace *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.gcov_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
+  (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
   Config.init_whitelist ();
   Config.init_gcda_list ();
   Config.init_gcov_list ();
@@ -103,8 +110,17 @@ let run_alive2 filename =
   in
   aux VALID all_lines
 
+let run_opt filename =
+  let filename = Filename.concat !Config.out_dir filename in
+  Sys.command
+    (!Config.opt_bin ^ " -S --passes=instcombine -o /dev/null " ^ filename)
+
+let save_ll dir filename llm =
+  let output_name = Filename.concat dir filename in
+  Llvm.print_module output_name llm
+
 (* run opt (and tv) and measure coverage *)
-let run llm =
+let run filename llm =
   (* reset all previous coverages *)
   (* FIXME: magic path *)
   Sys.command
@@ -113,42 +129,40 @@ let run llm =
     ^ " -type f -name '*.gcda' | xargs rm")
   |> ignore;
 
-  count := !count + 1;
-  let output_name = Filename.concat !Config.out_dir (ll_of_count ()) in
-  Llvm.print_module output_name llm;
+  save_ll !Config.out_dir filename llm;
 
   (* run opt/alive2 and evaluate *)
   if !Config.no_tv then (
-    let exit_code =
-      Sys.command
-        (!Config.opt_bin ^ " -S --passes=instcombine -o /dev/null "
-       ^ output_name)
-    in
+    let exit_code = run_opt filename in
     let crashed = exit_code <> 0 in
-    if crashed then
-      Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
+    if crashed then save_ll !Config.crash_dir filename llm;
     ((if crashed then CRASH else VALID), Gcov.get_coverage ()))
   else
-    let alive2_result = run_alive2 output_name in
+    let alive2_result = run_alive2 filename in
     if alive2_result <> VALID then
-      Llvm.print_module (Filename.concat !Config.crash_dir (ll_of_count ())) llm;
+      Llvm.print_module (Filename.concat !Config.crash_dir (new_ll ())) llm;
     (alive2_result, Gcov.get_coverage ())
 
-let rec fuzz pool cov =
+let rec fuzz pool cov gen_count =
   let seed, pool_popped = SeedPool.pop pool in
 
   (* each mutant is mutated m times *)
-  let mutate_seed (pool, cov) =
+  let mutate_seed (pool, cov, gen_count) =
     let mutant =
       Utils.repeat_fun (Mutation.run llctx) seed !Config.num_mutation
     in
+    let filename = new_ll () in
     (* TODO: not using run result, only caring coverage *)
-    let _, cov_mutant = run mutant in
-    let pool' =
-      if LineCoverage.subset cov cov_mutant then pool
-      else SeedPool.push mutant pool
+    let _, cov_mutant = run filename mutant in
+    let pool', cov', gen_count =
+      if LineCoverage.subset cov cov_mutant then (pool, cov, gen_count)
+      else
+        let _ = F.printf "\r#newly generated seeds: %d@?" (gen_count + 1) in
+        save_ll !Config.corpus_dir filename mutant;
+        let seed = SeedPool.push mutant pool in
+        let cov = LineCoverage.join cov cov_mutant in
+        (seed, cov, gen_count + 1)
     in
-    let cov' = LineCoverage.join cov cov_mutant in
 
     (* timestamp *)
     if now () - !recent_time > !Config.log_time then (
@@ -158,32 +172,34 @@ let rec fuzz pool cov =
         ^ " "
         ^ string_of_int (LineCoverage.total_cardinal cov')
         ^ "\n"));
-    (pool', cov')
+    (pool', cov', gen_count)
   in
 
   (* each seed is mutated into n mutants *)
-  let pool', cov' =
-    Utils.repeat_fun mutate_seed (pool_popped, cov) !Config.num_mutant
+  let pool', cov', gen_count =
+    Utils.repeat_fun mutate_seed
+      (pool_popped, cov, gen_count)
+      !Config.num_mutant
   in
 
   (* repeat until the time budget or seed pool exhausts *)
   if now () - !start_time > !Config.time_budget || SeedPool.cardinal pool' = 0
   then cov'
-  else fuzz pool' cov'
+  else fuzz pool' cov' gen_count
 
 let main () =
   initialize ();
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
-  F.printf "#seeds: %d\n" (SeedPool.cardinal seed_pool);
+  F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
   start_time := now ();
-  let coverage = fuzz seed_pool LineCoverage.empty in
+  let coverage = fuzz seed_pool LineCoverage.empty 0 in
   let end_time = now () in
 
   Sys.command "rm *.gcov" |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "total coverage: %d lines\n" (LineCoverage.total_cardinal coverage);
-  F.printf "time spend: %ds\n" (end_time - !start_time)
+  F.printf "total coverage: %d lines@." (LineCoverage.total_cardinal coverage);
+  F.printf "time spend: %ds@." (end_time - !start_time)
 
 let _ = main ()
