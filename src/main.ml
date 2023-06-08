@@ -51,7 +51,9 @@ let initialize () =
     |> Filename.dirname |> Filename.dirname;
   Config.opt_bin := concat_home !Config.opt_bin;
   Config.alive2_bin := concat_home !Config.alive2_bin;
-
+  Config.init_whitelist ();
+  Config.init_gcda_list ();
+  Config.init_gcov_list ();
   (* these files are bound to (outer) workspace *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
@@ -67,7 +69,7 @@ let get_coverage () =
           Unix.stdin Unix.stdout Unix.stderr
       in
       Unix.waitpid [] llvm_pid |> ignore)
-    (Config.gcda_list ());
+    !Config.gcda_list;
   let rec aux fp accu =
     match input_line fp with
     | line ->
@@ -90,7 +92,7 @@ let get_coverage () =
   List.fold_left
     (fun accu elem ->
       LineCoverage.add elem (aux (open_in elem) LineSet.empty) accu)
-    LineCoverage.empty (Config.gcov_list ())
+    LineCoverage.empty !Config.gcov_list
 
 let run_alive2 filename =
   (* run alive2 *)
