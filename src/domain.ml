@@ -26,16 +26,18 @@ module Coverage (CovPerFile : COV_PER_FILE) = struct
         | Some d, None | None, Some d -> Some d
         | None, None -> None)
 
-  (** [subset x y] returns whether [x] is a total sub-coverage of [y]. *)
-  let subset x =
-    FNameMap.for_all (fun k d_y ->
-        match FNameMap.find_opt k x with
-        | Some d_x -> CovPerFile.subset d_x d_y
+  (** [subset x y] returns whether [x] is a sub-coverage of [y]. *)
+  let subset x y =
+    FNameMap.for_all
+      (fun k d_x ->
+        match FNameMap.find_opt k y with
+        | Some d_y -> CovPerFile.subset d_x d_y
         | None -> false)
+      x
 
-  (** [total_cardinal x] returns the sum of cardinals of all bindings in [x]. *)
-  let total_cardinal x =
-    FNameMap.fold (fun _ d accu -> accu + (d |> CovPerFile.cardinal)) x 0
+  (** [cardinal x] returns the sum of cardinals of all bindings in [x]. *)
+  let cardinal x =
+    FNameMap.fold (fun _ d accu -> accu + CovPerFile.cardinal d) x 0
 end
 
 (* Simple line-based coverage*)

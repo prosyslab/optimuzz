@@ -145,7 +145,6 @@ let run filename llm =
 
 let rec fuzz pool cov gen_count =
   let seed, pool_popped = SeedPool.pop pool in
-
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov, gen_count) =
     let mutant =
@@ -154,13 +153,16 @@ let rec fuzz pool cov gen_count =
     let filename = new_ll () in
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = run filename mutant in
+
     let pool', cov', gen_count =
-      if LineCoverage.subset cov cov_mutant then (pool, cov, gen_count)
+      if LineCoverage.subset cov_mutant cov then (pool, cov, gen_count)
       else
-        let _ = F.printf "\r#newly generated seeds: %d@?" (gen_count + 1) in
-        save_ll !Config.corpus_dir filename mutant;
+        let _ = save_ll !Config.corpus_dir filename mutant in
         let seed = SeedPool.push mutant pool in
         let cov = LineCoverage.join cov cov_mutant in
+        F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
+          (gen_count + 1)
+          (LineCoverage.cardinal cov);
         (seed, cov, gen_count + 1)
     in
 
@@ -170,7 +172,7 @@ let rec fuzz pool cov gen_count =
       output_string timestamp_fp
         (string_of_int (now () - !start_time)
         ^ " "
-        ^ string_of_int (LineCoverage.total_cardinal cov')
+        ^ string_of_int (LineCoverage.cardinal cov')
         ^ "\n"));
     (pool', cov', gen_count)
   in
@@ -199,7 +201,7 @@ let main () =
   Sys.command "rm *.gcov" |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "total coverage: %d lines@." (LineCoverage.total_cardinal coverage);
+  F.printf "total coverage: %d lines@." (LineCoverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !start_time)
 
 let _ = main ()
