@@ -181,10 +181,10 @@ let rec fuzz pool cov gen_count =
       (pool_popped, cov, gen_count)
       !Config.num_mutant
   in
-
+  let pool' = SeedPool.push seed pool' in
   (* repeat until the time budget or seed pool exhausts *)
-  if now () - !start_time > !Config.time_budget || SeedPool.cardinal pool' = 0
-  then cov'
+  if !Config.time_budget > 0 && now () - !start_time > !Config.time_budget then
+    cov'
   else fuzz pool' cov' gen_count
 
 let main () =

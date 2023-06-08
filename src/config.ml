@@ -14,7 +14,7 @@ let alive2_bin = ref "alive2/build/alive-tv"
 
 (* fuzzing options *)
 let random_seed = ref 0
-let time_budget = ref (60 * 60 * 4)
+let time_budget = ref (-1)
 let num_mutation = ref 1
 let num_mutant = ref 10
 let no_tv = ref false
