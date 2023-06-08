@@ -4,6 +4,8 @@ let project_home = ref ""
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "llfuzz-crash"
+let gcov_dir = ref "gcov"
+let workspace = ref ""
 
 (* build/binaries *)
 let opt_bin = ref "llvm-project/build/bin/opt"
@@ -49,7 +51,7 @@ let to_gcda category code =
     ("llvm-project/build/lib/Transforms/" ^ category ^ "/CMakeFiles/LLVM"
    ^ category ^ ".dir/" ^ code ^ ".cpp.gcda")
 
-let to_gcov code = "./" ^ code ^ ".cpp.gcov"
+let to_gcov code = !gcov_dir ^ "/" ^ code ^ ".cpp.gcov"
 
 (* whitelist members *)
 

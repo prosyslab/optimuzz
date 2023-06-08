@@ -51,16 +51,19 @@ let initialize () =
     |> Filename.dirname |> Filename.dirname;
   Config.opt_bin := concat_home !Config.opt_bin;
   Config.alive2_bin := concat_home !Config.alive2_bin;
+  Config.workspace := Unix.getcwd ();
+  Config.gcov_dir := Filename.concat !Config.out_dir !Config.gcov_dir;
+  (* these files are bound to (outer) workspace *)
+  (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
+  (try Sys.mkdir !Config.gcov_dir 0o755 with _ -> ());
+  (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
   Config.init_whitelist ();
   Config.init_gcda_list ();
   Config.init_gcov_list ();
-  (* these files are bound to (outer) workspace *)
-  (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
-  (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
-
   Random.init !Config.random_seed
 
 let run_gcov () =
+  Unix.chdir !Config.gcov_dir;
   let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0o644 in
   List.iter
     (fun elem ->
@@ -70,7 +73,8 @@ let run_gcov () =
           Unix.stdin devnull devnull
       in
       Unix.waitpid [] llvm_pid |> ignore)
-    !Config.gcda_list
+    !Config.gcda_list;
+  Unix.chdir !Config.workspace
 
 let get_coverage () =
   run_gcov ();
