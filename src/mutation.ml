@@ -252,7 +252,7 @@ let modify_value _ v l =
   | Llvm.TypeKind.Pointer ->
       (* nothing can be done *)
       if l <> [] then Utils.list_random [ v; Utils.list_random l ] else v
-  | _ -> failwith "Not implemented"
+  | _ -> v
 
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
@@ -319,7 +319,7 @@ let create_random_instr llctx loc =
         aux [] (Llvm.block_pred block)
       in
       if incoming <> [] then create_phi llctx block incoming else loc
-  | OTHER -> failwith "Not implemented"
+  | OTHER -> loc
 
 (** [subst_random_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
@@ -346,7 +346,7 @@ let subst_random_instr llctx instr =
       in
       aux ()
   | PHI -> instr (* TODO *)
-  | OTHER -> failwith "Not implemented"
+  | OTHER -> instr
 
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available one.
