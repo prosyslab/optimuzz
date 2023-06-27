@@ -194,6 +194,14 @@ let main () =
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
+  (* TODO: merge this pathway into main fuzzing *)
+  if !Config.pattern_path <> "" then (
+    let name, tree = Pattern.parse !Config.pattern_path in
+    print_endline name;
+    tree |> Pattern.string_of_tree |> print_endline;
+    Pattern.generate_simplest tree |> ignore;
+    exit 0);
+
   start_time := now ();
   let coverage = fuzz seed_pool LineCoverage.empty 0 in
   let end_time = now () in
