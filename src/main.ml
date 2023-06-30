@@ -196,11 +196,9 @@ let main () =
 
   (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
-    let name, pattern = Pattern.parse !Config.pattern_path in
-    print_endline name;
-    pattern |> Pattern.string_of_pat |> print_endline;
-    Pattern.instantiate pattern |> Llvm.print_module "test.ll";
-    print_endline "Complete!";
+    !Config.pattern_path |> Pattern.parse |> List.hd |> snd
+    |> Pattern.instantiate
+    |> Llvm.print_module "test.ll";
     exit 0);
 
   start_time := now ();
