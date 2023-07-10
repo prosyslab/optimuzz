@@ -1,4 +1,5 @@
-module OpCls = Utils.OpcodeClass
+module LUtil = Util.LUtil
+module OpCls = Util.OpcodeClass
 
 (** [replace_hard bef aft] replaces
     all uses of [bef] to [aft] and delete [bef]. *)
@@ -247,11 +248,11 @@ let modify_value _ v l =
         | None -> Random.int 100 - 50
       in
       if l <> [] then
-        Utils.list_random [ Llvm.const_int ty c; Utils.list_random l ]
+        LUtil.list_random [ Llvm.const_int ty c; LUtil.list_random l ]
       else Llvm.const_int ty c
   | Llvm.TypeKind.Pointer ->
       (* nothing can be done *)
-      if l <> [] then Utils.list_random [ v; Utils.list_random l ] else v
+      if l <> [] then LUtil.list_random [ v; LUtil.list_random l ] else v
   | _ -> v
 
 (** [create_random_instr llctx loc] creates
@@ -264,9 +265,9 @@ let create_random_instr llctx loc =
   let ptr = Llvm.pointer_type i32 in
   let zero = Llvm.const_int i32 0 in
   let null = Llvm.const_pointer_null ptr in
-  let preds = Utils.get_instrs_before ~wide:true loc in
-  let preds_i32 = Utils.list_filter_type i32 preds in
-  let preds_ptr = Utils.list_filter_type ptr preds in
+  let preds = LUtil.get_instrs_before ~wide:true loc in
+  let preds_i32 = LUtil.list_filter_type i32 preds in
+  let preds_ptr = LUtil.list_filter_type ptr preds in
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
   | OpCls.TER -> loc (* respect the sole terminator *)
@@ -294,7 +295,7 @@ let create_random_instr llctx loc =
         (Llvm.i32_type llctx)
   | CMP ->
       create_cmp llctx loc
-        (Utils.list_random OpCls.cmp_kind)
+        (LUtil.list_random OpCls.cmp_kind)
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
   | PHI ->
@@ -309,10 +310,10 @@ let create_random_instr llctx loc =
                 (if ter |> Llvm.successors |> Array.mem block then
                  let vl =
                    ter
-                   |> Utils.get_instrs_before ~wide:false
-                   |> Utils.list_filter_type i32
+                   |> LUtil.get_instrs_before ~wide:false
+                   |> LUtil.list_filter_type i32
                  in
-                 if vl <> [] then (Utils.list_random vl, b) :: accu else accu
+                 if vl <> [] then (LUtil.list_random vl, b) :: accu else accu
                 else accu)
                 (Llvm.block_pred b)
         in
@@ -341,7 +342,7 @@ let subst_random_instr llctx instr =
   | CMP ->
       let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
       let rec aux () =
-        let cmp = Utils.list_random OpCls.cmp_kind in
+        let cmp = LUtil.list_random OpCls.cmp_kind in
         if cmp = old_cmp then aux () else subst_cmp llctx instr cmp
       in
       aux ()
@@ -358,8 +359,8 @@ let subst_random_operand llctx instr =
     let i = Random.int num_operands in
     let old_o = Llvm.operand instr i in
     let candidates =
-      Utils.list_filter_type (Llvm.type_of old_o)
-        (Utils.get_instrs_before ~wide:true instr)
+      LUtil.list_filter_type (Llvm.type_of old_o)
+        (LUtil.get_instrs_before ~wide:true instr)
     in
     if candidates <> [] then
       Llvm.set_operand instr i (modify_value llctx old_o candidates);
@@ -373,7 +374,7 @@ let mutate_CFG _ = Fun.id
 
 (* inner-basicblock mutation (independent of block CFG) *)
 let mutate_inner_bb llctx llm =
-  let open Utils in
+  let open LUtil in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu i -> i :: accu) [] f in
   let i = list_random all_instrs in

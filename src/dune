@@ -1,4 +1,12 @@
 (executable
  (name main)
- (modules config gcov main domain utils mutation pattern)
- (libraries llvm llvm.bitreader llvm.irreader llvm.transform_utils str unix))
+ (modules config gcov main domain mutation)
+ (libraries
+  llvm
+  llvm.bitreader
+  llvm.irreader
+  llvm.transform_utils
+  str
+  unix
+  pattern
+  util))
