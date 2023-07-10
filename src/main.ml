@@ -148,7 +148,7 @@ let rec fuzz pool cov gen_count =
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov, gen_count) =
     let mutant =
-      Utils.repeat_fun (Mutation.run llctx) seed !Config.num_mutation
+      Util.LUtil.repeat_fun (Mutation.run llctx) seed !Config.num_mutation
     in
     let filename = new_ll () in
     (* TODO: not using run result, only caring coverage *)
@@ -179,7 +179,7 @@ let rec fuzz pool cov gen_count =
 
   (* each seed is mutated into n mutants *)
   let pool', cov', gen_count =
-    Utils.repeat_fun mutate_seed
+    Util.LUtil.repeat_fun mutate_seed
       (pool_popped, cov, gen_count)
       !Config.num_mutant
   in
@@ -196,8 +196,8 @@ let main () =
 
   (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
-    !Config.pattern_path |> Pattern.parse |> List.hd |> snd
-    |> Pattern.instantiate
+    !Config.pattern_path |> Pattern.Parser.run |> List.hd |> snd
+    |> Pattern.Instantiation.run
     |> Llvm.print_module "test.ll";
     exit 0);
 

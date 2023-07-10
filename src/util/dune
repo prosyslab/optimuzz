@@ -1,0 +1,4 @@
+(library
+ (name util)
+ (modules LUtil opcodeClass)
+ (libraries llvm))
