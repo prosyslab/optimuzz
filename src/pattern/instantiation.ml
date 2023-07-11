@@ -2,8 +2,11 @@ open IR
 
 (* INSTANTIATION: Connects LLVM and Pattern IR *)
 (* Here, 'instance' means LLModule of a single function. *)
+type instance_t = Llvm.llmodule
 
-let run (pat : pat_t) : Llvm.llmodule =
+(** [run name pat] returns an instance of the given pattern [pat].
+    Its function name is [name]. *)
+let run name pat =
   let module ParamMap = Map.Make (String) in
   let llctx = Llvm.create_context () in
   let llm = Llvm.create_module llctx "test" in
@@ -22,7 +25,7 @@ let run (pat : pat_t) : Llvm.llmodule =
 
   (* define the function *)
   let f =
-    Llvm.define_function "f"
+    Llvm.define_function name
       (Llvm.function_type i32
          (Array.make (ParamMap.cardinal param_idx_map) i32))
       llm
