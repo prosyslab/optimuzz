@@ -83,7 +83,7 @@ let run pat_filename =
            let name = List.hd inner_paren in
            let pat_raw = inner_paren |> List.tl |> List.hd in
            ( name,
-             pat_raw
+             pat_raw |> String.trim
              |> Str.global_replace (Str.regexp " ") ""
              |> parse_single_match ))
   in
