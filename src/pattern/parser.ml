@@ -74,19 +74,20 @@ let run pat_filename =
   close_in pat_file;
 
   (* parse each match *)
-  let opcode_str = List.hd lines in
-  let pats =
-    lines |> List.tl
-    |> List.rev_map (fun line ->
-           let _, inner_paren = brack line in
-           let inner_paren = Option.get inner_paren in
-           let name = List.hd inner_paren in
-           let pat_raw = inner_paren |> List.tl |> List.hd in
-           ( name,
-             pat_raw |> String.trim
-             |> Str.global_replace (Str.regexp " ") ""
-             |> parse_single_match ))
+  let patmap =
+    List.rev_map
+      (fun line ->
+        let _, inner_paren = brack line in
+        let inner_paren = Option.get inner_paren in
+        let name = List.hd inner_paren in
+        let pat_raw = inner_paren |> List.tl |> List.hd in
+        ( name,
+          pat_raw |> String.trim
+          |> Str.global_replace (Str.regexp " ") ""
+          |> parse_single_match ))
+      lines
+    |> List.to_seq |> PatMap.of_seq
   in
 
-  (* TODO: associate by root operator *)
-  pats
+  (* link all patterns *)
+  link patmap
