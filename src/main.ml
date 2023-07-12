@@ -196,7 +196,7 @@ let main () =
 
   (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
-    let name, pat = !Config.pattern_path |> Pattern.Parser.run |> List.hd in
+    let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     Pattern.Instantiation.run name pat |> Llvm.print_module "test.ll";
     exit 0);
 
