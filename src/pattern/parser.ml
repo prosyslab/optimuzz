@@ -58,6 +58,8 @@ let rec parse_single_match pat_raw =
         let sps = List.map parse_single_match sps_raw in
         match name with
         | "m_Value" | "m_Specific" -> List.hd sps
+        | "m_Neg" -> Operator (Sub, [ Const ("0", ( = ) 0); List.hd sps ])
+        | "m_Not" -> Operator (Xor, [ Const ("-1", ( = ) (-1)); List.hd sps ])
         | _ ->
             Operator
               ( opcode_of_string (String.sub name 2 (String.length name - 2)),
