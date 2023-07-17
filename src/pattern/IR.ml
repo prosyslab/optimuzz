@@ -73,12 +73,6 @@ let string_of_pat pat =
 
 module NameMap = Map.Make (String)
 
-module PatMap = struct
-  include NameMap
-
-  type t = pat_t NameMap.t
-end
-
 (** [link patmap] links patterns of different names into a single pattern. *)
 let link patmap =
   let is_subpat spname pname =
@@ -87,15 +81,15 @@ let link patmap =
       | Var name -> spname = name
       | Operator (_, sps) -> List.exists aux sps
     in
-    aux (PatMap.find pname patmap)
+    aux (NameMap.find pname patmap)
   in
 
   (* find root pattern; root pattern is subpattern of none *)
   let rootpat_name, rootpat =
     patmap
-    |> PatMap.filter (fun rpname _ ->
-           PatMap.for_all (fun pname _ -> not (is_subpat rpname pname)) patmap)
-    |> PatMap.choose
+    |> NameMap.filter (fun rpname _ ->
+           NameMap.for_all (fun pname _ -> not (is_subpat rpname pname)) patmap)
+    |> NameMap.choose
   in
 
   (* substitute subpatterns *)
@@ -103,7 +97,7 @@ let link patmap =
     match pat with
     | Any | Const _ -> pat
     | Var name -> (
-        match PatMap.find_opt name patmap with
+        match NameMap.find_opt name patmap with
         | Some sp -> substitute sp
         | None -> pat)
     | Operator (opcode, sps) -> Operator (opcode, List.map substitute sps)

@@ -88,7 +88,7 @@ let run pat_filename =
           |> Str.global_replace (Str.regexp " ") ""
           |> parse_single_match ))
       lines
-    |> List.to_seq |> PatMap.of_seq
+    |> List.to_seq |> NameMap.of_seq
   in
 
   (* link all patterns *)
