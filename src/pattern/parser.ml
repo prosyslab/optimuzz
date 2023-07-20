@@ -83,13 +83,24 @@ let rec parse_single_match pat_raw =
         match name with
         | "m_Value" | "m_Specific" -> List.hd sps
         | "m_Neg" ->
-            Operator (Sub, [ Const ("0", IntCstr (( = ) 0)); List.hd sps ])
+            BinOp (Sub, false, Const ("0", IntCstr (( = ) 0)), List.hd sps)
         | "m_Not" ->
-            Operator (Xor, [ Const ("-1", IntCstr (( = ) (-1))); List.hd sps ])
+            BinOp (Xor, false, Const ("-1", IntCstr (( = ) (-1))), List.hd sps)
         | _ ->
-            Operator
-              ( opcode_of_string (String.sub name 2 (String.length name - 2)),
-                sps ))
+            let lhs = List.hd sps in
+            let rhs = sps |> List.tl |> List.hd in
+            if String.starts_with ~prefix:"m_c_" name then
+              BinOp
+                ( binop_of_string (String.sub name 4 (String.length name - 4)),
+                  true,
+                  lhs,
+                  rhs )
+            else
+              BinOp
+                ( binop_of_string (String.sub name 2 (String.length name - 2)),
+                  false,
+                  lhs,
+                  rhs ))
   | None -> Var name
 
 let run pat_filename =

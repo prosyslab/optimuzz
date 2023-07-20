@@ -1,4 +1,4 @@
-type opcode_t =
+type binop_t =
   | Add
   | Sub
   | Mul
@@ -13,7 +13,7 @@ type opcode_t =
   | Or
   | Xor
 
-let string_of_opcode = function
+let string_of_binop = function
   | Add -> "Add"
   | Sub -> "Sub"
   | Mul -> "Mul"
@@ -28,8 +28,8 @@ let string_of_opcode = function
   | Or -> "Or"
   | Xor -> "Xor"
 
-let opcode_of_string opcode_str =
-  match opcode_str with
+let binop_of_string binop_str =
+  match binop_str with
   | "Add" -> Add
   | "Sub" -> Sub
   | "Mul" -> Mul
@@ -43,7 +43,7 @@ let opcode_of_string opcode_str =
   | "And" -> And
   | "Or" -> Or
   | "Xor" -> Xor
-  | _ -> raise (Invalid_argument opcode_str)
+  | _ -> raise (Invalid_argument binop_str)
 
 type cstr_t = IntCstr of (int -> bool) | FloatCstr of (float -> bool)
 
@@ -56,7 +56,7 @@ type pat_t =
   (* Var: variable; includes undef and poison *)
   | Var of string
   (* Operator: (opcode, operands). *)
-  | Operator of opcode_t * pat_t list
+  | BinOp of binop_t * bool * pat_t * pat_t
 
 let string_of_pat pat =
   let rec aux nSpaces pat =
@@ -67,9 +67,13 @@ let string_of_pat pat =
     | Any -> "ANYTHING"
     | Const (name, _) -> name
     | Var name -> name
-    | Operator (opcode, sps) ->
-        string_of_opcode opcode ^ "(\n"
-        ^ (nSpaces + 2 |> aux |> (Fun.flip List.map) sps |> String.concat ",\n")
+    | BinOp (binop, comm, lhs, rhs) ->
+        string_of_binop binop
+        ^ (if comm then "-comm" else "")
+        ^ "(\n"
+        ^ aux (nSpaces + 2) lhs
+        ^ ",\n"
+        ^ aux (nSpaces + 2) rhs
         ^ "\n" ^ indent ^ ")"
   in
   aux 0 pat
@@ -82,7 +86,7 @@ let link patmap =
     let rec aux = function
       | Any | Const _ -> false
       | Var name -> spname = name
-      | Operator (_, sps) -> List.exists aux sps
+      | BinOp (_, _, lhs, rhs) -> aux lhs || aux rhs
     in
     aux (NameMap.find pname patmap)
   in
@@ -103,7 +107,8 @@ let link patmap =
         match NameMap.find_opt name patmap with
         | Some sp -> substitute sp
         | None -> pat)
-    | Operator (opcode, sps) -> Operator (opcode, List.map substitute sps)
+    | BinOp (binop, comm, lhs, rhs) ->
+        BinOp (binop, comm, substitute lhs, substitute rhs)
   in
 
   (rootpat_name, substitute rootpat)
