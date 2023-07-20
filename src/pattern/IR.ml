@@ -45,11 +45,14 @@ let opcode_of_string opcode_str =
   | "Xor" -> Xor
   | _ -> raise (Invalid_argument opcode_str)
 
+type cstr_t = IntCstr of (int -> bool) | FloatCstr of (float -> bool)
+
 (* tree of instructions, associating constraints to constants *)
 type pat_t =
+  (* Any: nonterminal (undetermined) placeholder *)
   | Any
   (* Const: constant; string is used only for debugging *)
-  | Const of string * (int -> bool)
+  | Const of string * cstr_t
   (* Var: variable; includes undef and poison *)
   | Var of string
   (* Operator: (opcode, operands). *)

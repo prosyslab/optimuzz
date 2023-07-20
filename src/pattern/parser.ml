@@ -42,24 +42,50 @@ let rec parse_single_match pat_raw =
         | "m_Value" -> Any
         | "m_Undef" -> Var "UNDEF"
         | "m_Poison" -> Var "POISON"
-        | "m_Constant" -> Const ("Any constant", Fun.const true)
-        | "m_AllOnes" -> Const ("-1", ( = ) (-1))
-        | "m_Negative" -> Const ("Negative", ( < ) 0)
-        | "m_NonNegative" -> Const ("Nonnegative", ( >= ) 0)
-        | "m_StrictlyPositive" -> Const ("Positive", ( > ) 0)
-        | "m_NonPositive" -> Const ("Nonpositive", ( <= ) 0)
-        | "m_One" -> Const ("1", ( = ) 1)
-        | "m_Power2" -> Const ("2^n", fun x -> x > 0 && x land (x - 1) = 0)
+        (* FIXME: m_constant requires no type constraint *)
+        | "m_Constant" -> Const ("Any constant", IntCstr (Fun.const true))
+        | "m_ConstantInt" -> Const ("Any int", IntCstr (Fun.const true))
+        | "m_ConstantFP" -> Const ("Any float", FloatCstr (Fun.const true))
+        | "m_AllOnes" -> Const ("-1", IntCstr (( = ) (-1)))
+        | "m_Negative" -> Const ("Negative", IntCstr (( < ) 0))
+        | "m_NonNegative" -> Const ("Nonnegative", IntCstr (( >= ) 0))
+        | "m_StrictlyPositive" -> Const ("Positive", IntCstr (( > ) 0))
+        | "m_NonPositive" -> Const ("Nonpositive", IntCstr (( <= ) 0))
+        | "m_One" -> Const ("1", IntCstr (( = ) 1))
+        | "m_Power2" ->
+            Const ("2^n", IntCstr (fun x -> x > 0 && x land (x - 1) = 0))
+        | "m_NegatedPower2" ->
+            Const ("-2^n", IntCstr (fun x -> x < 0 && -x land (-x - 1) = 0))
         | "m_Power2OrZero" ->
-            Const ("2^n (or zero)", fun x -> x land (x - 1) = 0)
-        | "m_Zero" -> Const ("0", ( = ) 0)
+            Const ("2^n (or zero)", IntCstr (fun x -> x land (x - 1) = 0))
+        (* FIXME: no diff between following two matches *)
+        | "m_ZeroInt" -> Const ("0", IntCstr (( = ) 0))
+        | "m_Zero" -> Const ("0", IntCstr (( = ) 0))
+        | "m_NaN" -> Const ("NaN", FloatCstr Float.is_nan)
+        | "m_NonNaN" ->
+            Const ("Not NaN", FloatCstr (fun x -> x |> Float.is_nan |> not))
+        | "m_Inf" -> Const ("INF", FloatCstr Float.is_infinite)
+        | "m_NonInf" ->
+            Const ("Not INF", FloatCstr (fun x -> x |> Float.is_nan |> not))
+        | "m_Finite" -> Const ("FIN", FloatCstr Float.is_finite)
+        | "m_FiniteNonZero" ->
+            Const
+              ("FIN not 0.", FloatCstr (fun x -> Float.is_finite x && x != 0.0))
+        (* FIXME: OCaml does not distinguish pos/neg zero. *)
+        | "m_AnyZeroFP" -> Const ("+-0.", FloatCstr (( = ) 0.0))
+        | "m_PosZeroFP" -> Const ("+0.", FloatCstr (( = ) 0.0))
+        | "m_NegZeroFP" -> Const ("-0.", FloatCstr (( = ) 0.0))
+        | "m_NonZeroFP" -> Const ("Not 0.", FloatCstr (( != ) 0.0))
+        | "m_FPOne" -> Const ("1.", FloatCstr (( = ) 1.0))
         | _ -> raise (Invalid_argument name)
       else
         let sps = List.map parse_single_match sps_raw in
         match name with
         | "m_Value" | "m_Specific" -> List.hd sps
-        | "m_Neg" -> Operator (Sub, [ Const ("0", ( = ) 0); List.hd sps ])
-        | "m_Not" -> Operator (Xor, [ Const ("-1", ( = ) (-1)); List.hd sps ])
+        | "m_Neg" ->
+            Operator (Sub, [ Const ("0", IntCstr (( = ) 0)); List.hd sps ])
+        | "m_Not" ->
+            Operator (Xor, [ Const ("-1", IntCstr (( = ) (-1))); List.hd sps ])
         | _ ->
             Operator
               ( opcode_of_string (String.sub name 2 (String.length name - 2)),

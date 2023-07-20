@@ -44,11 +44,14 @@ let run name pat =
   let const_of = Llvm.const_int i32 in
   let rec aux = function
     | Any -> Llvm.const_int i32 0
-    | Const (_, cstr) ->
-        if cstr (-1) then const_of (-1)
-        else if cstr 0 then const_of 0
-        else if cstr 1 then const_of 1
-        else raise Not_found
+    | Const (_, cstr) -> (
+        match cstr with
+        | IntCstr cstr ->
+            if cstr (-1) then const_of (-1)
+            else if cstr 0 then const_of 0
+            else if cstr 1 then const_of 1
+            else raise Not_found
+        | FloatCstr _ -> failwith "Not implemented")
     | Var name -> ParamMap.find name param_llv_map
     | Operator (opcode_llvm, sps) -> (
         let sp_instances = List.map aux sps in
