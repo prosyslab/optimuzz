@@ -18,7 +18,7 @@ let run name pat =
     | Var name ->
         if ParamMap.mem name m then m
         else ParamMap.add name (ParamMap.cardinal m) m
-    | Operator (_, sps) -> List.fold_left number_vars m sps
+    | BinOp (_, _, lhs, rhs) -> number_vars (number_vars m lhs) rhs
     | _ -> m
   in
   let param_idx_map = number_vars ParamMap.empty pat in
@@ -53,19 +53,16 @@ let run name pat =
             else raise Not_found
         | FloatCstr _ -> failwith "Not implemented")
     | Var name -> ParamMap.find name param_llv_map
-    | Operator (opcode_llvm, sps) -> (
-        let sp_instances = List.map aux sps in
+    | BinOp (binop, _, lhs, rhs) -> (
+        let lhs_instance = aux lhs in
+        let rhs_instance = aux rhs in
         let opcode_llvm =
-          opcode_llvm |> string_of_opcode |> Util.LUtil.opcode_of_string
+          binop |> string_of_binop |> Util.LUtil.opcode_of_string
         in
         let open Util.OpcodeClass in
         match classify opcode_llvm with
-        | ARITH ->
-            build_arith opcode_llvm (List.nth sp_instances 0)
-              (List.nth sp_instances 1) builder
-        | LOGIC ->
-            build_logic opcode_llvm (List.nth sp_instances 0)
-              (List.nth sp_instances 1) builder
+        | ARITH -> build_arith opcode_llvm lhs_instance rhs_instance builder
+        | LOGIC -> build_logic opcode_llvm lhs_instance rhs_instance builder
         | _ -> failwith "Not implemented")
   in
   Llvm.build_ret (aux pat) builder |> ignore;
