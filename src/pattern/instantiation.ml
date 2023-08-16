@@ -1,4 +1,5 @@
 open IR
+open Util.OpcodeClass
 
 (* INSTANTIATION: Connects LLVM and Pattern IR *)
 (* Here, 'instance' means LLModule of a single function. *)
@@ -10,6 +11,7 @@ let run name pat =
   let module ParamMap = Map.Make (String) in
   let llctx = Llvm.create_context () in
   let llm = Llvm.create_module llctx "test" in
+  let i1 = Llvm.i1_type llctx in
   let i32 = Llvm.i32_type llctx in
 
   (* find all variables in the pattern *)
@@ -22,11 +24,21 @@ let run name pat =
     | _ -> m
   in
   let param_idx_map = number_vars ParamMap.empty pat in
-
   (* define the function *)
   let f =
+    let ret_type =
+      match pat with
+      | BinOp (binop, _, _, _) -> (
+          match
+            binop |> string_of_binop |> Util.LUtil.opcode_of_string |> classify
+          with
+          | ARITH | LOGIC -> i32
+          | CMP -> i1
+          | _ -> failwith "Not implemented")
+      | _ -> failwith "Return is not a instruction"
+    in
     Llvm.define_function name
-      (Llvm.function_type i32
+      (Llvm.function_type ret_type
          (Array.make (ParamMap.cardinal param_idx_map) i32))
       llm
   in
@@ -59,11 +71,12 @@ let run name pat =
         let opcode_llvm =
           binop |> string_of_binop |> Util.LUtil.opcode_of_string
         in
-        let open Util.OpcodeClass in
         match classify opcode_llvm with
         | ARITH -> build_arith opcode_llvm lhs_instance rhs_instance builder
         | LOGIC -> build_logic opcode_llvm lhs_instance rhs_instance builder
+        | CMP -> build_cmp Llvm.Icmp.Ne lhs_instance rhs_instance builder
         | _ -> failwith "Not implemented")
   in
+
   Llvm.build_ret (aux pat) builder |> ignore;
   llm

@@ -12,6 +12,8 @@ type binop_t =
   | And
   | Or
   | Xor
+  | ICmp
+  | FCmp
 
 let string_of_binop = function
   | Add -> "Add"
@@ -27,6 +29,8 @@ let string_of_binop = function
   | And -> "And"
   | Or -> "Or"
   | Xor -> "Xor"
+  | ICmp -> "ICmp"
+  | FCmp -> "FCmp"
 
 let binop_of_string binop_str =
   match binop_str with
@@ -43,6 +47,8 @@ let binop_of_string binop_str =
   | "And" -> And
   | "Or" -> Or
   | "Xor" -> Xor
+  | "ICmp" -> ICmp
+  | "FCmp" -> FCmp
   | _ -> raise (Invalid_argument binop_str)
 
 type cstr_t = IntCstr of (int -> bool) | FloatCstr of (float -> bool)

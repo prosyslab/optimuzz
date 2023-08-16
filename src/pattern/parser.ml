@@ -86,6 +86,8 @@ let rec parse_single_match pat_raw =
             BinOp (Sub, false, Const ("0", IntCstr (( = ) 0)), List.hd sps)
         | "m_Not" ->
             BinOp (Xor, false, Const ("-1", IntCstr (( = ) (-1))), List.hd sps)
+        | "m_APInt" -> Const ("Any int", IntCstr (Fun.const true))
+        | "m_OneUse" -> sps_raw |> List.hd |> parse_single_match
         | _ ->
             let lhs = List.hd sps in
             let rhs = sps |> List.tl |> List.hd in
@@ -95,13 +97,19 @@ let rec parse_single_match pat_raw =
                   true,
                   lhs,
                   rhs )
+            else if String.starts_with ~prefix:"Shl" name then
+              BinOp (binop_of_string (String.sub name 0 3), true, lhs, rhs)
             else
               BinOp
                 ( binop_of_string (String.sub name 2 (String.length name - 2)),
                   false,
                   lhs,
                   rhs ))
-  | None -> Var name
+  | None -> (
+      match name with
+      (* TODO: check ShiftAmt can possible unknwon *)
+      | "ShiftAmt" -> Any
+      | _ -> Var name)
 
 let run pat_filename =
   (* read all lines from file *)
@@ -127,6 +135,5 @@ let run pat_filename =
       lines
     |> List.to_seq |> NameMap.of_seq
   in
-
   (* link all patterns *)
   link patmap
