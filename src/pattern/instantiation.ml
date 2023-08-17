@@ -85,14 +85,11 @@ let run name pat : instance_t list =
   let buffer_of = fst in
   let llm_of = snd in
   let push_buffer incoming cand = (Some incoming, cand |> buffer_of |> fst) in
-  let push_and_keep (incoming : Llvm.llvalue) (cand : cand_t) : cand_t =
-    (push_buffer incoming cand, llm_of cand)
-  in
+  let push_and_keep incoming cand = (push_buffer incoming cand, llm_of cand) in
 
   (* postorder traversal involving instruction generation *)
   let rec traverse pat cands =
     let fold_cand f = List.fold_left f [] cands in
-    print_endline "fuck";
     match pat with
     | Any ->
         (* TODO: var is also allowed here -- m_OneUse? *)
@@ -110,8 +107,6 @@ let run name pat : instance_t list =
                   accu (llvs_possible cstr))
         | FloatCstr _ -> failwith "Not implemented")
     | Var name ->
-        print_endline "fuck2";
-        print_endline name;
         List.map
           (fun cand ->
             let llm = llm_of cand in
@@ -176,26 +171,31 @@ let run name pat : instance_t list =
             in
 
             (* helpers finding corresponding cloned value *)
-            let lhs = buffer |> snd |> Option.get in
+            let lhs =
+              match lhs with
+              | Var name ->
+                  Llvm.param (func_of llm_original)
+                    (ParamMap.find name param_idx_map)
+              | _ -> buffer |> snd |> Option.get
+            in
             let rhs = buffer |> fst |> Option.get in
             let renew_rhs llm =
               match Llvm.classify_value rhs with
               | Argument ->
                   Llvm.param (func_of llm)
                     (ParamMap.find (Llvm.value_name rhs) param_idx_map)
-              | Instruction _ -> (
-                  match Llvm.classify_value lhs with
-                  | Instruction _ -> llm |> last2_instr |> Option.get
-                  | _ -> llm |> last_instr |> Option.get)
+              | Instruction _ -> llm |> last_instr |> Option.get
               | _ -> rhs
             in
-
             let renew_lhs llm =
               match Llvm.classify_value lhs with
               | Argument ->
                   Llvm.param (func_of llm)
                     (ParamMap.find (Llvm.value_name lhs) param_idx_map)
-              | Instruction _ -> llm |> last_instr |> Option.get
+              | Instruction _ -> (
+                  match Llvm.classify_value rhs with
+                  | Instruction _ -> llm |> last2_instr |> Option.get
+                  | _ -> llm |> last_instr |> Option.get)
               | _ -> lhs
             in
 
