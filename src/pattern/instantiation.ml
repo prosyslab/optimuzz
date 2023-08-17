@@ -16,6 +16,7 @@ let run name pat : instance_t list =
   let llctx = Llvm.create_context () in
   let i1 = Llvm.i1_type llctx in
   let i32 = Llvm.i32_type llctx in
+  let i64 = Llvm.i64_type llctx in
 
   (* find all variables in the pattern *)
   let rec number_vars m p =
@@ -23,6 +24,7 @@ let run name pat : instance_t list =
     | Var name ->
         if ParamMap.mem name m then m
         else ParamMap.add name (ParamMap.cardinal m) m
+    | UnOp (_, v) -> number_vars m v
     | BinOp (_, _, lhs, rhs) -> number_vars (number_vars m lhs) rhs
     | _ -> m
   in
@@ -90,6 +92,7 @@ let run name pat : instance_t list =
   (* postorder traversal involving instruction generation *)
   let rec traverse pat cands =
     let fold_cand f = List.fold_left f [] cands in
+    print_endline "fuck";
     match pat with
     | Any ->
         (* TODO: var is also allowed here -- m_OneUse? *)
@@ -107,12 +110,49 @@ let run name pat : instance_t list =
                   accu (llvs_possible cstr))
         | FloatCstr _ -> failwith "Not implemented")
     | Var name ->
+        print_endline "fuck2";
+        print_endline name;
         List.map
           (fun cand ->
             let llm = llm_of cand in
             push_and_keep
               (Llvm.param (func_of llm) (ParamMap.find name param_idx_map))
               cand)
+          cands
+    | UnOp (unop, v) ->
+        let cands = traverse v cands in
+        List.map
+          (fun cand ->
+            let llm = cand |> llm_of |> Llvm_transform_utils.clone_module in
+            let buffer = buffer_of cand in
+            let builder = builder_ur llm in
+
+            (* find corresponding cloned value *)
+            let last_instr =
+              match Llvm.instr_pred (ur_of llm) with
+              | After instr -> Some instr
+              | _ -> None
+            in
+
+            let v_bef = buffer |> fst |> Option.get in
+            let v_aft =
+              match Llvm.classify_value v_bef with
+              | Argument ->
+                  Llvm.param (func_of llm)
+                    (ParamMap.find (Llvm.value_name v_bef) param_idx_map)
+              | Instruction _ -> Option.get last_instr
+              | _ -> v_bef
+            in
+            (* add new instruction *)
+            let opcode_llvm =
+              unop |> string_of_unop |> Util.LUtil.opcode_of_string
+            in
+            let instr_new =
+              match classify opcode_llvm with
+              | CAST -> build_cast opcode_llvm v_aft i64 builder
+              | _ -> failwith "Not implemented"
+            in
+            ((Some instr_new, fst buffer), llm))
           cands
     | BinOp (binop, _, lhs, rhs) ->
         let cands = traverse rhs (traverse lhs cands) in
@@ -138,14 +178,6 @@ let run name pat : instance_t list =
             (* helpers finding corresponding cloned value *)
             let lhs = buffer |> snd |> Option.get in
             let rhs = buffer |> fst |> Option.get in
-            let renew_lhs llm =
-              match Llvm.classify_value lhs with
-              | Argument ->
-                  Llvm.param (func_of llm)
-                    (ParamMap.find (Llvm.value_name lhs) param_idx_map)
-              | Instruction _ -> llm |> last_instr |> Option.get
-              | _ -> lhs
-            in
             let renew_rhs llm =
               match Llvm.classify_value rhs with
               | Argument ->
@@ -156,6 +188,15 @@ let run name pat : instance_t list =
                   | Instruction _ -> llm |> last2_instr |> Option.get
                   | _ -> llm |> last_instr |> Option.get)
               | _ -> rhs
+            in
+
+            let renew_lhs llm =
+              match Llvm.classify_value lhs with
+              | Argument ->
+                  Llvm.param (func_of llm)
+                    (ParamMap.find (Llvm.value_name lhs) param_idx_map)
+              | Instruction _ -> llm |> last_instr |> Option.get
+              | _ -> lhs
             in
 
             (* add new instruction *)
@@ -192,7 +233,6 @@ let run name pat : instance_t list =
             | _ -> failwith "Not implemented")
           [] cands
   in
-
   (* finally, replace unreachables to return *)
   let llms = traverse pat [ ((None, None), llm_original) ] |> List.map snd in
   List.map

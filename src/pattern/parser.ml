@@ -82,6 +82,8 @@ let rec parse_single_match pat_raw =
         let sps = List.map parse_single_match sps_raw in
         match name with
         | "m_Value" | "m_Specific" -> List.hd sps
+        | "m_SExt" -> UnOp (SExt, List.hd sps)
+        | "m_ZExt" -> UnOp (ZExt, List.hd sps)
         | "m_Neg" ->
             BinOp (Sub, false, Const ("0", IntCstr (( = ) 0)), List.hd sps)
         | "m_Not" ->

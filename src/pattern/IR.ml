@@ -1,3 +1,13 @@
+type unop_t = SExt | ZExt
+
+let string_of_unop = function SExt -> "SExt" | ZExt -> "ZExt"
+
+let unop_of_string unop_str =
+  match unop_str with
+  | "SExt" -> SExt
+  | "ZExt" -> ZExt
+  | _ -> raise (Invalid_argument unop_str)
+
 type binop_t =
   | Add
   | Sub
@@ -61,6 +71,7 @@ type pat_t =
   | Const of string * cstr_t
   (* Var: variable; includes undef and poison *)
   | Var of string
+  | UnOp of unop_t * pat_t
   (* Operator: (opcode, operands). *)
   | BinOp of binop_t * bool * pat_t * pat_t
 
@@ -73,6 +84,8 @@ let string_of_pat pat =
     | Any -> "ANYTHING"
     | Const (name, _) -> name
     | Var name -> name
+    | UnOp (unop, v) ->
+        string_of_unop unop ^ "(\n" ^ aux (nSpaces + 2) v ^ "\n" ^ indent ^ ")"
     | BinOp (binop, comm, lhs, rhs) ->
         string_of_binop binop
         ^ (if comm then "-comm" else "")
@@ -92,6 +105,7 @@ let link patmap =
     let rec aux = function
       | Any | Const _ -> false
       | Var name -> spname = name
+      | UnOp (_, v) -> aux v
       | BinOp (_, _, lhs, rhs) -> aux lhs || aux rhs
     in
     aux (NameMap.find pname patmap)
@@ -113,8 +127,8 @@ let link patmap =
         match NameMap.find_opt name patmap with
         | Some sp -> substitute sp
         | None -> pat)
+    | UnOp (unop, v) -> UnOp (unop, substitute v)
     | BinOp (binop, comm, lhs, rhs) ->
         BinOp (binop, comm, substitute lhs, substitute rhs)
   in
-
   (rootpat_name, substitute rootpat)
