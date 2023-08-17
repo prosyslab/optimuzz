@@ -34,6 +34,9 @@ llfuzz
 *.ll
 !*.expected.ll
 
+# pattern files
+*.pat
+
 # latex
 *.aux
 *.log
