@@ -191,9 +191,6 @@ let rec fuzz pool cov gen_count =
 
 let main () =
   initialize ();
-  let seed_pool = SeedPool.of_dir !Config.seed_dir in
-  F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
-
   (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
@@ -204,6 +201,9 @@ let main () =
         count := !count + 1)
       all_instances;
     exit 0);
+
+  let seed_pool = SeedPool.of_dir !Config.seed_dir in
+  F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
   start_time := now ();
   let coverage = fuzz seed_pool LineCoverage.empty 0 in
