@@ -116,20 +116,18 @@ let run name pat : instance_t list =
           cands
     | BinOp (binop, _, lhs, rhs) ->
         let cands = traverse rhs (traverse lhs cands) in
-        List.map
-          (fun cand ->
-            let llm = cand |> llm_of |> Llvm_transform_utils.clone_module in
+        List.fold_left
+          (fun accu cand ->
             let buffer = buffer_of cand in
-            let builder = builder_ur llm in
 
-            (* find corresponding cloned value *)
-            let last_instr =
+            (* helpers for cloned modules *)
+            let last_instr llm =
               match Llvm.instr_pred (ur_of llm) with
               | After instr -> Some instr
               | _ -> None
             in
-            let last2_instr =
-              match last_instr with
+            let last2_instr llm =
+              match last_instr llm with
               | Some last_instr -> (
                   match Llvm.instr_pred last_instr with
                   | After instr -> Some instr
@@ -137,41 +135,62 @@ let run name pat : instance_t list =
               | None -> None
             in
 
-            let lhs_bef = buffer |> snd |> Option.get in
-            let rhs_bef = buffer |> fst |> Option.get in
-            let lhs_aft =
-              match Llvm.classify_value lhs_bef with
+            (* helpers finding corresponding cloned value *)
+            let lhs = buffer |> snd |> Option.get in
+            let rhs = buffer |> fst |> Option.get in
+            let renew_lhs llm =
+              match Llvm.classify_value lhs with
               | Argument ->
                   Llvm.param (func_of llm)
-                    (ParamMap.find (Llvm.value_name lhs_bef) param_idx_map)
-              | Instruction _ -> Option.get last_instr
-              | _ -> lhs_bef
+                    (ParamMap.find (Llvm.value_name lhs) param_idx_map)
+              | Instruction _ -> llm |> last_instr |> Option.get
+              | _ -> lhs
             in
-            let rhs_aft =
-              match Llvm.classify_value rhs_bef with
+            let renew_rhs llm =
+              match Llvm.classify_value rhs with
               | Argument ->
                   Llvm.param (func_of llm)
-                    (ParamMap.find (Llvm.value_name rhs_bef) param_idx_map)
+                    (ParamMap.find (Llvm.value_name rhs) param_idx_map)
               | Instruction _ -> (
-                  match Llvm.classify_value lhs_bef with
-                  | Instruction _ -> Option.get last2_instr
-                  | _ -> Option.get last_instr)
-              | _ -> rhs_bef
+                  match Llvm.classify_value lhs with
+                  | Instruction _ -> llm |> last2_instr |> Option.get
+                  | _ -> llm |> last_instr |> Option.get)
+              | _ -> rhs
             in
 
             (* add new instruction *)
             let opcode_llvm =
               binop |> string_of_binop |> Util.LUtil.opcode_of_string
             in
-            let instr_new =
-              match classify opcode_llvm with
-              | ARITH -> build_arith opcode_llvm lhs_aft rhs_aft builder
-              | LOGIC -> build_logic opcode_llvm lhs_aft rhs_aft builder
-              | CMP -> build_cmp Llvm.Icmp.Ne lhs_aft rhs_aft builder
-              | _ -> failwith "Not implemented"
-            in
-            ((Some instr_new, fst buffer), llm))
-          cands
+            match classify opcode_llvm with
+            | ARITH ->
+                let llm = cand |> llm_of |> Llvm_transform_utils.clone_module in
+                let instr_new =
+                  build_arith opcode_llvm (renew_lhs llm) (renew_rhs llm)
+                    (builder_ur llm)
+                in
+                ((Some instr_new, fst buffer), llm) :: accu
+            | LOGIC ->
+                let llm = cand |> llm_of |> Llvm_transform_utils.clone_module in
+                let instr_new =
+                  build_logic opcode_llvm (renew_lhs llm) (renew_rhs llm)
+                    (builder_ur llm)
+                in
+                ((Some instr_new, fst buffer), llm) :: accu
+            | CMP ->
+                List.fold_left
+                  (fun accu kind ->
+                    let llm =
+                      cand |> llm_of |> Llvm_transform_utils.clone_module
+                    in
+                    let instr_new =
+                      build_cmp kind (renew_lhs llm) (renew_rhs llm)
+                        (builder_ur llm)
+                    in
+                    ((Some instr_new, fst buffer), llm) :: accu)
+                  accu Util.OpcodeClass.cmp_kind
+            | _ -> failwith "Not implemented")
+          [] cands
   in
 
   (* finally, replace unreachables to return *)
