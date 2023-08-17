@@ -197,7 +197,12 @@ let main () =
   (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
-    Pattern.Instantiation.run name pat |> Llvm.print_module "test.ll";
+    let all_instances = Pattern.Instantiation.run name pat in
+    List.iter
+      (fun llm ->
+        Llvm.print_module (string_of_int !count ^ ".ll") llm;
+        count := !count + 1)
+      all_instances;
     exit 0);
 
   start_time := now ();
