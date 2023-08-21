@@ -10,7 +10,7 @@ module type COV_PER_FILE = sig
   val cardinal : t -> int
 end
 
-module Coverage (CovPerFile : COV_PER_FILE) = struct
+module CovMap (CovPerFile : COV_PER_FILE) = struct
   module FNameMap = Map.Make (String)
 
   type t = CovPerFile.t FNameMap.t
@@ -42,14 +42,13 @@ end
 
 (* Simple line-based coverage*)
 module LineSet = Set.Make (Int)
-module LineCoverage = Coverage (LineSet)
+module LineCoverage = CovMap (LineSet)
 
-(* mutation-tagged line coverage *)
-
-module MLSet = Set.Make (struct
+(* string-tagged line coverage *)
+module SLSet = Set.Make (struct
   type t = string * int
 
   let compare = compare
 end)
 
-module ML_Coverage = Coverage (MLSet)
+module ML_Coverage = CovMap (SLSet)

@@ -1,8 +1,8 @@
-open Coverage.Gcov
 open Coverage.Domain
+open Coverage.Gcov
 module F = Format
 
-type opt_res_t = CRASH | INVALID | VALID
+type res_t = CRASH | INVALID | VALID
 
 let llctx = Llvm.create_context ()
 let count = ref 0
@@ -15,13 +15,19 @@ let recent_time = ref 0
 let timestamp_fp = open_out timestamp
 
 (* helpers *)
-let concat_home s = Filename.concat !Config.project_home s
+let concat_home = Filename.concat !Config.project_home
 
 let new_ll () =
   count := !count + 1;
   string_of_int !count ^ ".ll"
 
+let name_opted_ver filename =
+  if String.ends_with ~suffix:".ll" filename then
+    String.sub filename 0 (String.length filename - 3) ^ ".opt.ll"
+  else filename ^ ".opt.ll"
+
 let now () = Unix.time () |> int_of_float
+let command_args args = args |> String.concat " " |> Sys.command
 
 module SeedPool = struct
   type t = Llvm.llmodule Queue.t
@@ -72,49 +78,51 @@ let initialize () =
 
 let run_alive2 filename =
   (* run alive2 *)
-  let pid =
-    Unix.create_process !Config.alive2_bin
-      [| !Config.alive2_bin; filename |]
-      Unix.stdin
-      (Unix.openfile alive2_log [ O_CREAT; O_WRONLY ] 0o640)
-      Unix.stderr
+  let filename = Filename.concat !Config.out_dir filename in
+  let exit_state =
+    command_args
+      [
+        !Config.alive2_bin;
+        filename;
+        name_opted_ver filename;
+        "| tail -n 4 >";
+        alive2_log;
+      ]
   in
-  Unix.waitpid [] pid |> ignore;
 
   (* review result *)
-  let file = open_in alive2_log in
-  let rec loop accu =
-    try loop (input_line file :: accu) with End_of_file -> accu
-  in
-  (* FIXME: magic number *)
-  let all_lines = loop [] |> List.rev |> List.filteri (fun i _ -> i < 6) in
-  close_in file;
-  let search src tgt =
-    let re_tgt = Str.regexp_string tgt in
-    try Str.search_forward re_tgt src 0 with Not_found -> -1
-  in
-  let rec aux accu = function
-    | [] -> accu
-    | hd :: tl ->
-        if
-          search hd "failed-to-prove transformations" = -1
-          || hd |> String.split_on_char ' ' |> Fun.flip List.nth 0
-             |> int_of_string = 0
-        then
-          if
-            search hd "incorrect transformations" = -1
-            || hd |> String.split_on_char ' ' |> Fun.flip List.nth 0
-               |> int_of_string = 0
-          then aux accu tl
-          else INVALID
-        else CRASH
-  in
-  aux VALID all_lines
+  if exit_state <> 0 then CRASH
+  else
+    let file = open_in alive2_log in
+    let rec loop accu =
+      match input_line file with
+      | exception End_of_file -> accu
+      | line -> loop (line :: accu)
+    in
+    let lines = [] |> loop |> List.rev in
+    close_in file;
+
+    let is_num_zero str =
+      str |> String.trim |> String.split_on_char ' ' |> List.hd |> int_of_string
+      = 0
+    in
+    let str_incorrect = List.nth lines 1 in
+    if is_num_zero str_incorrect then VALID else INVALID
 
 let run_opt filename =
   let filename = Filename.concat !Config.out_dir filename in
-  Sys.command
-    (!Config.opt_bin ^ " -S --passes=instcombine -o /dev/null " ^ filename)
+  let exit_state =
+    command_args
+      [
+        !Config.opt_bin;
+        filename;
+        "-S";
+        "--passes=instcombine";
+        "-o";
+        name_opted_ver filename;
+      ]
+  in
+  if exit_state = 0 then VALID else CRASH
 
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
@@ -122,27 +130,20 @@ let save_ll dir filename llm =
 
 (* run opt (and tv) and measure coverage *)
 let run filename llm =
-  (* reset all previous coverages *)
-  (* FIXME: magic path *)
-  Sys.command
-    ("find "
-    ^ concat_home "./llvm-project/build/"
-    ^ " -type f -name '*.gcda' | xargs rm")
-  |> ignore;
-
+  clean ();
   save_ll !Config.out_dir filename llm;
 
   (* run opt/alive2 and evaluate *)
+  let coverage = Coverage.Gcov.run () in
+  let res_opt = run_opt filename in
   if !Config.no_tv then (
-    let exit_code = run_opt filename in
-    let crashed = exit_code <> 0 in
-    if crashed then save_ll !Config.crash_dir filename llm;
-    ((if crashed then CRASH else VALID), get_coverage ()))
+    if res_opt = CRASH then save_ll !Config.crash_dir filename llm;
+    (res_opt, coverage))
   else
-    let alive2_result = run_alive2 filename in
-    if alive2_result <> VALID then
+    let res_alive2 = run_alive2 filename in
+    if res_alive2 <> VALID then
       Llvm.print_module (Filename.concat !Config.crash_dir (new_ll ())) llm;
-    (alive2_result, get_coverage ())
+    (res_alive2, coverage)
 
 let rec fuzz pool cov gen_count =
   let seed, pool_popped = SeedPool.pop pool in
@@ -187,6 +188,7 @@ let rec fuzz pool cov gen_count =
       !Config.num_mutant
   in
   let pool' = SeedPool.push seed pool' in
+
   (* repeat until the time budget or seed pool exhausts *)
   if !Config.time_budget > 0 && now () - !start_time > !Config.time_budget then
     cov'
@@ -194,15 +196,10 @@ let rec fuzz pool cov gen_count =
 
 let main () =
   initialize ();
-  (* TODO: merge this pathway into main fuzzing *)
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     let all_instances = Pattern.Instantiation.run name pat in
-    List.iter
-      (fun llm ->
-        Llvm.print_module (string_of_int !count ^ ".ll") llm;
-        count := !count + 1)
-      all_instances;
+    List.iter (Llvm.print_module (new_ll ())) all_instances;
     exit 0);
 
   let seed_pool = SeedPool.of_dir !Config.seed_dir in

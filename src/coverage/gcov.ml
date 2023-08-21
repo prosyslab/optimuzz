@@ -1,7 +1,14 @@
 open Domain
 module F = Format
 
-let run () =
+let clean () =
+  Sys.command
+    ("find "
+    ^ Filename.concat !Config.project_home "./llvm-project/build/"
+    ^ " -type f -name '*.gcda' | xargs rm")
+  |> ignore
+
+let get_gcov () =
   Unix.chdir !Config.gcov_dir;
   let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0o644 in
   List.iter
@@ -18,8 +25,8 @@ let run () =
 let get_line_coverage chunks =
   try chunks |> List.hd |> String.trim |> int_of_string with Failure _ -> -1
 
-let get_coverage () =
-  run ();
+let run () =
+  get_gcov ();
   let rec aux fp accu =
     match input_line fp with
     | line ->
