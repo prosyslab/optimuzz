@@ -199,7 +199,9 @@ let main () =
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     let all_instances = Pattern.Instantiation.run name pat in
-    List.iter (Llvm.print_module (new_ll ())) all_instances;
+    List.iter
+      (Llvm.print_module (Filename.concat !Config.out_dir (new_ll ())))
+      all_instances;
     exit 0);
 
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
