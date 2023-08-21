@@ -1,6 +1,10 @@
+(library
+ (name config)
+ (modules config))
+
 (executable
  (name main)
- (modules config gcov main domain mutation)
+ (modules main)
  (libraries
   llvm
   llvm.bitreader
@@ -8,5 +12,7 @@
   llvm.transform_utils
   str
   unix
+  coverage
+  mutation
   pattern
   util))

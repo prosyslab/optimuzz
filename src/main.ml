@@ -1,4 +1,5 @@
-open Domain
+open Coverage.Gcov
+open Coverage.Domain
 module F = Format
 
 type opt_res_t = CRASH | INVALID | VALID
@@ -136,19 +137,21 @@ let run filename llm =
     let exit_code = run_opt filename in
     let crashed = exit_code <> 0 in
     if crashed then save_ll !Config.crash_dir filename llm;
-    ((if crashed then CRASH else VALID), Gcov.get_coverage ()))
+    ((if crashed then CRASH else VALID), get_coverage ()))
   else
     let alive2_result = run_alive2 filename in
     if alive2_result <> VALID then
       Llvm.print_module (Filename.concat !Config.crash_dir (new_ll ())) llm;
-    (alive2_result, Gcov.get_coverage ())
+    (alive2_result, get_coverage ())
 
 let rec fuzz pool cov gen_count =
   let seed, pool_popped = SeedPool.pop pool in
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov, gen_count) =
     let mutant =
-      Util.LUtil.repeat_fun (Mutation.run llctx) seed !Config.num_mutation
+      Util.LUtil.repeat_fun
+        (Mutation.Mutator.run llctx)
+        seed !Config.num_mutation
     in
     let filename = new_ll () in
     (* TODO: not using run result, only caring coverage *)

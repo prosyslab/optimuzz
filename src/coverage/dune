@@ -1,0 +1,4 @@
+(library
+ (name coverage)
+ (modules domain gcov)
+ (libraries unix config))
