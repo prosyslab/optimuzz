@@ -51,4 +51,4 @@ module SLSet = Set.Make (struct
   let compare = compare
 end)
 
-module ML_Coverage = CovMap (SLSet)
+module SL_Coverage = CovMap (SLSet)
