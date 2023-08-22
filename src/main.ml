@@ -136,8 +136,8 @@ let run filename llm =
   let filename_out = concat_out filename in
 
   (* run opt/alive2 and evaluate *)
-  let coverage = Coverage.Gcov.run () in
   let res_opt = run_opt filename_out in
+  let coverage = Coverage.Gcov.run () in
   if !Config.no_tv then (
     if res_opt <> VALID then save_ll !Config.crash_dir filename llm;
     (res_opt, coverage))
