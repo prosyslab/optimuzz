@@ -1,4 +1,5 @@
 let ( >> ) x f = f x |> ignore
+let command_args args = args |> String.concat " " |> Sys.command
 
 (** [repeat_fun f init t] is [f (... (f (f init)) ...)] ([t] times).
     @raise Invalid_argument if [t] is negative. *)

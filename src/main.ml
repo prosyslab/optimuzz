@@ -1,10 +1,12 @@
 open Coverage.Domain
-open Coverage.Gcov
 module F = Format
 
 type res_t = CRASH | INVALID | VALID
 
 let llctx = Llvm.create_context ()
+
+(* alias *)
+let cmd = Util.LUtil.command_args
 
 (* for logging *)
 let alive2_log = "alive-tv.txt"
@@ -31,8 +33,6 @@ let name_opted_ver filename =
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
   Llvm.print_module output_name llm
-
-let command_args args = args |> String.concat " " |> Sys.command
 
 module SeedPool = struct
   type t = Llvm.llmodule Queue.t
@@ -62,6 +62,7 @@ let initialize () =
     "Usage: llfuzz [options]";
 
   (* these files are bound to llfuzz project *)
+  (* consider dune directory *)
   Config.project_home :=
     Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
     |> Filename.dirname |> Filename.dirname;
@@ -86,7 +87,7 @@ let initialize () =
 let run_alive2 filename =
   (* run alive2 *)
   let exit_state =
-    command_args
+    cmd
       [
         !Config.alive2_bin;
         filename;
@@ -117,7 +118,7 @@ let run_alive2 filename =
 
 let run_opt filename =
   let exit_state =
-    command_args
+    cmd
       [
         !Config.opt_bin;
         filename;
@@ -131,7 +132,7 @@ let run_opt filename =
 
 (* run opt (and tv) and measure coverage *)
 let run filename llm =
-  clean ();
+  Coverage.Gcov.clean ();
   save_ll !Config.out_dir filename llm;
   let filename_out = concat_out filename in
 
@@ -210,7 +211,7 @@ let main () =
   let coverage = fuzz seed_pool LineCoverage.empty 0 in
   let end_time = now () in
 
-  Sys.command ("rm " ^ Filename.concat !Config.gcov_dir "*.gcov") |> ignore;
+  cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov" ] |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
   F.printf "total coverage: %d lines@." (LineCoverage.cardinal coverage);

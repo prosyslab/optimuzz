@@ -1,22 +1,26 @@
 open Domain
 module F = Format
 
+let cmd = Util.LUtil.command_args
+
 let clean () =
-  Sys.command
-    ("find "
-    ^ Filename.concat !Config.project_home "./llvm-project/build/"
-    ^ " -type f -name '*.gcda' | xargs rm")
+  cmd
+    [
+      "find";
+      !Config.opt_bin |> Filename.dirname |> Filename.dirname;
+      "-type f -name '*.gcda'";
+      "| xargs rm";
+    ]
   |> ignore
 
 let get_gcov () =
+  (* For redirection, we should use Unix.create_process *)
   Unix.chdir !Config.gcov_dir;
   let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0o644 in
   List.iter
     (fun elem ->
       let llvm_pid =
-        Unix.create_process "llvm-cov"
-          [| "llvm-cov"; "gcov"; "-b"; "-c"; elem |]
-          Unix.stdin devnull devnull
+        Unix.create_process "gcov" [| "gcov"; elem |] Unix.stdin devnull devnull
       in
       Unix.waitpid [] llvm_pid |> ignore)
     !Config.gcda_list;
