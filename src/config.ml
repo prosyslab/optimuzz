@@ -2,6 +2,7 @@ let project_home = ref ""
 
 (* directories *)
 let pattern_path = ref ""
+let cov_tgt_path = ref ""
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "crash"
@@ -32,6 +33,9 @@ let opts =
     ( "-pattern",
       Arg.Set_string pattern_path,
       "To generate programs of certain patterns" );
+    ( "-coverage",
+      Arg.Set_string cov_tgt_path,
+      "Only measure opt coverage over the file" );
     ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");

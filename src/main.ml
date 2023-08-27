@@ -131,7 +131,7 @@ let run_opt filename =
   if exit_state = 0 then VALID else CRASH
 
 (* run opt (and tv) and measure coverage *)
-let run filename llm =
+let run_bins filename llm =
   Coverage.Gcov.clean ();
   save_ll !Config.out_dir filename llm;
   let filename_out = concat_out filename in
@@ -158,7 +158,7 @@ let rec fuzz pool cov gen_count =
     in
     let filename = get_new_name () in
     (* TODO: not using run result, only caring coverage *)
-    let _, cov_mutant = run filename mutant in
+    let _, cov_mutant = run_bins filename mutant in
 
     let pool', cov', gen_count =
       if LineCoverage.subset cov_mutant cov then (pool, cov, gen_count)
@@ -198,12 +198,24 @@ let rec fuzz pool cov gen_count =
 
 let main () =
   initialize ();
+
+  (* pattern *)
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     let all_instances = Pattern.Instantiation.run name pat in
     List.iter (save_ll !Config.out_dir (get_new_name ())) all_instances;
     exit 0);
 
+  (* measure coverage *)
+  if !Config.cov_tgt_path <> "" then (
+    Coverage.Gcov.clean ();
+    run_opt !Config.cov_tgt_path |> ignore;
+    let cov = Coverage.Gcov.run () in
+    print_string "Total coverage: ";
+    cov |> LineCoverage.cardinal |> string_of_int |> print_endline;
+    exit 0);
+
+  (* fuzzing *)
   let seed_pool = SeedPool.of_dir !Config.seed_dir in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
@@ -214,7 +226,7 @@ let main () =
   cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov" ] |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "total coverage: %d lines@." (LineCoverage.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (LineCoverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !start_time)
 
 let _ = main ()
