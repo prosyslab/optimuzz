@@ -3,7 +3,10 @@ module F = Format
 
 let cmd = Util.LUtil.command_args
 
-let clean () =
+let clean_gcov () =
+  cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov" ] |> ignore
+
+let clean_gcda () =
   cmd
     [
       "find";

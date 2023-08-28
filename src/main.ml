@@ -82,7 +82,12 @@ let initialize () =
   Config.init_whitelist ();
   Config.init_gcda_list ();
   Config.init_gcov_list ();
-  Random.init !Config.random_seed
+  Random.init !Config.random_seed;
+
+  (* Clean previous coverage data *)
+  print_endline "(rm may rise error since there was no previous coverage data.)";
+  Coverage.Gcov.clean_gcda ();
+  Coverage.Gcov.clean_gcov ()
 
 let run_alive2 filename =
   (* run alive2 *)
@@ -132,7 +137,7 @@ let run_opt filename =
 
 (* run opt (and tv) and measure coverage *)
 let run_bins filename llm =
-  Coverage.Gcov.clean ();
+  Coverage.Gcov.clean_gcda ();
   save_ll !Config.out_dir filename llm;
   let filename_out = concat_out filename in
 
@@ -208,7 +213,6 @@ let main () =
 
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then (
-    Coverage.Gcov.clean ();
     run_opt !Config.cov_tgt_path |> ignore;
     let cov = Coverage.Gcov.run () in
     print_string "Total coverage: ";
@@ -223,7 +227,6 @@ let main () =
   let coverage = fuzz seed_pool LineCoverage.empty 0 in
   let end_time = now () in
 
-  cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov" ] |> ignore;
   if not !Config.no_tv then Unix.unlink alive2_log;
 
   F.printf "\ntotal coverage: %d lines@." (LineCoverage.cardinal coverage);
