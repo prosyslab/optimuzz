@@ -29,11 +29,11 @@ let get_gcov () =
     !Config.gcda_list;
   Unix.chdir !Config.workspace
 
-let get_line_coverage chunks =
-  try chunks |> List.hd |> String.trim |> int_of_string with Failure _ -> -1
-
 let run () =
   get_gcov ();
+  let get_line_coverage chunks =
+    try chunks |> List.hd |> String.trim |> int_of_string with Failure _ -> -1
+  in
   let rec aux fp accu =
     match input_line fp with
     | line ->
