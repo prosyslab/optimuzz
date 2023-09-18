@@ -6,37 +6,20 @@ let llb_bef = Llvm.builder_before
 
 (* MID-LEVEL CREATE/SUBSTITUTION HELPERS *)
 
-(** [create_arith llctx loc opcode o0 o1] creates
-    an ARITH instruction (opcode [opcode]) right before instruction [loc],
+(** [create_binary llctx loc opcode o0 o1] creates
+    an BINARY instruction (opcode [opcode]) right before instruction [loc],
     with operands [o0] and [o1]. Does not use extra keywords.
     Returns the new instruction. *)
-let create_arith llctx loc opcode o0 o1 =
-  (OpCls.build_arith opcode) o0 o1 (llb_bef llctx loc)
+let create_binary llctx loc opcode o0 o1 =
+  (OpCls.build_binary opcode) o0 o1 (llb_bef llctx loc)
 
-(** [subst_arith llctx instr opcode] substitutes
-    an ARITH instruction [instr] into another one ([opcode]),
+(** [subst_binary llctx instr opcode] substitutes
+    an BINARY instruction [instr] into another one ([opcode]),
     with the same operands. Does not use extra keywords.
     Returns the new instruction. *)
-let subst_arith llctx instr opcode =
+let subst_binary llctx instr opcode =
   let nth_opd = Llvm.operand instr in
-  let new_instr = create_arith llctx instr opcode (nth_opd 0) (nth_opd 1) in
-  LUtil.replace_hard instr new_instr;
-  new_instr
-
-(** [create_logic llctx loc opcode o0 o1] creates
-    a LOGIC instruction (opcode [opcode]) right before instruction [loc],
-    with operands [o0] and [o1]. Does not use extra keywords.
-    Returns the new instruction. *)
-let create_logic llctx loc opcode o0 o1 =
-  (OpCls.build_logic opcode) o0 o1 (Llvm.builder_before llctx loc)
-
-(** [subst_logic llctx instr opcode] substitutes
-    a LOGIC instruction [instr] into another one ([opcode]).
-    Does not use extra keywords.
-    Returns the new instruction. *)
-let subst_logic llctx instr opcode =
-  let nth_opd = Llvm.operand instr in
-  let new_instr = create_logic llctx instr opcode (nth_opd 0) (nth_opd 1) in
+  let new_instr = create_binary llctx instr opcode (nth_opd 0) (nth_opd 1) in
   LUtil.replace_hard instr new_instr;
   new_instr
 
@@ -265,12 +248,8 @@ let create_random_instr llctx loc =
   let opcode = OpCls.random_opcode_except None in
   match OpCls.classify opcode with
   | OpCls.TER -> loc (* respect the sole terminator *)
-  | ARITH ->
-      create_arith llctx loc opcode
-        (modify_value llctx zero preds_i32)
-        (modify_value llctx zero preds_i32)
-  | LOGIC ->
-      create_logic llctx loc opcode
+  | BINARY ->
+      create_binary llctx loc opcode
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
   | MEM -> (
@@ -314,7 +293,6 @@ let create_random_instr llctx loc =
         aux [] (Llvm.block_pred block)
       in
       if incoming <> [] then create_phi llctx block incoming else loc
-  | OTHER -> loc
 
 (** [subst_random_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
@@ -329,8 +307,7 @@ let subst_random_instr llctx instr =
       if old_opcode = Llvm.Opcode.Ret then instr
       else if Llvm.is_conditional instr then make_unconditional llctx instr
       else make_conditional llctx instr
-  | ARITH -> subst_arith llctx instr new_opcode
-  | LOGIC -> subst_logic llctx instr new_opcode
+  | BINARY -> subst_binary llctx instr new_opcode
   | MEM -> instr (* cannot substitute to others *)
   | CAST -> instr (* TODO *)
   | CMP ->
@@ -341,7 +318,6 @@ let subst_random_instr llctx instr =
       in
       aux ()
   | PHI -> instr (* TODO *)
-  | OTHER -> instr
 
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available one.

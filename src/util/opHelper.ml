@@ -19,29 +19,44 @@ module TypeBW = struct
 end
 
 module OpcodeClass = struct
-  type t = TER | ARITH | LOGIC | MEM | CAST | CMP | PHI | OTHER
+  type t = TER | BINARY | MEM | CAST | CMP | PHI
 
   (* use these lists to mark progress *)
   let ter_list = [ Llvm.Opcode.Ret; Br ]
-  let arith_list = [ Llvm.Opcode.Add; Sub; Mul; UDiv; SDiv; URem; SRem ]
-  let logic_list = [ Llvm.Opcode.Shl; LShr; AShr; And; Or; Xor ]
+
+  let binary_list =
+    [
+      Llvm.Opcode.Add;
+      Sub;
+      Mul;
+      UDiv;
+      SDiv;
+      URem;
+      SRem;
+      Shl;
+      LShr;
+      AShr;
+      And;
+      Or;
+      Xor;
+    ]
+
   let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
   let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt; PtrToInt; IntToPtr; BitCast ]
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [ Llvm.Opcode.PHI ]
-  let other_list = []
 
   (* helper for cmp instruction *)
   let cmp_kind = [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
 
   let total_list =
-    ter_list @ arith_list @ logic_list @ mem_list @ cast_list @ cmp_list
-    @ phi_list @ other_list
+    ter_list @ binary_list @ mem_list @ cast_list @ cmp_list @ phi_list
 
   let classify = function
     | Llvm.Opcode.Ret | Br -> TER
-    | Add | Sub | Mul | UDiv | SDiv | URem | SRem -> ARITH
-    | Shl | LShr | AShr | And | Or | Xor -> LOGIC
+    | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
+    | Xor ->
+        BINARY
     | Alloca | Load | Store -> MEM
     | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
     | ICmp -> CMP
@@ -49,17 +64,15 @@ module OpcodeClass = struct
     | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
     | FPTrunc | FPExt | FCmp ->
         raise Out_of_integer_domain
-    | _ -> OTHER
+    | _ -> raise Unsupported
 
   let oplist_of = function
     | TER -> ter_list
-    | ARITH -> arith_list
-    | LOGIC -> logic_list
+    | BINARY -> binary_list
     | MEM -> mem_list
     | CAST -> cast_list
     | CMP -> cmp_list
     | PHI -> phi_list
-    | OTHER -> other_list
 
   let random_op_of opcls = opcls |> oplist_of |> LUtil.list_random
 
@@ -76,7 +89,7 @@ module OpcodeClass = struct
         if l <> [] then LUtil.list_random l else opcode
     | None -> LUtil.list_random total_list
 
-  let build_arith opcode o0 o1 llb =
+  let build_binary opcode o0 o1 llb =
     (match opcode with
     | Llvm.Opcode.Add -> Llvm.build_add
     | Sub -> Llvm.build_sub
@@ -85,12 +98,7 @@ module OpcodeClass = struct
     | SDiv -> Llvm.build_sdiv
     | URem -> Llvm.build_urem
     | SRem -> Llvm.build_srem
-    | _ -> raise Improper_class)
-      o0 o1 "" llb
-
-  let build_logic opcode o0 o1 llb =
-    (match opcode with
-    | Llvm.Opcode.Shl -> Llvm.build_shl
+    | Shl -> Llvm.build_shl
     | LShr -> Llvm.build_lshr
     | AShr -> Llvm.build_ashr
     | And -> Llvm.build_and
@@ -120,11 +128,9 @@ module OpcodeClass = struct
 
   let string_of_opcls = function
     | TER -> "TER"
-    | ARITH -> "ARITH"
-    | LOGIC -> "LOGIC"
+    | BINARY -> "BINARY"
     | MEM -> "MEM"
     | CAST -> "CAST"
     | CMP -> "CMP"
     | PHI -> "PHI"
-    | OTHER -> "OTHER"
 end

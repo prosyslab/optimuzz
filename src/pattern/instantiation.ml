@@ -35,7 +35,7 @@ let run name pat : instance_t list =
         match
           binop |> string_of_binop |> Util.LUtil.opcode_of_string |> classify
         with
-        | ARITH | LOGIC -> i32
+        | BINARY -> i32
         | CMP -> i1
         | _ -> failwith "Not implemented")
     | _ -> failwith "Return is not a instruction"
@@ -139,14 +139,9 @@ let run name pat : instance_t list =
                     binop |> string_of_binop |> Util.LUtil.opcode_of_string
                   in
                   match classify opcode_llvm with
-                  | ARITH ->
+                  | BINARY ->
                       let instr_new =
-                        build_arith opcode_llvm lhs rhs (builder_ur llm_binop)
-                      in
-                      (instr_new, llm_binop) :: accu
-                  | LOGIC ->
-                      let instr_new =
-                        build_logic opcode_llvm lhs rhs (builder_ur llm_binop)
+                        build_binary opcode_llvm lhs rhs (builder_ur llm_binop)
                       in
                       (instr_new, llm_binop) :: accu
                   | CMP ->
