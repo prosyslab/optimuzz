@@ -1,11 +1,5 @@
 module LUtil = Util.LUtil
-module OpCls = Util.OpcodeClass
-
-(** [replace_hard bef aft] replaces
-    all uses of [bef] to [aft] and delete [bef]. *)
-let replace_hard bef aft =
-  Llvm.replace_all_uses_with bef aft;
-  Llvm.delete_instruction bef
+module OpCls = Util.OpHelper.OpcodeClass
 
 (** Alias for [Llvm.builder_before]. *)
 let llb_bef = Llvm.builder_before
@@ -26,7 +20,7 @@ let create_arith llctx loc opcode o0 o1 =
 let subst_arith llctx instr opcode =
   let nth_opd = Llvm.operand instr in
   let new_instr = create_arith llctx instr opcode (nth_opd 0) (nth_opd 1) in
-  replace_hard instr new_instr;
+  LUtil.replace_hard instr new_instr;
   new_instr
 
 (** [create_logic llctx loc opcode o0 o1] creates
@@ -43,7 +37,7 @@ let create_logic llctx loc opcode o0 o1 =
 let subst_logic llctx instr opcode =
   let nth_opd = Llvm.operand instr in
   let new_instr = create_logic llctx instr opcode (nth_opd 0) (nth_opd 1) in
-  replace_hard instr new_instr;
+  LUtil.replace_hard instr new_instr;
   new_instr
 
 (* There is no aggregated helper for building MEM instructions. *)
@@ -70,7 +64,7 @@ let create_cmp llctx loc icmp o0 o1 =
 let subst_cmp llctx instr icmp =
   let nth_opd = Llvm.operand instr in
   let new_instr = create_cmp llctx instr icmp (nth_opd 0) (nth_opd 1) in
-  replace_hard instr new_instr;
+  LUtil.replace_hard instr new_instr;
   new_instr
 
 (** [create_phi llctx loc incoming] creates
@@ -122,7 +116,7 @@ let lower_instr llctx instr =
         let instr_succ_clone = Llvm.instr_clone instr_succ in
         Llvm.insert_into_builder instr_succ_clone ""
           (Llvm.builder_before llctx instr);
-        replace_hard instr_succ instr_succ_clone;
+        LUtil.replace_hard instr_succ instr_succ_clone;
         instr_succ_clone
 
 (** [make_conditional llctx instr] substitutes
@@ -209,7 +203,7 @@ let split_block llctx loc =
     | Before i ->
         let i_clone = Llvm.instr_clone i in
         Llvm.insert_into_builder i_clone "" builder;
-        replace_hard i i_clone;
+        LUtil.replace_hard i i_clone;
         aux ()
     | Llvm.At_end _ -> failwith "NEVER OCCUR"
   in

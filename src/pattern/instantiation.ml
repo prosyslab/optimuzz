@@ -1,5 +1,5 @@
 open IR
-open Util.OpcodeClass
+open Util.OpHelper.OpcodeClass
 
 (* INSTANTIATION: Connects LLVM and Pattern IR *)
 (* Here, 'instance' means LLModule of a single function. *)

@@ -1,3 +1,5 @@
+(* GENERAL UTILITY FUNCTIONS *)
+
 let ( >> ) x f = f x |> ignore
 let command_args args = args |> String.concat " " |> Sys.command
 
@@ -16,6 +18,8 @@ let repeat_fun f init t =
 let list_random l =
   if l <> [] then List.nth l (Random.int (List.length l))
   else raise (Invalid_argument "empty list")
+
+(* LLVM UTILITY FUNCTIONS *)
 
 let string_of_opcode = function
   | Llvm.Opcode.Invalid -> "Invalid"
@@ -191,3 +195,9 @@ let choose_function llm =
   match Llvm.function_begin llm with
   | Before f -> f
   | At_end _ -> failwith "No function defined"
+
+(** [replace_hard bef aft] replaces
+    all uses of [bef] to [aft] and delete [bef]. *)
+let replace_hard bef aft =
+  Llvm.replace_all_uses_with bef aft;
+  Llvm.delete_instruction bef
