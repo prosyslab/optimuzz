@@ -42,7 +42,7 @@ module OpcodeClass = struct
     ]
 
   let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
-  let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt; PtrToInt; IntToPtr; BitCast ]
+  let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt ]
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [ Llvm.Opcode.PHI ]
 
@@ -58,7 +58,7 @@ module OpcodeClass = struct
     | Xor ->
         BINARY
     | Alloca | Load | Store -> MEM
-    | Trunc | ZExt | SExt | PtrToInt | IntToPtr | BitCast -> CAST
+    | Trunc | ZExt | SExt -> CAST
     | ICmp -> CMP
     | PHI -> PHI
     | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
@@ -76,18 +76,16 @@ module OpcodeClass = struct
 
   let random_op_of opcls = opcls |> oplist_of |> LUtil.list_random
 
-  (** [random_opcode_except opcode] returns an opcode
-      of its class other than [opcode] if given,
-      else, it returns a totally random opcode.
+  (** [random_opcode ()] returns a random opcode. *)
+  let random_opcode () = LUtil.list_random total_list
+
+  (** [random_opcode_except opcode] returns another random opcode in its class.
       If [opcode] is the only one in its class, returns [opcode]. *)
   let random_opcode_except opcode =
-    match opcode with
-    | Some opcode ->
-        let l =
-          List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
-        in
-        if l <> [] then LUtil.list_random l else opcode
-    | None -> LUtil.list_random total_list
+    let l =
+      List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
+    in
+    if l <> [] then LUtil.list_random l else opcode
 
   let build_binary opcode o0 o1 llb =
     (match opcode with
@@ -115,9 +113,6 @@ module OpcodeClass = struct
     | Llvm.Opcode.Trunc -> Llvm.build_trunc
     | ZExt -> Llvm.build_zext
     | SExt -> Llvm.build_sext
-    | PtrToInt -> Llvm.build_ptrtoint
-    | IntToPtr -> Llvm.build_inttoptr
-    | BitCast -> Llvm.build_bitcast
     | _ -> raise Improper_class)
       o ty "" llb
 

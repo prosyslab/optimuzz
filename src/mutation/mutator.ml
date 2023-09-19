@@ -7,14 +7,14 @@ let llb_bef = Llvm.builder_before
 (* MID-LEVEL CREATE/SUBSTITUTION HELPERS *)
 
 (** [create_binary llctx loc opcode o0 o1] creates
-    an BINARY instruction (opcode [opcode]) right before instruction [loc],
+    a BINARY instruction (opcode [opcode]) right before instruction [loc],
     with operands [o0] and [o1]. Does not use extra keywords.
     Returns the new instruction. *)
 let create_binary llctx loc opcode o0 o1 =
   (OpCls.build_binary opcode) o0 o1 (llb_bef llctx loc)
 
 (** [subst_binary llctx instr opcode] substitutes
-    an BINARY instruction [instr] into another one ([opcode]),
+    a BINARY instruction [instr] into another one ([opcode]),
     with the same operands. Does not use extra keywords.
     Returns the new instruction. *)
 let subst_binary llctx instr opcode =
@@ -239,28 +239,15 @@ let modify_value _ v l =
     If rejected, returns [loc] instead. *)
 let create_random_instr llctx loc =
   let i32 = Llvm.i32_type llctx in
-  let ptr = Llvm.pointer_type i32 in
   let zero = Llvm.const_int i32 0 in
-  let null = Llvm.const_pointer_null ptr in
   let preds = LUtil.get_instrs_before ~wide:true loc in
   let preds_i32 = LUtil.list_filter_type i32 preds in
-  let preds_ptr = LUtil.list_filter_type ptr preds in
-  let opcode = OpCls.random_opcode_except None in
+  let opcode = OpCls.random_opcode () in
   match OpCls.classify opcode with
-  | OpCls.TER -> loc (* respect the sole terminator *)
-  | BINARY ->
+  | OpCls.BINARY ->
       create_binary llctx loc opcode
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
-  | MEM -> (
-      match opcode with
-      | Alloca -> create_alloca llctx loc
-      | Load -> create_load llctx loc (modify_value llctx null preds_ptr)
-      | Store ->
-          create_store llctx loc
-            (modify_value llctx zero preds_i32)
-            (modify_value llctx null preds_ptr)
-      | _ -> failwith "NEVER OCCUR")
   | CAST ->
       (* TODO: each cast instruction claims certain type size relation *)
       create_cast llctx loc opcode
@@ -271,28 +258,7 @@ let create_random_instr llctx loc =
         (LUtil.list_random OpCls.cmp_kind)
         (modify_value llctx zero preds_i32)
         (modify_value llctx zero preds_i32)
-  | PHI ->
-      let block = Llvm.instr_parent loc in
-      let incoming =
-        let rec aux accu rev_pos =
-          match rev_pos with
-          | Llvm.At_start _ -> accu
-          | After b ->
-              let ter = b |> Llvm.block_terminator |> Option.get in
-              aux
-                (if ter |> Llvm.successors |> Array.mem block then
-                 let vl =
-                   ter
-                   |> LUtil.get_instrs_before ~wide:false
-                   |> LUtil.list_filter_type i32
-                 in
-                 if vl <> [] then (LUtil.list_random vl, b) :: accu else accu
-                else accu)
-                (Llvm.block_pred b)
-        in
-        aux [] (Llvm.block_pred block)
-      in
-      if incoming <> [] then create_phi llctx block incoming else loc
+  | TER | MEM | PHI -> loc
 
 (** [subst_random_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
@@ -300,15 +266,9 @@ let create_random_instr llctx loc =
     Returns the new instruction. *)
 let subst_random_instr llctx instr =
   let old_opcode = Llvm.instr_opcode instr in
-  let new_opcode = OpCls.random_opcode_except (Some old_opcode) in
+  let new_opcode = OpCls.random_opcode_except old_opcode in
   match OpCls.classify new_opcode with
-  | OpCls.TER ->
-      (* cannot substitute to others *)
-      if old_opcode = Llvm.Opcode.Ret then instr
-      else if Llvm.is_conditional instr then make_unconditional llctx instr
-      else make_conditional llctx instr
   | BINARY -> subst_binary llctx instr new_opcode
-  | MEM -> instr (* cannot substitute to others *)
   | CAST -> instr (* TODO *)
   | CMP ->
       let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
@@ -317,7 +277,7 @@ let subst_random_instr llctx instr =
         if cmp = old_cmp then aux () else subst_cmp llctx instr cmp
       in
       aux ()
-  | PHI -> instr (* TODO *)
+  | TER | MEM | PHI -> instr (* TODO *)
 
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available one.
