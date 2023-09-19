@@ -1,9 +1,6 @@
 module LUtil = Util.LUtil
 module OpCls = Util.OpHelper.OpcodeClass
 
-(** Alias for [Llvm.builder_before]. *)
-let llb_bef = Llvm.builder_before
-
 (* MID-LEVEL CREATE/SUBSTITUTION HELPERS *)
 
 (** [create_binary llctx loc opcode o0 o1] creates
@@ -11,7 +8,7 @@ let llb_bef = Llvm.builder_before
     with operands [o0] and [o1]. Does not use extra keywords.
     Returns the new instruction. *)
 let create_binary llctx loc opcode o0 o1 =
-  (OpCls.build_binary opcode) o0 o1 (llb_bef llctx loc)
+  (OpCls.build_binary opcode) o0 o1 (Llvm.builder_before llctx loc)
 
 (** [subst_binary llctx instr opcode] substitutes
     a BINARY instruction [instr] into another one ([opcode]),
@@ -23,23 +20,21 @@ let subst_binary llctx instr opcode =
   LUtil.replace_hard instr new_instr;
   new_instr
 
-(* There is no aggregated helper for building MEM instructions. *)
-
 (** [create_cast llctx loc opcode o ty] creates
     a CAST instruction (opcode [opcode]) right before instruction [loc],
     with operand [o] and target type [ty].
     Returns the new instruction. *)
 let create_cast llctx loc opcode o ty =
-  (OpCls.build_cast opcode) o ty (llb_bef llctx loc)
+  (OpCls.build_cast opcode) o ty (Llvm.builder_before llctx loc)
 
-(* TODO: what is the 'substitution' of cast instruction? *)
+let subst_cast _ = failwith "Not implemented"
 
 (** [create_cmp llctx loc icmp o0 o1] creates
     a CMP instruction ([icmp]) right before instruction [loc],
     with operands [o0] and [o1].
     Returns the new instruction. *)
 let create_cmp llctx loc icmp o0 o1 =
-  (OpCls.build_cmp icmp) o0 o1 (llb_bef llctx loc)
+  (OpCls.build_cmp icmp) o0 o1 (Llvm.builder_before llctx loc)
 
 (** [subst_cmp llctx instr icmp] substitutes
     a CMP instruction [instr] into another one ([icmp]).
@@ -82,155 +77,146 @@ let create_load llctx loc o =
 let create_store llctx loc o0 o1 =
   Llvm.build_store o0 o1 (Llvm.builder_before llctx loc)
 
-(* HIGHER-LEVEL CFG MODIFYING FUNCTIONS *)
+module CFG_Modifier = struct
+  (* HIGHER-LEVEL CFG MODIFYING FUNCTIONS *)
 
-(** [lower_instr llctx instr] lowers
+  (** [lower_instr llctx instr] lowers
     the given instruction [instr] one step down within its parent block.
     Returns its updated predecessor, i.e., its previous successor.
     If [instr] is terminator or instruction right before terminator,
     does nothing and returns [instr]. *)
-let lower_instr llctx instr =
-  match Llvm.instr_succ instr with
-  | At_end _ -> instr
-  | Before instr_succ ->
-      if instr_succ |> Llvm.instr_opcode |> OpCls.classify = OpCls.TER then
-        instr
-      else
-        let instr_succ_clone = Llvm.instr_clone instr_succ in
-        Llvm.insert_into_builder instr_succ_clone ""
-          (Llvm.builder_before llctx instr);
-        LUtil.replace_hard instr_succ instr_succ_clone;
-        instr_succ_clone
+  let lower_instr llctx instr =
+    match Llvm.instr_succ instr with
+    | At_end _ -> instr
+    | Before instr_succ ->
+        if instr_succ |> Llvm.instr_opcode |> OpCls.classify = OpCls.TER then
+          instr
+        else
+          let instr_succ_clone = Llvm.instr_clone instr_succ in
+          Llvm.insert_into_builder instr_succ_clone ""
+            (Llvm.builder_before llctx instr);
+          LUtil.replace_hard instr_succ instr_succ_clone;
+          instr_succ_clone
 
-(** [make_conditional llctx instr] substitutes
+  (** [make_conditional llctx instr] substitutes
     an unconditional branch instruction [instr]
     into always-true conditional branch instruction.
     (Block instructions are cloned between both destinations, except names.)
     Returns the conditional branch instruction. *)
-let make_conditional llctx instr =
-  match instr |> Llvm.get_branch |> Option.get with
-  | `Unconditional target_block ->
-      let block = Llvm.instr_parent instr in
-      let fbb = Llvm.append_block llctx "" (Llvm.block_parent block) in
-      Llvm.move_block_after target_block fbb;
-      Llvm.iter_instrs
-        (fun i ->
-          Llvm.insert_into_builder (Llvm.instr_clone i) ""
-            (Llvm.builder_at_end llctx fbb))
-        target_block;
-      Llvm.delete_instruction instr;
-      Llvm.build_cond_br
-        (Llvm.const_int (Llvm.i1_type llctx) 1)
-        target_block fbb
-        (Llvm.builder_at_end llctx block)
-  | `Conditional _ -> failwith "Conditional branch already"
+  let make_conditional llctx instr =
+    match instr |> Llvm.get_branch |> Option.get with
+    | `Unconditional target_block ->
+        let block = Llvm.instr_parent instr in
+        let fbb = Llvm.append_block llctx "" (Llvm.block_parent block) in
+        Llvm.move_block_after target_block fbb;
+        Llvm.iter_instrs
+          (fun i ->
+            Llvm.insert_into_builder (Llvm.instr_clone i) ""
+              (Llvm.builder_at_end llctx fbb))
+          target_block;
+        Llvm.delete_instruction instr;
+        Llvm.build_cond_br
+          (Llvm.const_int (Llvm.i1_type llctx) 1)
+          target_block fbb
+          (Llvm.builder_at_end llctx block)
+    | `Conditional _ -> failwith "Conditional branch already"
 
-(** [make_unconditional llctx instr] substitutes
+  (** [make_unconditional llctx instr] substitutes
     a conditional branch instruction [instr]
     into unconditional branch instruction targets for true-branch.
     (False branch block remains in the module; just not used by the branch.)
     Returns the unconditional branch instruction. *)
-let make_unconditional llctx instr =
-  match instr |> Llvm.get_branch |> Option.get with
-  | `Conditional (_, tbb, _) ->
-      let block = Llvm.instr_parent instr in
-      Llvm.delete_instruction instr;
-      Llvm.build_br tbb (Llvm.builder_at_end llctx block)
-  | `Unconditional _ -> failwith "Unconditional branch already"
+  let make_unconditional llctx instr =
+    match instr |> Llvm.get_branch |> Option.get with
+    | `Conditional (_, tbb, _) ->
+        let block = Llvm.instr_parent instr in
+        Llvm.delete_instruction instr;
+        Llvm.build_br tbb (Llvm.builder_at_end llctx block)
+    | `Unconditional _ -> failwith "Unconditional branch already"
 
-(** [set_unconditional_dest llctx instr bb] sets
+  (** [set_unconditional_dest llctx instr bb] sets
     the destinations of the unconditional branch instruction [instr] to [bb].
     Returns the new instruction. *)
-let set_unconditional_dest llctx instr bb =
-  match instr |> Llvm.get_branch |> Option.get with
-  | `Unconditional _ ->
-      let result = Llvm.build_br bb (Llvm.builder_before llctx instr) in
-      Llvm.delete_instruction instr;
-      result
-  | `Conditional _ -> failwith "Conditional branch"
+  let set_unconditional_dest llctx instr bb =
+    match instr |> Llvm.get_branch |> Option.get with
+    | `Unconditional _ ->
+        let result = Llvm.build_br bb (Llvm.builder_before llctx instr) in
+        Llvm.delete_instruction instr;
+        result
+    | `Conditional _ -> failwith "Conditional branch"
 
-(** [set_conditional_dest llctx instr tbb fbb] sets
+  (** [set_conditional_dest llctx instr tbb fbb] sets
     the destinations of the conditional branch instruction [instr].
     If given as [None], retains the original destination.
     Returns the new instruction. *)
-let set_conditional_dest llctx instr tbb fbb =
-  match instr |> Llvm.get_branch |> Option.get with
-  | `Conditional (cond, old_tbb, old_fbb) ->
-      let result =
-        Llvm.build_cond_br cond
-          (match tbb with Some tbb -> tbb | None -> old_tbb)
-          (match fbb with Some fbb -> fbb | None -> old_fbb)
-          (Llvm.builder_before llctx instr)
-      in
-      Llvm.delete_instruction instr;
-      result
-  | `Unconditional _ -> failwith "Unconditional branch"
+  let set_conditional_dest llctx instr tbb fbb =
+    match instr |> Llvm.get_branch |> Option.get with
+    | `Conditional (cond, old_tbb, old_fbb) ->
+        let result =
+          Llvm.build_cond_br cond
+            (match tbb with Some tbb -> tbb | None -> old_tbb)
+            (match fbb with Some fbb -> fbb | None -> old_fbb)
+            (Llvm.builder_before llctx instr)
+        in
+        Llvm.delete_instruction instr;
+        result
+    | `Unconditional _ -> failwith "Unconditional branch"
 
-(** [split_block llctx loc] splits the parent block of [loc] into two blocks
+  (** [split_block llctx loc] splits the parent block of [loc] into two blocks
     and links them by unconditional branch.
     [loc] becomes the first instruction of the latter block.
     Returns the former block. *)
-let split_block llctx loc =
-  let block = Llvm.instr_parent loc in
-  let new_block = Llvm.insert_block llctx "" block in
-  let builder = Llvm.builder_at_end llctx new_block in
+  let split_block llctx loc =
+    let block = Llvm.instr_parent loc in
+    let new_block = Llvm.insert_block llctx "" block in
+    let builder = Llvm.builder_at_end llctx new_block in
 
-  (* initial setting *)
-  let dummy = Llvm.build_unreachable builder in
-  Llvm.position_before dummy builder;
+    (* initial setting *)
+    let dummy = Llvm.build_unreachable builder in
+    Llvm.position_before dummy builder;
 
-  (* migrating instructions *)
-  let rec aux () =
-    match Llvm.instr_begin block with
-    | Before i when i = loc -> ()
-    | Before i ->
-        let i_clone = Llvm.instr_clone i in
-        Llvm.insert_into_builder i_clone "" builder;
-        LUtil.replace_hard i i_clone;
-        aux ()
-    | Llvm.At_end _ -> failwith "NEVER OCCUR"
+    (* migrating instructions *)
+    let rec aux () =
+      match Llvm.instr_begin block with
+      | Before i when i = loc -> ()
+      | Before i ->
+          let i_clone = Llvm.instr_clone i in
+          Llvm.insert_into_builder i_clone "" builder;
+          LUtil.replace_hard i i_clone;
+          aux ()
+      | Llvm.At_end _ -> failwith "NEVER OCCUR"
+    in
+    aux ();
+
+    (* modifying all branches targets original block *)
+    Llvm.iter_blocks
+      (fun b ->
+        let ter = b |> Llvm.block_terminator |> Option.get in
+        let succs = ter |> Llvm.successors in
+        Array.iteri
+          (fun i elem ->
+            if elem = block then Llvm.set_successor ter i new_block)
+          succs)
+      (loc |> Llvm.instr_parent |> Llvm.block_parent);
+
+    (* linking and cleaning *)
+    Llvm.build_br block builder |> ignore;
+    Llvm.delete_instruction dummy;
+
+    (* finally done *)
+    new_block
+end
+
+(* [randget_operand llctx loc ty] gets, or generates
+   a llvalue as an operand, of type [ty], valid at [loc]. *)
+let randget_operand loc ty =
+  let rand_const =
+    Llvm.const_int ty
+      (Random.int ((1 lsl min (Util.OpHelper.TypeBW.bw_of_llint ty) 30) - 1))
   in
-  aux ();
-
-  (* modifying all branches targets original block *)
-  Llvm.iter_blocks
-    (fun b ->
-      let ter = b |> Llvm.block_terminator |> Option.get in
-      let succs = ter |> Llvm.successors in
-      Array.iteri
-        (fun i elem -> if elem = block then Llvm.set_successor ter i new_block)
-        succs)
-    (loc |> Llvm.instr_parent |> Llvm.block_parent);
-
-  (* linking and cleaning *)
-  Llvm.build_br block builder |> ignore;
-  Llvm.delete_instruction dummy;
-
-  (* finally done *)
-  new_block
-
-(** [modify_value llctx v l] slightly modifies value [v]
-    or returns a random element of [l]. *)
-let modify_value _ v l =
-  let ty = Llvm.type_of v in
-  match Llvm.classify_type ty with
-  | Llvm.TypeKind.Integer ->
-      let c =
-        match Llvm.int64_of_const v with
-        | Some c -> (
-            match Random.int 3 with
-            | 0 -> Int64.to_int c * 2
-            | 1 -> Int64.to_int c * -1
-            | _ -> Int64.to_int c + 1)
-        | None -> Random.int 100 - 50
-      in
-      if l <> [] then
-        LUtil.list_random [ Llvm.const_int ty c; LUtil.list_random l ]
-      else Llvm.const_int ty c
-  | Llvm.TypeKind.Pointer ->
-      (* nothing can be done *)
-      if l <> [] then LUtil.list_random [ v; LUtil.list_random l ] else v
-  | _ -> v
+  rand_const
+  :: (loc |> LUtil.get_instrs_before ~wide:false |> LUtil.list_filter_type ty)
+  |> LUtil.list_random
 
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
@@ -238,26 +224,30 @@ let modify_value _ v l =
     Returns the new instruction.
     If rejected, returns [loc] instead. *)
 let create_random_instr llctx loc =
-  let i32 = Llvm.i32_type llctx in
-  let zero = Llvm.const_int i32 0 in
-  let preds = LUtil.get_instrs_before ~wide:true loc in
-  let preds_i32 = LUtil.list_filter_type i32 preds in
+  let preds = LUtil.get_instrs_before ~wide:false loc in
+  let operand =
+    if preds <> [] then LUtil.list_random preds
+    else randget_operand loc (Llvm.i32_type llctx)
+  in
+  let operand_ty = Llvm.type_of operand in
   let opcode = OpCls.random_opcode () in
   match OpCls.classify opcode with
-  | OpCls.BINARY ->
-      create_binary llctx loc opcode
-        (modify_value llctx zero preds_i32)
-        (modify_value llctx zero preds_i32)
+  | BINARY ->
+      create_binary llctx loc opcode operand (randget_operand loc operand_ty)
   | CAST ->
-      (* TODO: each cast instruction claims certain type size relation *)
-      create_cast llctx loc opcode
-        (modify_value llctx zero preds_i32)
-        (Llvm.i32_type llctx)
+      let dest_ty =
+        match opcode with
+        | Trunc -> Util.OpHelper.TypeBW.random_narrower_llint llctx operand_ty
+        | ZExt | SExt ->
+            Util.OpHelper.TypeBW.random_wider_llint llctx operand_ty
+        | _ -> failwith "NEVER OCCUR"
+      in
+      create_cast llctx loc opcode operand dest_ty
   | CMP ->
       create_cmp llctx loc
         (LUtil.list_random OpCls.cmp_kind)
-        (modify_value llctx zero preds_i32)
-        (modify_value llctx zero preds_i32)
+        operand
+        (randget_operand loc operand_ty)
   | TER | MEM | PHI -> loc
 
 (** [subst_random_instr llctx instr] substitutes
@@ -269,11 +259,11 @@ let subst_random_instr llctx instr =
   let new_opcode = OpCls.random_opcode_except old_opcode in
   match OpCls.classify new_opcode with
   | BINARY -> subst_binary llctx instr new_opcode
-  | CAST -> instr (* TODO *)
+  | CAST -> instr (* can do nothing *)
   | CMP ->
       let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
       let rec aux () =
-        let cmp = LUtil.list_random OpCls.cmp_kind in
+        let cmp = OpCls.random_cmp () in
         if cmp = old_cmp then aux () else subst_cmp llctx instr cmp
       in
       aux ()
@@ -281,21 +271,14 @@ let subst_random_instr llctx instr =
 
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available one.
-    Returns [instr] (with its operand changed).
-    If there is no operand, returns [instr] without changes. *)
-let subst_random_operand llctx instr =
+    Returns [instr] (with its operand changed). *)
+let subst_random_operand _ instr =
   let num_operands = Llvm.num_operands instr in
-  if num_operands > 0 then (
-    let i = Random.int num_operands in
-    let old_o = Llvm.operand instr i in
-    let candidates =
-      LUtil.list_filter_type (Llvm.type_of old_o)
-        (LUtil.get_instrs_before ~wide:true instr)
-    in
-    if candidates <> [] then
-      Llvm.set_operand instr i (modify_value llctx old_o candidates);
-    instr)
-  else instr
+  let i = Random.int num_operands in
+  let operand_old = Llvm.operand instr i in
+  let operand_new = randget_operand instr (Llvm.type_of operand_old) in
+  Llvm.set_operand instr i operand_new;
+  instr
 
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 

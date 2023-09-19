@@ -11,11 +11,23 @@ module TypeBW = struct
   let assert_llint ty = if not (is_llint ty) then raise Out_of_integer_domain
 
   (* bitwidth related functions *)
-  let rand_bw () = Random.int 64 + 1
+  let rand_bw () = LUtil.rand 1 64
   let llint_of_bw = Llvm.integer_type
   let bw_of_llint = Llvm.integer_bitwidth
 
-  (* TODO: type-value associating functions *)
+  let random_wider_llint llctx ty =
+    let bw = bw_of_llint ty in
+    if bw = 64 then raise Unsupported
+    else
+      let bw_wide = LUtil.rand (bw + 1) 64 in
+      llint_of_bw llctx bw_wide
+
+  let random_narrower_llint llctx ty =
+    let bw = bw_of_llint ty in
+    if bw = 1 then raise Unsupported
+    else
+      let bw_narrow = LUtil.rand 1 (bw - 1) in
+      llint_of_bw llctx bw_narrow
 end
 
 module OpcodeClass = struct
@@ -86,6 +98,8 @@ module OpcodeClass = struct
       List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
     in
     if l <> [] then LUtil.list_random l else opcode
+
+  let random_cmp () = LUtil.list_random cmp_kind
 
   let build_binary opcode o0 o1 llb =
     (match opcode with
