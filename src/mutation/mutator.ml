@@ -3,42 +3,31 @@ module OpCls = Util.OpHelper.OpcodeClass
 
 (* MID-LEVEL CREATE/SUBSTITUTION HELPERS *)
 
-(** [create_binary llctx loc opcode o0 o1] creates
-    a BINARY instruction (opcode [opcode]) right before instruction [loc],
-    with operands [o0] and [o1]. Does not use extra keywords.
-    Returns the new instruction. *)
+(* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
+   right before instruction [loc], without any extra keywords.
+   Returns the new instruction. *)
+
 let create_binary llctx loc opcode o0 o1 =
   (OpCls.build_binary opcode) o0 o1 (Llvm.builder_before llctx loc)
 
-(** [subst_binary llctx instr opcode] substitutes
-    a BINARY instruction [instr] into another one ([opcode]),
-    with the same operands. Does not use extra keywords.
-    Returns the new instruction. *)
+let create_cast llctx loc opcode o ty =
+  (OpCls.build_cast opcode) o ty (Llvm.builder_before llctx loc)
+
+let create_cmp llctx loc icmp o0 o1 =
+  (OpCls.build_cmp icmp) o0 o1 (Llvm.builder_before llctx loc)
+
+(* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
+   into another possible instruction, with the same operands,
+   without any extra keywords. Returns the new instruction. *)
+
 let subst_binary llctx instr opcode =
   let nth_opd = Llvm.operand instr in
   let new_instr = create_binary llctx instr opcode (nth_opd 0) (nth_opd 1) in
   LUtil.replace_hard instr new_instr;
   new_instr
 
-(** [create_cast llctx loc opcode o ty] creates
-    a CAST instruction (opcode [opcode]) right before instruction [loc],
-    with operand [o] and target type [ty].
-    Returns the new instruction. *)
-let create_cast llctx loc opcode o ty =
-  (OpCls.build_cast opcode) o ty (Llvm.builder_before llctx loc)
-
 let subst_cast _ = failwith "Not implemented"
 
-(** [create_cmp llctx loc icmp o0 o1] creates
-    a CMP instruction ([icmp]) right before instruction [loc],
-    with operands [o0] and [o1].
-    Returns the new instruction. *)
-let create_cmp llctx loc icmp o0 o1 =
-  (OpCls.build_cmp icmp) o0 o1 (Llvm.builder_before llctx loc)
-
-(** [subst_cmp llctx instr icmp] substitutes
-    a CMP instruction [instr] into another one ([icmp]).
-    Returns the new instruction. *)
 let subst_cmp llctx instr icmp =
   let nth_opd = Llvm.operand instr in
   let new_instr = create_cmp llctx instr icmp (nth_opd 0) (nth_opd 1) in
