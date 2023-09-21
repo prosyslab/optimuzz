@@ -262,12 +262,15 @@ let subst_random_instr llctx instr =
     a random operand of instruction [instr] into another available one.
     Returns [instr] (with its operand changed). *)
 let subst_random_operand _ instr =
-  let num_operands = Llvm.num_operands instr in
-  let i = Random.int num_operands in
-  let operand_old = Llvm.operand instr i in
-  let operand_new = randget_operand instr (Llvm.type_of operand_old) in
-  Llvm.set_operand instr i operand_new;
-  instr
+  match instr |> Llvm.instr_opcode |> OpCls.classify with
+  | TER | MEM | PHI -> instr (* TODO *)
+  | _ ->
+      let num_operands = Llvm.num_operands instr in
+      let i = Random.int num_operands in
+      let operand_old = Llvm.operand instr i in
+      let operand_new = randget_operand instr (Llvm.type_of operand_old) in
+      Llvm.set_operand instr i operand_new;
+      instr
 
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
