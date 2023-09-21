@@ -15,10 +15,6 @@ let start_time = ref 0
 let recent_time = ref 0
 let timestamp_fp = open_out timestamp
 let now () = Unix.time () |> int_of_float
-
-(* helpers for files *)
-let concat_home = Filename.concat !Config.project_home
-let concat_out = Filename.concat !Config.out_dir
 let count = ref 0
 
 let get_new_name () =
@@ -66,12 +62,13 @@ let initialize () =
   Config.project_home :=
     Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
     |> Filename.dirname |> Filename.dirname;
-  Config.opt_bin := concat_home !Config.opt_bin;
-  Config.alive2_bin := concat_home !Config.alive2_bin;
+  Config.opt_bin := Filename.concat !Config.project_home !Config.opt_bin;
+  Config.alive2_bin := Filename.concat !Config.project_home !Config.alive2_bin;
   Config.workspace := Unix.getcwd ();
-  Config.gcov_dir := concat_out !Config.gcov_dir;
-  Config.crash_dir := concat_out !Config.crash_dir;
-  Config.corpus_dir := concat_out !Config.corpus_dir;
+  Config.out_dir := Filename.concat !Config.project_home !Config.out_dir;
+  Config.gcov_dir := Filename.concat !Config.out_dir !Config.gcov_dir;
+  Config.crash_dir := Filename.concat !Config.out_dir !Config.crash_dir;
+  Config.corpus_dir := Filename.concat !Config.out_dir !Config.corpus_dir;
 
   (* these files are bound to (outer) workspace *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
@@ -139,7 +136,7 @@ let run_opt filename =
 let run_bins filename llm =
   Coverage.Gcov.clean_gcda ();
   save_ll !Config.out_dir filename llm;
-  let filename_out = concat_out filename in
+  let filename_out = Filename.concat !Config.out_dir filename in
 
   (* run opt/alive2 and evaluate *)
   let res_opt = run_opt filename_out in
