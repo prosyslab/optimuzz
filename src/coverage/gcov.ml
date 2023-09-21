@@ -4,7 +4,8 @@ module F = Format
 let cmd = Util.LUtil.command_args
 
 let clean_gcov () =
-  cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov" ] |> ignore
+  cmd [ "rm"; Filename.concat !Config.gcov_dir "*.gcov"; ">/dev/null"; "2>&1" ]
+  |> ignore
 
 let clean_gcda () =
   cmd
@@ -13,6 +14,8 @@ let clean_gcda () =
       !Config.opt_bin |> Filename.dirname |> Filename.dirname;
       "-type f -name '*.gcda'";
       "| xargs rm";
+      ">/dev/null";
+      "2>&1";
     ]
   |> ignore
 

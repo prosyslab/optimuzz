@@ -82,7 +82,6 @@ let initialize () =
   Random.init !Config.random_seed;
 
   (* Clean previous coverage data *)
-  print_endline "(rm may rise error since there was no previous coverage data.)";
   Coverage.Gcov.clean_gcda ();
   Coverage.Gcov.clean_gcov ()
 
