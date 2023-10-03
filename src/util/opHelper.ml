@@ -119,9 +119,6 @@ module OpcodeClass = struct
     | _ -> raise Improper_class)
       o0 o1 "" llb
 
-  (* each MEM instruction has different operands *)
-  let build_mem _ = raise Unsupported
-
   let build_cast opcode o ty llb =
     (match opcode with
     | Llvm.Opcode.Trunc -> Llvm.build_trunc
@@ -131,9 +128,6 @@ module OpcodeClass = struct
       o ty "" llb
 
   let build_cmp icmp o0 o1 llb = Llvm.build_icmp icmp o0 o1 "" llb
-
-  (* TODO: embed empty quotes *)
-  let build_phi = Llvm.build_phi
 
   let string_of_opcls = function
     | TER -> "TER"

@@ -1,7 +1,7 @@
 module LUtil = Util.LUtil
 module OpCls = Util.OpHelper.OpcodeClass
 
-(* MID-LEVEL CREATE/SUBSTITUTION HELPERS *)
+(* CFG PRESERVING MUTATION HELPERS *)
 
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
    right before instruction [loc], without any extra keywords.
@@ -26,7 +26,25 @@ let subst_binary llctx instr opcode =
   LUtil.replace_hard instr new_instr;
   new_instr
 
-let subst_cast _ = failwith "Not implemented"
+let subst_cast llctx instr =
+  (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc *)
+  match Llvm.instr_opcode instr with
+  | ZExt ->
+      let new_instr =
+        create_cast llctx instr Llvm.Opcode.SExt (Llvm.operand instr 0)
+          (Llvm.type_of instr)
+      in
+      LUtil.replace_hard instr new_instr;
+      new_instr
+  | SExt ->
+      let new_instr =
+        create_cast llctx instr Llvm.Opcode.ZExt (Llvm.operand instr 0)
+          (Llvm.type_of instr)
+      in
+      LUtil.replace_hard instr new_instr;
+      new_instr
+  | Trunc -> instr
+  | _ -> raise Util.OpHelper.Improper_class
 
 let subst_cmp llctx instr icmp =
   let nth_opd = Llvm.operand instr in
@@ -34,41 +52,9 @@ let subst_cmp llctx instr icmp =
   LUtil.replace_hard instr new_instr;
   new_instr
 
-(** [create_phi llctx loc incoming] creates
-    a PHI instruction instruction at the beginning of block [loc],
-    with [incoming].
-    Returns the new instruction. *)
-let create_phi llctx loc incoming =
-  OpCls.build_phi incoming ""
-    (Llvm.builder_before llctx
-       (match Llvm.instr_begin loc with
-       | Before i -> i
-       | At_end _ -> failwith "NEVER OCCUR"))
-
-(* TODO: what is the 'substitution' of phi instruction? *)
-
-(** [create_alloca llctx loc] creates
-    an alloca instruction right before instruction [loc].
-    Returns the new instruction. *)
-let create_alloca llctx instr =
-  Llvm.build_alloca (Llvm.i32_type llctx) "" (Llvm.builder_before llctx instr)
-
-(** [create_load llctx loc o] creates
-    a load instruction right before instruction [loc], with operand [o].
-    Returns the new instruction. *)
-let create_load llctx loc o =
-  Llvm.build_load o "" (Llvm.builder_before llctx loc)
-
-(** [create_store llctx loc o0 o1] creates
-    a store instruction right before instruction [loc],
-    with operands [o0] (value) and [o1] (pointer).
-    Return the new instruction. *)
-let create_store llctx loc o0 o1 =
-  Llvm.build_store o0 o1 (Llvm.builder_before llctx loc)
+(* CFG MODIFYING MUTATION HELPERS *)
 
 module CFG_Modifier = struct
-  (* HIGHER-LEVEL CFG MODIFYING FUNCTIONS *)
-
   (** [lower_instr llctx instr] lowers
     the given instruction [instr] one step down within its parent block.
     Returns its updated predecessor, i.e., its previous successor.
@@ -196,6 +182,8 @@ module CFG_Modifier = struct
     new_block
 end
 
+(* HIGH-LEVEL MUTATION HELPERS *)
+
 (* [randget_operand llctx loc ty] gets, or generates
    a llvalue as an operand, of type [ty], valid at [loc]. *)
 let randget_operand loc ty =
@@ -210,8 +198,7 @@ let randget_operand loc ty =
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc].
-    Returns the new instruction.
-    If rejected, returns [loc] instead. *)
+    Returns the new instruction (or [loc] if failed). *)
 let create_random_instr llctx loc =
   let preds = LUtil.get_instrs_before ~wide:false loc in
   let operand =
@@ -242,13 +229,13 @@ let create_random_instr llctx loc =
 (** [subst_random_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
     with the same operands.
-    Returns the new instruction. *)
+    Returns the new instruction (or [instr] if failed). *)
 let subst_random_instr llctx instr =
   let old_opcode = Llvm.instr_opcode instr in
   let new_opcode = OpCls.random_opcode_except old_opcode in
   match OpCls.classify new_opcode with
   | BINARY -> subst_binary llctx instr new_opcode
-  | CAST -> instr (* can do nothing *)
+  | CAST -> subst_cast llctx instr
   | CMP ->
       let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
       let rec aux () =
@@ -259,8 +246,8 @@ let subst_random_instr llctx instr =
   | TER | MEM | PHI -> instr (* TODO *)
 
 (** [subst_random_operand instr] substitutes
-    a random operand of instruction [instr] into another available one.
-    Returns [instr] (with its operand changed). *)
+    a random operand of instruction [instr] into another available random one.
+    Returns [instr] (with its operand changed if success). *)
 let subst_random_operand _ instr =
   match instr |> Llvm.instr_opcode |> OpCls.classify with
   | TER | MEM | PHI -> instr (* TODO *)
@@ -272,6 +259,7 @@ let subst_random_operand _ instr =
       Llvm.set_operand instr i operand_new;
       instr
 
+(* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
 (* CFG-related mutation *)
@@ -294,9 +282,7 @@ let mutate_inner_bb llctx llm =
   mutate_fun i;
   llm
 
-(* possible reflection of inner-basicblock mutation to CFG *)
-let mutate_transmission _ = Fun.id
-
+(* TODO: add fuzzing configuration *)
 let run llctx llm =
   llm |> Llvm_transform_utils.clone_module |> mutate_CFG llctx
-  |> mutate_inner_bb llctx |> mutate_transmission llctx
+  |> mutate_inner_bb llctx
