@@ -119,6 +119,34 @@ module OpcodeClass = struct
     | _ -> raise Improper_class)
       o0 o1 "" llb
 
+  let build_nsw_binary opcode o0 o1 llb =
+    if classify opcode <> BINARY then raise Improper_class
+    else
+      (match opcode with
+      | Add -> Llvm.build_nsw_add
+      | Sub -> Llvm.build_nsw_sub
+      | Mul -> Llvm.build_nsw_mul
+      | _ -> raise Unsupported)
+        o0 o1 "" llb
+
+  let build_nuw_binary opcode o0 o1 llb =
+    if classify opcode <> BINARY then raise Improper_class
+    else
+      (match opcode with
+      | Add -> Llvm.build_nuw_add
+      | Sub -> Llvm.build_nuw_sub
+      | Mul -> Llvm.build_nuw_mul
+      | _ -> raise Unsupported)
+        o0 o1 "" llb
+
+  let build_exact_binary opcode o0 o1 llb =
+    if classify opcode <> BINARY then raise Improper_class
+    else
+      (match opcode with
+      | SDiv -> Llvm.build_exact_sdiv
+      | _ -> raise Unsupported)
+        o0 o1 "" llb
+
   let build_cast opcode o ty llb =
     (match opcode with
     | Llvm.Opcode.Trunc -> Llvm.build_trunc

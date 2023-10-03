@@ -55,24 +55,6 @@ let subst_cmp llctx instr icmp =
 (* CFG MODIFYING MUTATION HELPERS *)
 
 module CFG_Modifier = struct
-  (** [lower_instr llctx instr] lowers
-    the given instruction [instr] one step down within its parent block.
-    Returns its updated predecessor, i.e., its previous successor.
-    If [instr] is terminator or instruction right before terminator,
-    does nothing and returns [instr]. *)
-  let lower_instr llctx instr =
-    match Llvm.instr_succ instr with
-    | At_end _ -> instr
-    | Before instr_succ ->
-        if instr_succ |> Llvm.instr_opcode |> OpCls.classify = OpCls.TER then
-          instr
-        else
-          let instr_succ_clone = Llvm.instr_clone instr_succ in
-          Llvm.insert_into_builder instr_succ_clone ""
-            (Llvm.builder_before llctx instr);
-          LUtil.replace_hard instr_succ instr_succ_clone;
-          instr_succ_clone
-
   (** [make_conditional llctx instr] substitutes
     an unconditional branch instruction [instr]
     into always-true conditional branch instruction.
@@ -259,6 +241,31 @@ let subst_random_operand _ instr =
       Llvm.set_operand instr i operand_new;
       instr
 
+(** [modify_flag llctx instr] tries to grant or retrieve
+    a random flag to the instruction [instr].
+    Returns [instr], with or without change. *)
+let modify_flag llctx instr =
+  let opcode = Llvm.instr_opcode instr in
+  match OpCls.classify opcode with
+  | BINARY -> (
+      let flagger =
+        LUtil.list_random
+          [
+            OpCls.build_nsw_binary;
+            OpCls.build_nuw_binary;
+            OpCls.build_exact_binary;
+          ]
+      in
+      try
+        let new_instr =
+          flagger opcode (Llvm.operand instr 0) (Llvm.operand instr 1)
+            (Llvm.builder_before llctx instr)
+        in
+        LUtil.replace_hard instr new_instr;
+        new_instr
+      with Util.OpHelper.Unsupported -> instr)
+  | _ -> instr
+
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
@@ -274,6 +281,7 @@ let mutate_inner_bb llctx llm =
   let mutate_fun =
     list_random
       [
+        (fun i -> i >> modify_flag llctx);
         (fun i -> i >> subst_random_operand llctx);
         (fun i -> i >> subst_random_instr llctx);
         (fun i -> i >> create_random_instr llctx);
