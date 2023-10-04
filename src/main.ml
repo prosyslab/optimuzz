@@ -152,11 +152,7 @@ let rec fuzz pool cov gen_count =
   let seed, pool_popped = SeedPool.pop pool in
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov, gen_count) =
-    let mutant =
-      Util.LUtil.repeat_fun
-        (Mutation.Mutator.run llctx)
-        seed !Config.num_mutation
-    in
+    let mutant = Mutation.Mutator.run llctx !Config.num_mutation seed in
     let filename = get_new_name () in
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = run_bins filename mutant in
