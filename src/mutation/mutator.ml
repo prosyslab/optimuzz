@@ -180,11 +180,12 @@ let randget_operand loc ty =
 (** [create_random_instr llctx loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc].
-    Returns the new instruction (or [loc] if failed). *)
-let create_random_instr llctx loc =
+    Returns the new instruction. *)
+let rec create_random_instr llctx loc preferred_opd =
   let preds = LUtil.get_instrs_before ~wide:false loc in
   let operand =
-    if preds <> [] then LUtil.list_random preds
+    if Option.is_some preferred_opd then Option.get preferred_opd
+    else if preds <> [] then LUtil.list_random preds
     else randget_operand loc (Llvm.i32_type llctx)
   in
   let operand_ty = Llvm.type_of operand in
@@ -206,7 +207,9 @@ let create_random_instr llctx loc =
         (LUtil.list_random OpCls.cmp_kind)
         operand
         (randget_operand loc operand_ty)
-  | TER | MEM | PHI -> loc
+  | TER | MEM | PHI ->
+      (* TODO: currently, just trying again *)
+      create_random_instr llctx loc preferred_opd
 
 (** [subst_random_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
@@ -230,16 +233,59 @@ let subst_random_instr llctx instr =
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available random one.
     Returns [instr] (with its operand changed if success). *)
-let subst_random_operand _ instr =
+let subst_random_operand _ instr preferred_opd =
   match instr |> Llvm.instr_opcode |> OpCls.classify with
   | TER | MEM | PHI -> instr (* TODO *)
   | _ ->
       let num_operands = Llvm.num_operands instr in
-      let i = Random.int num_operands in
-      let operand_old = Llvm.operand instr i in
-      let operand_new = randget_operand instr (Llvm.type_of operand_old) in
-      Llvm.set_operand instr i operand_new;
-      instr
+      assert (num_operands > 0);
+      let opd = Llvm.operand instr in
+
+      (* should check whether we can use the preferred operand *)
+      if Option.is_none preferred_opd then (
+        let i = Random.int num_operands in
+        let operand_old = opd i in
+        let operand_new = randget_operand instr (Llvm.type_of operand_old) in
+        Llvm.set_operand instr i operand_new;
+        instr)
+      else
+        let preferred_opd = Option.get preferred_opd in
+        let preferred_ty = Llvm.type_of preferred_opd in
+        if num_operands = 1 then (
+          let operand_old = opd 0 in
+          let operand_new =
+            if preferred_ty = Llvm.type_of operand_old then preferred_opd
+            else randget_operand instr (Llvm.type_of operand_old)
+          in
+          Llvm.set_operand instr 0 operand_new;
+          instr)
+        else if num_operands = 2 then (
+          (* try best to use the preferred operand *)
+          match
+            ( Llvm.type_of (opd 0) = preferred_ty,
+              Llvm.type_of (opd 1) = preferred_ty )
+          with
+          | false, false ->
+              (* cannot use the preferred operand *)
+              let i = Random.int num_operands in
+              let operand_old = opd i in
+              let operand_new =
+                randget_operand instr (Llvm.type_of operand_old)
+              in
+              Llvm.set_operand instr i operand_new;
+              instr
+          | false, true ->
+              Llvm.set_operand instr 1 preferred_opd;
+              instr
+          | true, false ->
+              Llvm.set_operand instr 0 preferred_opd;
+              instr
+          | true, true ->
+              (* both are ok; replace random one into the preferred one *)
+              let i = Random.int 2 in
+              Llvm.set_operand instr i preferred_opd;
+              instr)
+        else failwith "Not implemented"
 
 (** [modify_flag llctx instr] tries to grant or retrieve
     a random flag to the instruction [instr].
@@ -270,27 +316,52 @@ let modify_flag llctx instr =
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
 (* CFG-related mutation *)
-let mutate_CFG _ = Fun.id
+let mutate_CFG = Fun.id
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let mutate_inner_bb llctx llm =
-  let open LUtil in
-  let f = choose_function llm in
-  let all_instrs = fold_left_all_instr (fun accu i -> i :: accu) [] f in
-  let i = list_random all_instrs in
-  let mutate_fun =
-    list_random
+let rec mutate_inner_bb llctx times llm preferred_opd =
+  if times = 0 then llm
+  else if times < 0 then
+    raise (invalid_arg "mutation must be made by nonnegative num of times")
+  else
+    let open LUtil in
+    let f = choose_function llm in
+    let all_instrs =
+      fold_left_all_instr (fun accu instr -> instr :: accu) [] f
+    in
+    let instr_tgt = list_random all_instrs in
+
+    let make_chain len instr start =
+      assert (len >= 2);
+      let creation pref = create_random_instr llctx instr pref in
+      let rec aux i accu =
+        if i = 1 then accu else aux (i - 1) (Some (creation accu))
+      in
+      subst_random_operand llctx instr (aux len start)
+    in
+
+    (* valid mutations; delay actual action using closure *)
+    let mutation_list =
       [
-        (fun i -> i >> modify_flag llctx);
-        (fun i -> i >> subst_random_operand llctx);
-        (fun i -> i >> subst_random_instr llctx);
-        (fun i -> i >> create_random_instr llctx);
+        (1, fun instr -> create_random_instr llctx instr preferred_opd);
+        (1, fun instr -> subst_random_instr llctx instr);
+        (1, fun instr -> subst_random_operand llctx instr preferred_opd);
+        (1, fun instr -> modify_flag llctx instr);
       ]
-  in
-  mutate_fun i;
-  llm
+    in
+    let rec aux i accu =
+      if i > times then accu
+      else
+        aux (i + 1) ((i, fun instr -> make_chain i instr preferred_opd) :: accu)
+    in
+    let mutation_list = aux 2 mutation_list in
+
+    (* mutate and recurse *)
+    let times_used, mutation = list_random mutation_list in
+    mutation instr_tgt |> ignore;
+    mutate_inner_bb llctx (times - times_used) llm None
 
 (* TODO: add fuzzing configuration *)
-let run llctx llm =
-  llm |> Llvm_transform_utils.clone_module |> mutate_CFG llctx
-  |> mutate_inner_bb llctx
+let run llctx times llm =
+  let llm_clone = Llvm_transform_utils.clone_module llm in
+  mutate_inner_bb llctx times llm_clone None |> mutate_CFG
