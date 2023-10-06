@@ -183,6 +183,15 @@ let randget_operand loc ty =
     Returns the new instruction. *)
 let rec create_random_instr llctx loc preferred_opd =
   let preds = LUtil.get_instrs_before ~wide:false loc in
+
+  (* do only for integer type *)
+  let preds =
+    List.filter
+      (fun llv ->
+        llv |> Llvm.type_of |> Llvm.classify_type = Llvm.TypeKind.Integer)
+      preds
+  in
+
   let operand =
     if Option.is_some preferred_opd then Option.get preferred_opd
     else if preds <> [] then LUtil.list_random preds
@@ -193,21 +202,24 @@ let rec create_random_instr llctx loc preferred_opd =
   match OpCls.classify opcode with
   | BINARY ->
       create_binary llctx loc opcode operand (randget_operand loc operand_ty)
-  | CAST ->
-      let dest_ty =
-        match opcode with
-        | Trunc -> Util.OpHelper.TypeBW.random_narrower_llint llctx operand_ty
-        | ZExt | SExt ->
-            Util.OpHelper.TypeBW.random_wider_llint llctx operand_ty
-        | _ -> failwith "NEVER OCCUR"
-      in
-      create_cast llctx loc opcode operand dest_ty
+  | CAST -> (
+      try
+        let dest_ty =
+          match opcode with
+          | Trunc -> Util.OpHelper.TypeBW.random_narrower_llint llctx operand_ty
+          | ZExt | SExt ->
+              Util.OpHelper.TypeBW.random_wider_llint llctx operand_ty
+          | _ -> failwith "NEVER OCCUR"
+        in
+        create_cast llctx loc opcode operand dest_ty
+      with Util.OpHelper.Unsupported ->
+        create_random_instr llctx loc preferred_opd)
   | CMP ->
       create_cmp llctx loc
         (LUtil.list_random OpCls.cmp_kind)
         operand
         (randget_operand loc operand_ty)
-  | TER | MEM | PHI ->
+  | _ ->
       (* TODO: currently, just trying again *)
       create_random_instr llctx loc preferred_opd
 
@@ -217,9 +229,10 @@ let rec create_random_instr llctx loc preferred_opd =
     Returns the new instruction (or [instr] if failed). *)
 let subst_random_instr llctx instr =
   let old_opcode = Llvm.instr_opcode instr in
-  let new_opcode = OpCls.random_opcode_except old_opcode in
-  match OpCls.classify new_opcode with
-  | BINARY -> subst_binary llctx instr new_opcode
+  match OpCls.classify old_opcode with
+  | BINARY ->
+      let new_opcode = OpCls.random_opcode_except old_opcode in
+      subst_binary llctx instr new_opcode
   | CAST -> subst_cast llctx instr
   | CMP ->
       let old_cmp = instr |> Llvm.icmp_predicate |> Option.get in
@@ -228,64 +241,65 @@ let subst_random_instr llctx instr =
         if cmp = old_cmp then aux () else subst_cmp llctx instr cmp
       in
       aux ()
-  | TER | MEM | PHI -> instr (* TODO *)
+  | _ -> instr (* TODO *)
 
 (** [subst_random_operand instr] substitutes
     a random operand of instruction [instr] into another available random one.
     Returns [instr] (with its operand changed if success). *)
 let subst_random_operand _ instr preferred_opd =
   match instr |> Llvm.instr_opcode |> OpCls.classify with
-  | TER | MEM | PHI -> instr (* TODO *)
-  | _ ->
-      let num_operands = Llvm.num_operands instr in
-      assert (num_operands > 0);
+  | BINARY | CAST | CMP ->
       let opd = Llvm.operand instr in
+      let num_operands = Llvm.num_operands instr in
 
-      (* should check whether we can use the preferred operand *)
-      if Option.is_none preferred_opd then (
+      if Option.is_some preferred_opd then
+        (* should check whether we can use the preferred operand *)
+        let preferred_opd = Option.get preferred_opd in
+        let preferred_ty = Llvm.type_of preferred_opd in
+        match num_operands with
+        | 1 ->
+            let operand_old = opd 0 in
+            let operand_new =
+              if preferred_ty = Llvm.type_of operand_old then preferred_opd
+              else randget_operand instr (Llvm.type_of operand_old)
+            in
+            Llvm.set_operand instr 0 operand_new;
+            instr
+        | 2 -> (
+            (* try best to use the preferred operand *)
+            match
+              ( Llvm.type_of (opd 0) = preferred_ty,
+                Llvm.type_of (opd 1) = preferred_ty )
+            with
+            | false, false ->
+                (* cannot use the preferred operand *)
+                let i = Random.int 2 in
+                let operand_old = opd i in
+                let operand_new =
+                  randget_operand instr (Llvm.type_of operand_old)
+                in
+                Llvm.set_operand instr i operand_new;
+                instr
+            | false, true ->
+                Llvm.set_operand instr 1 preferred_opd;
+                instr
+            | true, false ->
+                Llvm.set_operand instr 0 preferred_opd;
+                instr
+            | true, true ->
+                (* both are ok; replace random one into the preferred one *)
+                let i = Random.int 2 in
+                Llvm.set_operand instr i preferred_opd;
+                instr)
+        | _ -> instr (* TODO: silently pass currenly *)
+      else if num_operands > 0 then (
         let i = Random.int num_operands in
         let operand_old = opd i in
         let operand_new = randget_operand instr (Llvm.type_of operand_old) in
         Llvm.set_operand instr i operand_new;
         instr)
-      else
-        let preferred_opd = Option.get preferred_opd in
-        let preferred_ty = Llvm.type_of preferred_opd in
-        if num_operands = 1 then (
-          let operand_old = opd 0 in
-          let operand_new =
-            if preferred_ty = Llvm.type_of operand_old then preferred_opd
-            else randget_operand instr (Llvm.type_of operand_old)
-          in
-          Llvm.set_operand instr 0 operand_new;
-          instr)
-        else if num_operands = 2 then (
-          (* try best to use the preferred operand *)
-          match
-            ( Llvm.type_of (opd 0) = preferred_ty,
-              Llvm.type_of (opd 1) = preferred_ty )
-          with
-          | false, false ->
-              (* cannot use the preferred operand *)
-              let i = Random.int num_operands in
-              let operand_old = opd i in
-              let operand_new =
-                randget_operand instr (Llvm.type_of operand_old)
-              in
-              Llvm.set_operand instr i operand_new;
-              instr
-          | false, true ->
-              Llvm.set_operand instr 1 preferred_opd;
-              instr
-          | true, false ->
-              Llvm.set_operand instr 0 preferred_opd;
-              instr
-          | true, true ->
-              (* both are ok; replace random one into the preferred one *)
-              let i = Random.int 2 in
-              Llvm.set_operand instr i preferred_opd;
-              instr)
-        else failwith "Not implemented"
+      else instr
+  | _ -> instr
 
 (** [modify_flag llctx instr] tries to grant or retrieve
     a random flag to the instruction [instr].
