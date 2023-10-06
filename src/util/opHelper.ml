@@ -31,7 +31,7 @@ module TypeBW = struct
 end
 
 module OpcodeClass = struct
-  type t = TER | BINARY | MEM | CAST | CMP | PHI
+  type t = TER | BINARY | MEM | CAST | CMP | PHI | OTHER
 
   (* use these lists to mark progress *)
   let ter_list = [ Llvm.Opcode.Ret; Br ]
@@ -57,12 +57,14 @@ module OpcodeClass = struct
   let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt ]
   let cmp_list = [ Llvm.Opcode.ICmp ]
   let phi_list = [ Llvm.Opcode.PHI ]
+  let other_list = []
 
   (* helper for cmp instruction *)
   let cmp_kind = [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
 
   let total_list =
     ter_list @ binary_list @ mem_list @ cast_list @ cmp_list @ phi_list
+    @ other_list
 
   let classify = function
     | Llvm.Opcode.Ret | Br -> TER
@@ -76,7 +78,7 @@ module OpcodeClass = struct
     | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
     | FPTrunc | FPExt | FCmp ->
         raise Out_of_integer_domain
-    | _ -> raise Unsupported
+    | _ -> OTHER
 
   let oplist_of = function
     | TER -> ter_list
@@ -85,6 +87,7 @@ module OpcodeClass = struct
     | CAST -> cast_list
     | CMP -> cmp_list
     | PHI -> phi_list
+    | OTHER -> other_list
 
   let random_op_of opcls = opcls |> oplist_of |> LUtil.list_random
 
@@ -164,4 +167,5 @@ module OpcodeClass = struct
     | CAST -> "CAST"
     | CMP -> "CMP"
     | PHI -> "PHI"
+    | _ -> "OTHER"
 end
