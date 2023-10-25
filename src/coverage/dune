@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain gcov)
+ (modules domain measurer)
  (libraries unix util config))
