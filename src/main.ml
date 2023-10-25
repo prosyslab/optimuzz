@@ -57,28 +57,23 @@ let initialize () =
     (fun _ -> failwith "There must be no anonymous arguments.")
     "Usage: llfuzz [options]";
 
-  (* these files are bound to llfuzz project *)
   (* consider dune directory *)
   Config.project_home :=
     Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
     |> Filename.dirname |> Filename.dirname;
+
   Config.opt_bin := Filename.concat !Config.project_home !Config.opt_bin;
   Config.alive2_bin := Filename.concat !Config.project_home !Config.alive2_bin;
-  Config.workspace := Unix.getcwd ();
+
   Config.out_dir := Filename.concat !Config.project_home !Config.out_dir;
-  Config.gcov_dir := Filename.concat !Config.out_dir !Config.gcov_dir;
   Config.crash_dir := Filename.concat !Config.out_dir !Config.crash_dir;
   Config.corpus_dir := Filename.concat !Config.out_dir !Config.corpus_dir;
 
-  (* these files are bound to (outer) workspace *)
+  (* make directories first *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
-  (try Sys.mkdir !Config.gcov_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
 
-  Config.init_whitelist ();
-  Config.init_gcda_list ();
-  Config.init_gcov_list ();
   Random.init !Config.random_seed;
 
   (* Clean previous coverage data *)
