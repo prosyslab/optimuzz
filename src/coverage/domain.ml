@@ -1,40 +1,47 @@
-(* each coverage is represented by id *)
+(* location of each coverage groups, i.e., file name and function name *)
+module Loc = struct
+  type t = string * string
+
+  let compare = compare
+end
+
+(* each coverage is represented by coverage id *)
 module Id = Int
 
 (* set of id *)
-module IdSet = Set.Make (Id)
+module Group = Set.Make (Id)
 
-(* map from (file)name to set of coverage *)
+(* map from location to group  *)
 module CovMap = struct
-  module NameMap = Map.Make (String)
+  module LocMap = Map.Make (Loc)
 
-  type t = IdSet.t NameMap.t
+  type t = Group.t LocMap.t
 
-  let empty : t = NameMap.empty
-  let add : string -> IdSet.t -> t -> t = NameMap.add
-  let mem : string -> t -> bool = NameMap.mem
-  let find : string -> t -> IdSet.t = NameMap.find
+  let empty : t = LocMap.empty
+  let add : Loc.t -> Group.t -> t -> t = LocMap.add
+  let mem : Loc.t -> t -> bool = LocMap.mem
+  let find : Loc.t -> t -> Group.t = LocMap.find
 
-  let update : string -> (IdSet.t option -> IdSet.t option) -> t -> t =
-    NameMap.update
+  let update : Loc.t -> (Group.t option -> Group.t option) -> t -> t =
+    LocMap.update
 
   (** [join x y] adds all coverage in [y] into [x]. *)
   let join =
-    NameMap.merge (fun _ d_x d_y ->
+    LocMap.merge (fun _ d_x d_y ->
         match (d_x, d_y) with
-        | Some d_x, Some d_y -> Some (IdSet.union d_x d_y)
+        | Some d_x, Some d_y -> Some (Group.union d_x d_y)
         | Some d, None | None, Some d -> Some d
         | None, None -> None)
 
   (** [subset x y] returns whether [x] is a sub-coverage of [y]. *)
   let subset x y =
-    NameMap.for_all
+    LocMap.for_all
       (fun k d_x ->
-        match NameMap.find_opt k y with
-        | Some d_y -> IdSet.subset d_x d_y
+        match LocMap.find_opt k y with
+        | Some d_y -> Group.subset d_x d_y
         | None -> false)
       x
 
   (** [cardinal x] returns the sum of cardinals of all bindings in [x]. *)
-  let cardinal x = NameMap.fold (fun _ d accu -> accu + IdSet.cardinal d) x 0
+  let cardinal x = LocMap.fold (fun _ d accu -> accu + Group.cardinal d) x 0
 end

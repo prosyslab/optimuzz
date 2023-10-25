@@ -18,19 +18,19 @@ let run () =
           else failwith "Invalid coverage line"
       | _ -> failwith "Invalid coverage line"
     in
-    ( List.hd chunks ^ (chunks |> List.tl |> List.hd),
+    ( (List.hd chunks, chunks |> List.tl |> List.hd),
       List.nth chunks 2 |> int_of_string )
   in
   let file = open_in "cov.cov" in
   let rec aux accu =
     match input_line file with
     | line ->
-        let name, id = parse_line line in
+        let loc, id = parse_line line in
         aux
-          (CovMap.update name
+          (CovMap.update loc
              (function
-               | Some idset -> Some (IdSet.add id idset)
-               | None -> Some (IdSet.singleton id))
+               | Some group -> Some (Group.add id group)
+               | None -> Some (Group.singleton id))
              accu)
     | exception End_of_file ->
         close_in file;
