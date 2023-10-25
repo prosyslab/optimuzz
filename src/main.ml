@@ -82,8 +82,7 @@ let initialize () =
   Random.init !Config.random_seed;
 
   (* Clean previous coverage data *)
-  Coverage.Gcov.clean_gcda ();
-  Coverage.Gcov.clean_gcov ()
+  Coverage.Measurer.clean ()
 
 let run_alive2 filename =
   (* run alive2 *)
@@ -133,13 +132,13 @@ let run_opt filename =
 
 (* run opt (and tv) and measure coverage *)
 let run_bins filename llm =
-  Coverage.Gcov.clean_gcda ();
+  Coverage.Measurer.clean ();
   save_ll !Config.out_dir filename llm;
   let filename_out = Filename.concat !Config.out_dir filename in
 
   (* run opt/alive2 and evaluate *)
   let res_opt = run_opt filename_out in
-  let coverage = Coverage.Gcov.run () in
+  let coverage = Coverage.Measurer.run () in
   if !Config.no_tv then (
     if res_opt <> VALID then save_ll !Config.crash_dir filename llm;
     (res_opt, coverage))
@@ -158,14 +157,13 @@ let rec fuzz pool cov gen_count =
     let _, cov_mutant = run_bins filename mutant in
 
     let pool', cov', gen_count =
-      if LineCoverage.subset cov_mutant cov then (pool, cov, gen_count)
+      if CovMap.subset cov_mutant cov then (pool, cov, gen_count)
       else (
         save_ll !Config.corpus_dir filename mutant;
         let seed = SeedPool.push mutant pool in
-        let cov = LineCoverage.join cov cov_mutant in
+        let cov = CovMap.join cov cov_mutant in
         F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
-          (gen_count + 1)
-          (LineCoverage.cardinal cov);
+          (gen_count + 1) (CovMap.cardinal cov);
         (seed, cov, gen_count + 1))
     in
 
@@ -175,7 +173,7 @@ let rec fuzz pool cov gen_count =
       output_string timestamp_fp
         (string_of_int (now () - !start_time)
         ^ " "
-        ^ string_of_int (LineCoverage.cardinal cov')
+        ^ string_of_int (CovMap.cardinal cov')
         ^ "\n"));
     (pool', cov', gen_count)
   in
@@ -206,9 +204,9 @@ let main () =
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then (
     run_opt !Config.cov_tgt_path |> ignore;
-    let cov = Coverage.Gcov.run () in
+    let cov = Coverage.Measurer.run () in
     print_string "Total coverage: ";
-    cov |> LineCoverage.cardinal |> string_of_int |> print_endline;
+    cov |> CovMap.cardinal |> string_of_int |> print_endline;
     exit 0);
 
   (* fuzzing *)
@@ -216,12 +214,12 @@ let main () =
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
   start_time := now ();
-  let coverage = fuzz seed_pool LineCoverage.empty 0 in
+  let coverage = fuzz seed_pool CovMap.empty 0 in
   let end_time = now () in
 
   if not !Config.no_tv then Unix.unlink alive2_log;
 
-  F.printf "\ntotal coverage: %d lines@." (LineCoverage.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (CovMap.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !start_time)
 
 let _ = main ()
