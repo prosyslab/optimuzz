@@ -31,7 +31,7 @@ let save_ll dir filename llm =
   Llvm.print_module output_name llm
 
 module SeedPool = struct
-  type t = Llvm.llmodule Queue.t
+  type t = (Llvm.llmodule * bool) Queue.t
 
   let push s pool =
     Queue.push s pool;
@@ -46,9 +46,11 @@ module SeedPool = struct
     |> List.filter (fun file -> Filename.extension file = ".ll")
     |> List.fold_left
          (fun queue file ->
-           Filename.concat dir file |> Llvm.MemoryBuffer.of_file
-           |> Llvm_irreader.parse_ir llctx
-           |> Fun.flip push queue)
+           push
+             ( Filename.concat dir file |> Llvm.MemoryBuffer.of_file
+               |> Llvm_irreader.parse_ir llctx,
+               false )
+             queue)
          (Queue.create ())
 end
 
@@ -143,23 +145,36 @@ let run_bins filename llm =
     (res_alive2, coverage)
 
 let rec fuzz pool cov gen_count =
-  let seed, pool_popped = SeedPool.pop pool in
+  let (seed, covered), pool_popped = SeedPool.pop pool in
+  let mode =
+    if covered then Mutation.Mutator.FOCUS else Mutation.Mutator.EXPAND
+  in
+
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov, gen_count) =
-    let mutant = Mutation.Mutator.run llctx !Config.num_mutation seed in
+    let mutant = Mutation.Mutator.run llctx mode !Config.num_mutation seed in
     let filename = get_new_name () in
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = run_bins filename mutant in
 
+    (* check whether the seed is covering the target *)
+    let covered =
+      !Config.cov_directed <> ""
+      &&
+      let parsed = Coverage.Measurer.parse_line !Config.cov_directed in
+      CovMap.mem (fst parsed) (snd parsed) cov_mutant
+    in
+
+    (* induce new pool and coverage *)
     let pool', cov', gen_count =
       if CovMap.subset cov_mutant cov then (pool, cov, gen_count)
       else (
         save_ll !Config.corpus_dir filename mutant;
-        let seed = SeedPool.push mutant pool in
+        let pool = SeedPool.push (mutant, covered) pool in
         let cov = CovMap.join cov cov_mutant in
         F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
           (gen_count + 1) (CovMap.cardinal cov);
-        (seed, cov, gen_count + 1))
+        (pool, cov, gen_count + 1))
     in
 
     (* timestamp *)
@@ -179,7 +194,7 @@ let rec fuzz pool cov gen_count =
       (pool_popped, cov, gen_count)
       !Config.num_mutant
   in
-  let pool' = SeedPool.push seed pool' in
+  let pool' = SeedPool.push (seed, covered) pool' in
 
   (* repeat until the time budget or seed pool exhausts *)
   if !Config.time_budget > 0 && now () - !start_time > !Config.time_budget then

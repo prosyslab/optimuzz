@@ -19,8 +19,11 @@ module CovMap = struct
 
   let empty : t = LocMap.empty
   let add : Loc.t -> Group.t -> t -> t = LocMap.add
-  let mem : Loc.t -> t -> bool = LocMap.mem
-  let find : Loc.t -> t -> Group.t = LocMap.find
+
+  let mem loc id cov_map =
+    match LocMap.find_opt loc cov_map with
+    | Some group -> Group.mem id group
+    | None -> false
 
   let update : Loc.t -> (Group.t option -> Group.t option) -> t -> t =
     LocMap.update
