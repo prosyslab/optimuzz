@@ -1,6 +1,8 @@
 module LUtil = Util.LUtil
 module OpCls = Util.OpHelper.OpcodeClass
 
+type mode_t = EXPAND | FOCUS
+
 (* CFG PRESERVING MUTATION HELPERS *)
 
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
@@ -376,6 +378,6 @@ let rec mutate_inner_bb llctx times llm preferred_opd =
     mutate_inner_bb llctx (times - times_used) llm None
 
 (* TODO: add fuzzing configuration *)
-let run llctx times llm =
+let run llctx _ times llm =
   let llm_clone = Llvm_transform_utils.clone_module llm in
   mutate_inner_bb llctx times llm_clone None |> mutate_CFG

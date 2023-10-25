@@ -16,6 +16,7 @@ let alive2_bin = ref "alive2/build/alive-tv"
 (* fuzzing options *)
 let random_seed = ref 0
 let time_budget = ref (-1)
+let cov_directed = ref ""
 let num_mutation = ref 1
 let num_mutant = ref 10
 let no_tv = ref true
@@ -38,6 +39,7 @@ let opts =
     (* fuzzing options *)
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
+    ("-direct", Arg.Set_string cov_directed, "Target coverage id");
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
