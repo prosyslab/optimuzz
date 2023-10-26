@@ -195,10 +195,12 @@ let get_blocks_after bb =
 
 (** [choose_function llm] returns an arbitrary function in [llm]. *)
 let choose_function llm =
-  (* assume the sole function for now *)
-  match Llvm.function_begin llm with
-  | Before f -> f
-  | At_end _ -> failwith "No function defined"
+  let rec aux = function
+    | Llvm.Before f ->
+        if Llvm.is_declaration f then aux (Llvm.function_succ f) else f
+    | At_end _ -> failwith "No function defined"
+  in
+  aux (Llvm.function_begin llm)
 
 (** [replace_hard bef aft] replaces
     all uses of [bef] to [aft] and delete [bef]. *)
