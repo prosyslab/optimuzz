@@ -46,11 +46,11 @@ module SeedPool = struct
     |> List.filter (fun file -> Filename.extension file = ".ll")
     |> List.fold_left
          (fun queue file ->
-           push
-             ( Filename.concat dir file |> Llvm.MemoryBuffer.of_file
-               |> Llvm_irreader.parse_ir llctx,
-               false )
-             queue)
+           let path = Filename.concat dir file in
+           let membuf = Llvm.MemoryBuffer.of_file path in
+           (* skip invalid IR *)
+           try push (Llvm_irreader.parse_ir llctx membuf, false) queue
+           with _ -> queue)
          (Queue.create ())
 end
 
@@ -135,7 +135,9 @@ let run_bins filename llm =
 
   (* run opt/alive2 and evaluate *)
   let res_opt = run_opt filename_out in
-  let coverage = Coverage.Measurer.run () in
+  let coverage =
+    if res_opt = CRASH then CovMap.empty else Coverage.Measurer.run ()
+  in
   if !Config.no_tv then (
     if res_opt <> VALID then save_ll !Config.crash_dir filename llm;
     (res_opt, coverage))
