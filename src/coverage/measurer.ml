@@ -21,19 +21,21 @@ let parse_line line =
 (* assume source codes are instrumented and `opt` are executed already *)
 let run () =
   (* each line is form of [file_name:function_name:id] *)
-  let file = open_in "cov.cov" in
-  let rec aux accu =
-    match input_line file with
-    | line ->
-        let loc, id = parse_line line in
-        aux
-          (CovMap.update loc
-             (function
-               | Some group -> Some (Group.add id group)
-               | None -> Some (Group.singleton id))
-             accu)
-    | exception End_of_file ->
-        close_in file;
-        accu
-  in
-  aux CovMap.empty
+  try
+    let file = open_in "cov.cov" in
+    let rec aux accu =
+      match input_line file with
+      | line ->
+          let loc, id = parse_line line in
+          aux
+            (CovMap.update loc
+               (function
+                 | Some group -> Some (Group.add id group)
+                 | None -> Some (Group.singleton id))
+               accu)
+      | exception End_of_file ->
+          close_in file;
+          accu
+    in
+    aux CovMap.empty
+  with Sys_error _ -> CovMap.empty
