@@ -328,6 +328,19 @@ let modify_flag llctx instr =
       with Util.OpHelper.Unsupported -> instr)
   | _ -> instr
 
+(** [make_chain llctx len instr initial_opd] make chained mutation;
+    For example, if the original llvm was ... -> instr -> i1 -> ...,
+    calling this will make: ... -> (chain of length [len]) -> instr -> i1,
+    where an operand of instr will be replaced of the last mutation of chain.
+    Returns operand-substitued [instr]. *)
+let make_chain llctx len instr first_opd =
+  assert (len >= 2);
+  let create pref = create_random_instr llctx instr pref in
+  let rec aux i accu =
+    if i = 1 then accu else aux (i - 1) (Some (create accu))
+  in
+  subst_random_operand llctx instr (aux len first_opd)
+
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
@@ -335,49 +348,51 @@ let modify_flag llctx instr =
 let mutate_CFG = Fun.id
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx times llm preferred_opd =
+let rec mutate_inner_bb llctx mode times llm preferred_opd =
   if times = 0 then llm
   else if times < 0 then
     raise (invalid_arg "mutation must be made by nonnegative num of times")
   else
     let open LUtil in
+    (* find function and target location *)
     let f = choose_function llm in
     let all_instrs =
       fold_left_all_instr (fun accu instr -> instr :: accu) [] f
     in
     let instr_tgt = list_random all_instrs in
 
-    let make_chain len instr start =
-      assert (len >= 2);
-      let creation pref = create_random_instr llctx instr pref in
-      let rec aux i accu =
-        if i = 1 then accu else aux (i - 1) (Some (creation accu))
-      in
-      subst_random_operand llctx instr (aux len start)
-    in
-
     (* valid mutations; delay actual action using closure *)
     let mutation_list =
       [
-        (1, fun instr -> create_random_instr llctx instr preferred_opd);
         (1, fun instr -> subst_random_instr llctx instr);
         (1, fun instr -> subst_random_operand llctx instr preferred_opd);
         (1, fun instr -> modify_flag llctx instr);
       ]
     in
-    let rec aux i accu =
-      if i > times then accu
-      else
-        aux (i + 1) ((i, fun instr -> make_chain i instr preferred_opd) :: accu)
+
+    (* depending on mode, available mutations differ *)
+    let mutation_list =
+      if mode = EXPAND then
+        let mutation_list =
+          (1, fun instr -> create_random_instr llctx instr preferred_opd)
+          :: mutation_list
+        in
+        let rec aux i accu =
+          if i > times then accu
+          else
+            aux (i + 1)
+              ((i, fun instr -> make_chain llctx i instr preferred_opd) :: accu)
+        in
+        aux 2 mutation_list
+      else mutation_list
     in
-    let mutation_list = aux 2 mutation_list in
 
     (* mutate and recurse *)
     let times_used, mutation = list_random mutation_list in
     mutation instr_tgt |> ignore;
-    mutate_inner_bb llctx (times - times_used) llm None
+    mutate_inner_bb llctx mode (times - times_used) llm None
 
 (* TODO: add fuzzing configuration *)
-let run llctx _ times llm =
+let run llctx mode times llm =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx times llm_clone None |> mutate_CFG
+  mutate_inner_bb llctx mode times llm_clone None |> mutate_CFG
