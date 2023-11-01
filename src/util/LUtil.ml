@@ -207,3 +207,11 @@ let choose_function llm =
 let replace_hard bef aft =
   Llvm.replace_all_uses_with bef aft;
   Llvm.delete_instruction bef
+
+let replace_and_ret instr_old instr_new =
+  replace_hard instr_old instr_new;
+  Some instr_new
+
+let set_opd_and_ret instr i opd =
+  Llvm.set_operand instr i opd;
+  Some instr
