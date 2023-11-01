@@ -169,3 +169,35 @@ module OpcodeClass = struct
     | PHI -> "PHI"
     | _ -> "OTHER"
 end
+
+module Flag = struct
+  let can_overflow = function
+    | Llvm.Opcode.Add | Sub | Mul | Shl -> true
+    | _ -> false
+
+  let can_be_exact = function
+    | Llvm.Opcode.SDiv | UDiv | AShr | LShr -> true
+    | _ -> false
+
+  external set_nuw_raw : bool -> Llvm.llvalue -> unit = "llvm_set_nuw"
+  external set_nsw_raw : bool -> Llvm.llvalue -> unit = "llvm_set_nsw"
+  external set_exact_raw : bool -> Llvm.llvalue -> unit = "llvm_set_exact"
+  external is_nuw_raw : Llvm.llvalue -> bool = "llvm_is_nuw"
+  external is_nsw_raw : Llvm.llvalue -> bool = "llvm_is_nsw"
+  external is_exact_raw : Llvm.llvalue -> bool = "llvm_is_exact"
+
+  let guard_set prereq f flag instr =
+    if instr |> Llvm.instr_opcode |> prereq then f flag instr
+    else raise Unsupported
+
+  let set_nuw = guard_set can_overflow set_nuw_raw
+  let set_nsw = guard_set can_overflow set_nsw_raw
+  let set_exact = guard_set can_be_exact set_exact_raw
+
+  let guard_is prereq f instr =
+    if instr |> Llvm.instr_opcode |> prereq then f instr else raise Unsupported
+
+  let is_nuw = guard_is can_overflow is_nuw_raw
+  let is_nsw = guard_is can_overflow is_nsw_raw
+  let is_exact = guard_is can_be_exact is_exact_raw
+end
