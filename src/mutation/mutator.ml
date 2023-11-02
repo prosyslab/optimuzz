@@ -301,25 +301,31 @@ let rec subst_rand_opd llctx preferred_opd instr =
 (** [modify_flag llctx instr] tries to grant or retrieve
     a random flag to the instruction [instr].
     Returns [instr], with or without change. *)
-let modify_flag llctx instr =
+let modify_flag _ instr =
+  let open Util.OpHelper.Flag in
   let opcode = Llvm.instr_opcode instr in
   match OpCls.classify opcode with
-  | BINARY -> (
-      let flagger =
-        LUtil.list_random
-          [
-            OpCls.build_nsw_binary;
-            OpCls.build_nuw_binary;
-            OpCls.build_exact_binary;
-          ]
-      in
-      try
-        let new_instr =
-          flagger opcode (Llvm.operand instr 0) (Llvm.operand instr 1)
-            (Llvm.builder_before llctx instr)
+  | BINARY ->
+      (* there is no instruction that can have both exact and nuw/nsw *)
+      if can_overflow opcode then (
+        (* can have both nuw and nsw *)
+        let nuw_old = is_nuw instr in
+        let nsw_old = is_nsw instr in
+        let cases =
+          match (nuw_old, nsw_old) with
+          | false, false -> [ (false, true); (true, false); (true, true) ]
+          | false, true -> [ (false, false); (true, false); (true, true) ]
+          | true, false -> [ (false, false); (false, true); (true, true) ]
+          | true, true -> [ (false, false); (false, true); (true, false) ]
         in
-        LUtil.replace_and_ret instr new_instr
-      with Util.OpHelper.Unsupported -> None)
+        let nuw_new, nsw_new = LUtil.list_random cases in
+        set_nuw nuw_new instr;
+        set_nsw nsw_new instr;
+        Some instr)
+      else if can_be_exact opcode then (
+        set_exact (not (is_exact instr)) instr;
+        Some instr)
+      else None
   | _ -> None
 
 (** [make_chain llctx len instr initial_opd] make chained mutation;
