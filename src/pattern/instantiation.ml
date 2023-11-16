@@ -1,5 +1,5 @@
 open IR
-open Util.OpHelper.OpcodeClass
+open Util.ALlvm.OpcodeClass
 
 (* INSTANTIATION: Connects LLVM and Pattern IR *)
 (* Here, 'instance' means LLModule of a single function. *)
@@ -33,7 +33,7 @@ let run name pat : instance_t list =
     match pat with
     | BinOp (binop, _, _, _) -> (
         match
-          binop |> string_of_binop |> Util.LUtil.opcode_of_string |> classify
+          binop |> string_of_binop |> Util.ALlvm.opcode_of_string |> classify
         with
         | BINARY -> i32
         | CMP -> i1
@@ -136,7 +136,7 @@ let run name pat : instance_t list =
                   let lhs = renew_llv lhs_name lhs_llv llm_binop in
                   let rhs = renew_llv rhs_name rhs_llv llm_binop in
                   let opcode_llvm =
-                    binop |> string_of_binop |> Util.LUtil.opcode_of_string
+                    binop |> string_of_binop |> Util.ALlvm.opcode_of_string
                   in
                   match classify opcode_llvm with
                   | BINARY ->
