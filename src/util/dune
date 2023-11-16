@@ -1,6 +1,6 @@
 (library
  (name util)
- (modules LUtil opHelper)
+ (modules aLlvm aUtil)
  (libraries llvm)
  (foreign_stubs
   (language cxx)

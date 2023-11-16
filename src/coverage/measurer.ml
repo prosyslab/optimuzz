@@ -1,7 +1,7 @@
 open Domain
 module F = Format
 
-let cmd = Util.LUtil.command_args
+let cmd = Util.AUtil.command_args
 let clean () = cmd [ "rm"; "cov.cov"; "2>/dev/null" ] |> ignore
 
 let parse_line line =

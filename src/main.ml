@@ -1,12 +1,13 @@
 open Coverage.Domain
+module ALlvm = Util.ALlvm
 module F = Format
 
 type res_t = CRASH | INVALID | VALID
 
-let llctx = Llvm.create_context ()
+let llctx = ALlvm.create_context ()
 
 (* alias *)
-let cmd = Util.LUtil.command_args
+let cmd = Util.AUtil.command_args
 
 (* for logging *)
 let alive2_log = "alive-tv.txt"
@@ -28,10 +29,10 @@ let name_opted_ver filename =
 
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
-  Llvm.print_module output_name llm
+  ALlvm.print_module output_name llm
 
 module SeedPool = struct
-  type t = (Llvm.llmodule * bool) Queue.t
+  type t = (ALlvm.llmodule * bool) Queue.t
 
   let push s pool =
     Queue.push s pool;
@@ -47,7 +48,7 @@ module SeedPool = struct
     |> List.fold_left
          (fun queue file ->
            let path = Filename.concat dir file in
-           let membuf = Llvm.MemoryBuffer.of_file path in
+           let membuf = ALlvm.MemoryBuffer.of_file path in
            (* skip invalid IR *)
            try push (Llvm_irreader.parse_ir llctx membuf, false) queue
            with _ -> queue)
@@ -192,7 +193,7 @@ let rec fuzz pool cov gen_count =
 
   (* each seed is mutated into n mutants *)
   let pool', cov', gen_count =
-    Util.LUtil.repeat_fun mutate_seed
+    Util.AUtil.repeat_fun mutate_seed
       (pool_popped, cov, gen_count)
       !Config.num_mutant
   in

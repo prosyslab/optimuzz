@@ -1,32 +1,7 @@
-(* GENERAL UTILITY FUNCTIONS *)
-
-let ( >> ) x f = f x |> ignore
-let command_args args = args |> String.concat " " |> Sys.command
-
-(** [rand low high] returns a random integer
-    between [low] and [high] (both inclusive). *)
-let rand low high = Random.int (high - low + 1) + low
-
-(** [repeat_fun f init t] is [f (... (f (f init)) ...)] ([t] times).
-    @raise Invalid_argument if [t] is negative. *)
-let repeat_fun f init t =
-  if t < 0 then raise (Invalid_argument "Negative t")
-  else
-    let rec aux accu count =
-      if count = 0 then accu else aux (f accu) (count - 1)
-    in
-    aux init t
-
-(** [list_random l] returns a random element from a list [l].
-    @raise Invalid_argument if [l] is empty. *)
-let list_random l =
-  if l <> [] then List.nth l (Random.int (List.length l))
-  else raise (Invalid_argument "Empty list")
-
-(* LLVM UTILITY FUNCTIONS *)
+include Llvm
 
 let string_of_opcode = function
-  | Llvm.Opcode.Invalid -> "Invalid"
+  | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
   | Br -> "Br"
   | Switch -> "Switch"
@@ -215,3 +190,184 @@ let replace_and_ret instr_old instr_new =
 let set_opd_and_ret instr i opd =
   Llvm.set_operand instr i opd;
   Some instr
+
+exception Out_of_integer_domain
+
+module TypeBW = struct
+  exception Unsupported_Type
+
+  type t = Llvm.lltype
+  type bwt = int (* bitwidth *)
+
+  (* support integer type only *)
+  let is_llint ty = Llvm.classify_type ty = Llvm.TypeKind.Integer
+  let assert_llint ty = if not (is_llint ty) then raise Out_of_integer_domain
+
+  (* bitwidth related functions *)
+  let rand_bw () = AUtil.rand 1 64
+  let llint_of_bw = Llvm.integer_type
+  let bw_of_llint = Llvm.integer_bitwidth
+
+  let random_wider_llint llctx ty =
+    let bw = bw_of_llint ty in
+    if bw = 64 then raise Unsupported_Type
+    else
+      let bw_wide = AUtil.rand (bw + 1) 64 in
+      llint_of_bw llctx bw_wide
+
+  let random_narrower_llint llctx ty =
+    let bw = bw_of_llint ty in
+    if bw = 1 then raise Unsupported_Type
+    else
+      let bw_narrow = AUtil.rand 1 (bw - 1) in
+      llint_of_bw llctx bw_narrow
+end
+
+module OpcodeClass = struct
+  exception Improper_class
+
+  type t = TER | BINARY | MEM | CAST | CMP | PHI | OTHER
+
+  (* use these lists to mark progress *)
+  let ter_list = [ Llvm.Opcode.Ret; Br ]
+
+  let binary_list =
+    [
+      Llvm.Opcode.Add;
+      Sub;
+      Mul;
+      UDiv;
+      SDiv;
+      URem;
+      SRem;
+      Shl;
+      LShr;
+      AShr;
+      And;
+      Or;
+      Xor;
+    ]
+
+  let mem_list = [ Llvm.Opcode.Alloca; Load; Store ]
+  let cast_list = [ Llvm.Opcode.Trunc; ZExt; SExt ]
+  let cmp_list = [ Llvm.Opcode.ICmp ]
+  let phi_list = [ Llvm.Opcode.PHI ]
+  let other_list = []
+
+  (* helper for cmp instruction *)
+  let cmp_kind = [ Llvm.Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
+
+  let total_list =
+    ter_list @ binary_list @ mem_list @ cast_list @ cmp_list @ phi_list
+    @ other_list
+
+  let classify = function
+    | Llvm.Opcode.Ret | Br -> TER
+    | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
+    | Xor ->
+        BINARY
+    | Alloca | Load | Store -> MEM
+    | Trunc | ZExt | SExt -> CAST
+    | ICmp -> CMP
+    | PHI -> PHI
+    | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
+    | FPTrunc | FPExt | FCmp ->
+        raise Out_of_integer_domain
+    | _ -> OTHER
+
+  let oplist_of = function
+    | TER -> ter_list
+    | BINARY -> binary_list
+    | MEM -> mem_list
+    | CAST -> cast_list
+    | CMP -> cmp_list
+    | PHI -> phi_list
+    | OTHER -> other_list
+
+  let random_op_of opcls = opcls |> oplist_of |> AUtil.list_random
+
+  (** [random_opcode ()] returns a random opcode. *)
+  let random_opcode () = AUtil.list_random total_list
+
+  (** [random_opcode_except opcode] returns another random opcode in its class.
+        If [opcode] is the only one in its class, returns [opcode]. *)
+  let random_opcode_except opcode =
+    let l =
+      List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
+    in
+    if l <> [] then AUtil.list_random l else opcode
+
+  let random_cmp () = AUtil.list_random cmp_kind
+
+  let build_binary opcode o0 o1 llb =
+    (match opcode with
+    | Llvm.Opcode.Add -> Llvm.build_add
+    | Sub -> Llvm.build_sub
+    | Mul -> Llvm.build_mul
+    | UDiv -> Llvm.build_udiv
+    | SDiv -> Llvm.build_sdiv
+    | URem -> Llvm.build_urem
+    | SRem -> Llvm.build_srem
+    | Shl -> Llvm.build_shl
+    | LShr -> Llvm.build_lshr
+    | AShr -> Llvm.build_ashr
+    | And -> Llvm.build_and
+    | Or -> Llvm.build_or
+    | Xor -> Llvm.build_xor
+    | _ -> raise Improper_class)
+      o0 o1 "" llb
+
+  let build_cast opcode o ty llb =
+    (match opcode with
+    | Llvm.Opcode.Trunc -> Llvm.build_trunc
+    | ZExt -> Llvm.build_zext
+    | SExt -> Llvm.build_sext
+    | _ -> raise Improper_class)
+      o ty "" llb
+
+  let build_cmp icmp o0 o1 llb = Llvm.build_icmp icmp o0 o1 "" llb
+
+  let string_of_opcls = function
+    | TER -> "TER"
+    | BINARY -> "BINARY"
+    | MEM -> "MEM"
+    | CAST -> "CAST"
+    | CMP -> "CMP"
+    | PHI -> "PHI"
+    | _ -> "OTHER"
+end
+
+module Flag = struct
+  exception Unsupported_Flag
+
+  let can_overflow = function
+    | Llvm.Opcode.Add | Sub | Mul | Shl -> true
+    | _ -> false
+
+  let can_be_exact = function
+    | Llvm.Opcode.SDiv | UDiv | AShr | LShr -> true
+    | _ -> false
+
+  external set_nuw_raw : bool -> Llvm.llvalue -> unit = "llvm_set_nuw"
+  external set_nsw_raw : bool -> Llvm.llvalue -> unit = "llvm_set_nsw"
+  external set_exact_raw : bool -> Llvm.llvalue -> unit = "llvm_set_exact"
+  external is_nuw_raw : Llvm.llvalue -> bool = "llvm_is_nuw"
+  external is_nsw_raw : Llvm.llvalue -> bool = "llvm_is_nsw"
+  external is_exact_raw : Llvm.llvalue -> bool = "llvm_is_exact"
+
+  let guard_set prereq f flag instr =
+    if instr |> Llvm.instr_opcode |> prereq then f flag instr
+    else raise Unsupported_Flag
+
+  let set_nuw = guard_set can_overflow set_nuw_raw
+  let set_nsw = guard_set can_overflow set_nsw_raw
+  let set_exact = guard_set can_be_exact set_exact_raw
+
+  let guard_is prereq f instr =
+    if instr |> Llvm.instr_opcode |> prereq then f instr
+    else raise Unsupported_Flag
+
+  let is_nuw = guard_is can_overflow is_nuw_raw
+  let is_nsw = guard_is can_overflow is_nsw_raw
+  let is_exact = guard_is can_be_exact is_exact_raw
+end
