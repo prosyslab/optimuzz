@@ -176,8 +176,7 @@ let randget_operand loc ty =
   in
   let candidates =
     if classify_type ty = TypeKind.Integer then
-      const_int ty (Random.int ((1 lsl min (TypeBW.bw_of_llint ty) 30) - 1))
-      :: candidates
+      const_int ty (AUtil.list_random AUtil.interesting_integers) :: candidates
     else candidates
   in
   if candidates <> [] then Some (AUtil.list_random candidates) else None

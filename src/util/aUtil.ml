@@ -17,6 +17,9 @@ let repeat_fun f init t =
 
 (** [list_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
+
+let interesting_integers = [ 0; 1; 2; 4294967295 (* 0xFFFFFFFF *) ]
+
 let list_random l =
   if l <> [] then List.nth l (Random.int (List.length l))
   else raise (Invalid_argument "Empty list")
