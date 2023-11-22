@@ -6,7 +6,7 @@ type res_t = CRASH | INVALID | VALID
 let cmd = AUtil.command_args
 
 let clean filename =
-  let _ = cmd [ "rm"; filename; "/dev/null" ] in
+  let _ = cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] in
   (* if exit_state = 0 then VALID else CRASH *)
   ()
 
