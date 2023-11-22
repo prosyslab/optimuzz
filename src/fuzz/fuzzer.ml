@@ -13,7 +13,7 @@ let rec run pool llctx cov_set gen_count =
 
   (* each mutant is mutated m times *)
   let mutate_seed (pool, cov_set, gen_count) =
-    let mutant = Mutator.run llctx mode !Config.num_mutation seed in
+    let mutant = Mutator.run llctx mode !Config.num_mutation seed distance in
     let filename = AUtil.get_new_name () in
     (* TODO: not using run result, only caring coverage *)
     let _, cov_mutant = Oracle.run_bins filename mutant in

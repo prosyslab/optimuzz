@@ -3,6 +3,19 @@ module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 
 type mode_t = EXPAND | FOCUS
+type mutation_t = CREATE | OPCODE | OPERAND | FLAG
+
+(* choose mutation *)
+let choose_mutation mode distance =
+  match mode with
+  | EXPAND ->
+      let mutation_list = [ CREATE; OPCODE; OPERAND; FLAG ] in
+      let random_int = Random.int (distance + List.length mutation_list) in
+      if random_int <= distance then List.nth mutation_list 0
+      else List.nth mutation_list (random_int - distance)
+  | FOCUS ->
+      let mutation_list = [ OPCODE; OPERAND; FLAG ] in
+      List.nth mutation_list (Random.int (List.length mutation_list))
 
 (* CFG PRESERVING MUTATION HELPERS *)
 
@@ -339,7 +352,7 @@ let make_chain llctx len first_opd instr =
 let mutate_CFG = Fun.id
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx mode times llm =
+let rec mutate_inner_bb llctx mode times llm distance =
   if times = 0 then llm
   else if times < 0 then
     raise (invalid_arg "mutation must be made by nonnegative num of times")
@@ -350,37 +363,21 @@ let rec mutate_inner_bb llctx mode times llm =
       fold_left_all_instr (fun accu instr -> instr :: accu) [] f
     in
     let instr_tgt = AUtil.list_random all_instrs in
-
-    (* valid mutations; delay actual action using closure *)
-    let mutation_list =
-      [
-        (1, subst_rand_instr llctx);
-        (1, subst_rand_opd llctx None);
-        (1, modify_flag llctx);
-      ]
-    in
-
     (* depending on mode, available mutations differ *)
-    let mutation_list =
-      if mode = EXPAND then
-        let mutation_list =
-          (1, create_rand_instr llctx None) :: mutation_list
-        in
-        let rec aux i accu =
-          if i > times then accu
-          else aux (i + 1) ((i, make_chain llctx i None) :: accu)
-        in
-        aux 2 mutation_list
-      else mutation_list
-    in
-
+    let mutation = choose_mutation mode distance in
     (* mutate and recurse *)
-    let times_used, mutation = AUtil.list_random mutation_list in
-    match mutation instr_tgt with
-    | Some _ -> mutate_inner_bb llctx mode (times - times_used) llm
-    | None -> mutate_inner_bb llctx mode times llm
+    let mutation_result =
+      match mutation with
+      | CREATE -> make_chain llctx 2 None instr_tgt
+      | OPCODE -> subst_rand_instr llctx instr_tgt
+      | OPERAND -> subst_rand_opd llctx None instr_tgt
+      | FLAG -> modify_flag llctx instr_tgt
+    in
+    match mutation_result with
+    | Some _ -> mutate_inner_bb llctx mode (times - 1) llm distance
+    | None -> mutate_inner_bb llctx mode times llm distance
 
 (* TODO: add fuzzing configuration *)
-let run llctx mode times llm =
+let run llctx mode times llm distance =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode times llm_clone |> mutate_CFG
+  mutate_inner_bb llctx mode times llm_clone distance |> mutate_CFG
