@@ -345,6 +345,138 @@ let make_chain llctx len first_opd instr =
   in
   subst_rand_opd llctx (aux len first_opd) instr
 
+let is_there_hard_op f =
+  fold_left_all_instr
+    (fun accu i ->
+      accu
+      ||
+      match i |> instr_opcode |> OpCls.classify with
+      | MEM | PHI | OTHER -> true
+      | _ -> false)
+    false f
+
+let is_ret_nonsingle f =
+  fold_left_all_instr
+    (fun accu i -> if instr_opcode i = Ret then accu + 1 else accu)
+    0 f
+  <> 1
+
+let is_mistargeting llv =
+  match classify_value llv with
+  | Instruction opc -> (
+      match OpCls.classify opc with BINARY | CAST -> false | _ -> true)
+  | _ -> false
+
+let rec clean f =
+  let aux instr =
+    if Option.is_none (use_begin instr) && instr_opcode instr <> Ret then (
+      delete_instruction instr;
+      true)
+    else false
+  in
+  if fold_left_all_instr (fun accu i -> accu || aux i) false f then clean f
+  else ()
+
+let rec do_change_type llctx ty_new f llv =
+  let ty_old = type_of llv in
+  let bw_old = integer_bitwidth ty_old in
+  let bw_new = integer_bitwidth ty_new in
+
+  (* expect parameter or instruction only *)
+  assert (llv |> is_constant |> not);
+
+  (* two types might be same *)
+  let llv' =
+    if bw_old <> bw_new then (
+      (* create type cast right after definition *)
+      let insert_point =
+        match classify_value llv with
+        | Argument -> f |> entry_block |> instr_begin
+        | Instruction _ -> instr_succ llv
+        | _ -> failwith "Allowing parameter or instruction only"
+      in
+      let llb = builder_at llctx insert_point in
+      (* FIXME: ONLY USING ZEXT *)
+      let build = if bw_old < bw_new then build_zext else build_trunc in
+      let llv' = build llv ty_new "" llb in
+      replace_all_uses_with llv llv';
+      set_operand llv' 0 llv;
+      llv')
+    else llv
+  in
+
+  (* propagate over all related llvalues *)
+  let propagate u =
+    let instr = user u in
+    let cls = instr |> instr_opcode |> OpCls.classify in
+    match cls with
+    | TER ->
+        (* TER with operand => return *)
+        let ret_ty = f |> type_of |> return_type |> return_type in
+        let bw_ret = integer_bitwidth ret_ty in
+        if bw_ret < bw_new then
+          let foo =
+            build_trunc (used_value u) ret_ty "" (builder_before llctx instr)
+          in
+          set_operand instr 0 foo
+        else if bw_ret > bw_new then
+          (* FIXME: USING ZEXT ONLY *)
+          let foo =
+            build_zext (used_value u) ret_ty "" (builder_before llctx instr)
+          in
+          set_operand instr 0 foo
+        else ()
+    | BINARY | CMP ->
+        (* find additional llvalues to change type *)
+        let idx = if operand instr 0 = llv' then 1 else 0 in
+        let opd_tgt = operand instr idx in
+        if is_constant opd_tgt then
+          (* FIXME: USING ZEXT ONLY *)
+          let const_edit =
+            if bw_old < bw_new then const_zext else const_trunc
+          in
+          set_operand instr idx (const_edit opd_tgt ty_new)
+        else if opd_tgt |> type_of |> integer_bitwidth <> bw_new then
+          do_change_type llctx ty_new f opd_tgt;
+
+        if cls = BINARY then (
+          (* the instruction itself should change its type;
+             i34 + i34 still remains i32 if we use `set_operand`.
+             MUST NOT delete this instruction immediately *)
+          let instr' = instr_clone instr in
+          insert_into_builder instr' "" (builder_before llctx instr);
+          replace_all_uses_with instr instr';
+
+          (* just triggering propagation *)
+          do_change_type llctx ty_new f instr')
+    | CAST ->
+        ( (* FIXME: type change of operand might affect cast operation *) )
+    | _ -> failwith "NEVER OCCUR"
+  in
+  iter_uses propagate llv'
+
+(** [change_type llctx ty_new llv] changes type of [llv] to [ty_new].
+    All the other associated values are recursively changed.
+    Returns [Some(instr)] if success, or [None] else. *)
+let change_type llctx ty_new llv =
+  let f =
+    match classify_value llv with
+    | Argument -> param_parent llv
+    | Instruction _ -> llv |> instr_parent |> block_parent
+    | _ -> failwith "Allowing parameter or instruction only"
+  in
+
+  (* regard this attempt unfeasible if... *)
+  if
+    (not (TypeBW.is_llint (type_of llv) && TypeBW.is_llint ty_new))
+    || is_there_hard_op f || is_ret_nonsingle f || is_mistargeting llv
+  then None
+  else (
+    (* actual type change *)
+    do_change_type llctx ty_new f llv;
+    clean f;
+    Some llv)
+
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
