@@ -53,6 +53,7 @@ let of_dir dir llctx =
          with _ -> queue)
        (Queue.create ())
 
+(** make seedpool from Config.seed_dir. this queue contains, llmodule, covered, distance*)
 let make_seedpool llctx =
   let dir = !Config.seed_dir in
   assert (Sys.file_exists dir && Sys.is_directory dir);
@@ -65,26 +66,28 @@ let make_seedpool llctx =
            match Oracle.run_opt path with
            | CRASH | INVALID -> (queue, seedset)
            | VALID -> (
-               let cov =
+               let distance =
                  Coverage.Measurer.run () |> Coverage.Domain.CovSet.min_elt
                in
                let membuf = ALlvm.MemoryBuffer.of_file path in
-               if cov == 0 then
+               if distance == 0 then
                  try
-                   ( push (Llvm_irreader.parse_ir llctx membuf, true, cov) queue,
+                   ( push
+                       (Llvm_irreader.parse_ir llctx membuf, true, distance)
+                       queue,
                      seedset )
                  with _ -> (queue, seedset)
                else
                  try
                    ( queue,
                      SeedSet.add
-                       (Llvm_irreader.parse_ir llctx membuf, cov)
+                       (Llvm_irreader.parse_ir llctx membuf, distance)
                        seedset )
                  with _ -> (queue, seedset)))
          (Queue.create (), SeedSet.empty)
   in
   if Queue.is_empty seedpool then
     SeedSet.fold
-      (fun (llm, cov) seedpool -> push (llm, false, cov) seedpool)
+      (fun (llm, distance) seedpool -> push (llm, false, distance) seedpool)
       seedset seedpool
   else seedpool

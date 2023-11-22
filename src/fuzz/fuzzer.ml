@@ -6,6 +6,7 @@ module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
 
+(** [run pool llctx cov_set get_count] pop seed from [pool] and mutate seed [Config.num_mutant] times. *)
 let rec run pool llctx cov_set gen_count =
   let (seed, covered, distance), pool_popped = SeedPool.pop pool in
   let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
@@ -22,10 +23,12 @@ let rec run pool llctx cov_set gen_count =
 
     (* induce new pool and coverage *)
     let pool', cov_set', gen_count =
+      (* when mutated code cover target then push to queue *)
       if covered then (
         ALlvm.save_ll !Config.corpus_dir filename mutant;
         let pool = SeedPool.push (mutant, covered, new_distance) pool in
-        (pool, cov_set, gen_count + 1))
+        (pool, cov_set, gen_count + 1)
+        (* when mutated code is closer to the target than before then push to queue *))
       else if new_distance < distance then (
         ALlvm.save_ll !Config.corpus_dir filename mutant;
         let pool = SeedPool.push (mutant, covered, new_distance) pool in
