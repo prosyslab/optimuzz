@@ -48,3 +48,5 @@ module CovMap = struct
   (** [cardinal x] returns the sum of cardinals of all bindings in [x]. *)
   let cardinal x = LocMap.fold (fun _ d accu -> accu + Group.cardinal d) x 0
 end
+
+module CovSet = Set.Make (Int)

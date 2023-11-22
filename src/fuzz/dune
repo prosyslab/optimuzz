@@ -1,0 +1,4 @@
+(library
+ (name fuzz)
+ (modules mutator fuzzer)
+ (libraries llvm util coverage seedcorpus oracle))

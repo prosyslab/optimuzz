@@ -15,8 +15,12 @@ let workspace = ref ""
 let opt_bin = ref "llvm-project/build/bin/opt"
 let alive2_bin = ref "alive2/build/alive-tv"
 
-(* fuzzing options *)
+(* seed options *)
+let max_initial_seed = ref 10
 let random_seed = ref 0
+let max_distance = ref 65506
+
+(* fuzzing options *)
 let time_budget = ref (-1)
 let cov_directed = ref ""
 let num_mutation = ref 1

@@ -371,3 +371,8 @@ module Flag = struct
   let is_nsw = guard_is can_overflow is_nsw_raw
   let is_exact = guard_is can_be_exact is_exact_raw
 end
+
+(** save_ll [target_dif] [output filename] [llmodule]*)
+let save_ll dir filename llm =
+  let output_name = Filename.concat dir filename in
+  print_module output_name llm

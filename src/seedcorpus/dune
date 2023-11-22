@@ -1,0 +1,4 @@
+(library
+ (name seedcorpus)
+ (modules seedpool)
+ (libraries util coverage oracle))
