@@ -26,7 +26,7 @@ let get_distance seed =
   let target = parse_line !Config.cov_directed in
   let equal_depth =
     let rec fold idx =
-      if idx = min (List.length seed) (List.length target) - 1 then idx
+      if idx = min (List.length seed) (List.length target) then idx
       else if List.nth seed idx <> List.nth target idx then idx
       else fold (idx + 1)
     in
