@@ -3,18 +3,18 @@ module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 
 type mode_t = EXPAND | FOCUS
-type mutation_t = CREATE | OPCODE | OPERAND | FLAG
+type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
 
 (* choose mutation *)
 let choose_mutation mode distance =
   match mode with
   | EXPAND ->
-      let mutation_list = [ CREATE; OPCODE; OPERAND; FLAG ] in
+      let mutation_list = [ CREATE; OPCODE; OPERAND; FLAG; TYPE ] in
       let random_int = Random.int (distance + List.length mutation_list) in
       if random_int <= distance then List.nth mutation_list 0
       else List.nth mutation_list (random_int - distance)
   | FOCUS ->
-      let mutation_list = [ OPCODE; OPERAND; FLAG ] in
+      let mutation_list = [ OPCODE; OPERAND; FLAG; TYPE ] in
       List.nth mutation_list (Random.int (List.length mutation_list))
 
 (* CFG PRESERVING MUTATION HELPERS *)
@@ -377,6 +377,11 @@ let rec clean f =
   if fold_left_all_instr (fun accu i -> accu || aux i) false f then clean f
   else ()
 
+let rec choose_random_type llctx =
+  let random_int = Random.int 129 in
+  if random_int = 0 then choose_random_type llctx
+  else integer_type llctx random_int
+
 let rec do_change_type llctx ty_new f llv =
   let ty_old = type_of llv in
   let bw_old = integer_bitwidth ty_old in
@@ -504,6 +509,7 @@ let rec mutate_inner_bb llctx mode times llm distance =
       | OPCODE -> subst_rand_instr llctx instr_tgt
       | OPERAND -> subst_rand_opd llctx None instr_tgt
       | FLAG -> modify_flag llctx instr_tgt
+      | TYPE -> change_type llctx (choose_random_type llctx) instr_tgt
     in
     match mutation_result with
     | Some _ -> mutate_inner_bb llctx mode (times - 1) llm distance
