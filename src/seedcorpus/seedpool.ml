@@ -63,6 +63,7 @@ let make_seedpool llctx =
     |> List.fold_left
          (fun (queue, seedset) file ->
            let path = Filename.concat dir file in
+           Coverage.Measurer.clean ();
            match Oracle.run_opt path with
            | CRASH | INVALID -> (queue, seedset)
            | VALID -> (
