@@ -52,11 +52,13 @@ let repeat_fun f init t =
     in
     aux init t
 
-(** [list_random l] returns a random element from a list [l].
-    @raise Invalid_argument if [l] is empty. *)
-
 let interesting_integers =
   [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
+
+let interesting_types = [ 1; 8; 10; 32; 34; 64; 128 ]
+
+(** [list_random l] returns a random element from a list [l].
+    @raise Invalid_argument if [l] is empty. *)
 
 let list_random l =
   if l <> [] then List.nth l (Random.int (List.length l))

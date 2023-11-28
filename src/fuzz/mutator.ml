@@ -15,7 +15,7 @@ let choose_mutation mode distance =
       else List.nth mutation_list (random_int - distance)
   | FOCUS ->
       let mutation_list = [ OPCODE; OPERAND; FLAG; TYPE ] in
-      List.nth mutation_list (Random.int (List.length mutation_list))
+      AUtil.list_random mutation_list
 
 (* CFG PRESERVING MUTATION HELPERS *)
 
@@ -377,10 +377,12 @@ let rec clean f =
   if fold_left_all_instr (fun accu i -> accu || aux i) false f then clean f
   else ()
 
-let rec choose_random_type llctx =
-  let random_int = Random.int 129 in
-  if random_int = 0 then choose_random_type llctx
-  else integer_type llctx random_int
+let choose_random_type llctx =
+  (* let random_int = Random.int 129 in
+     if random_int = 0 then choose_random_type llctx
+     else integer_type llctx random_int *)
+  let target = AUtil.list_random AUtil.interesting_types in
+  integer_type llctx target
 
 let rec do_change_type llctx ty_new f llv =
   let ty_old = type_of llv in
