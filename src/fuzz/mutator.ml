@@ -489,33 +489,27 @@ let change_type llctx ty_new llv =
 let mutate_CFG = Fun.id
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx mode times llm distance =
-  if times = 0 then llm
-  else if times < 0 then
-    raise (invalid_arg "mutation must be made by nonnegative num of times")
-  else
-    (* find function and target location *)
-    let f = choose_function llm in
-    let all_instrs =
-      fold_left_all_instr (fun accu instr -> instr :: accu) [] f
-    in
-    let instr_tgt = AUtil.list_random all_instrs in
-    (* depending on mode, available mutations differ *)
-    let mutation = choose_mutation mode distance in
-    (* mutate and recurse *)
-    let mutation_result =
-      match mutation with
-      | CREATE -> make_chain llctx 2 None instr_tgt
-      | OPCODE -> subst_rand_instr llctx instr_tgt
-      | OPERAND -> subst_rand_opd llctx None instr_tgt
-      | FLAG -> modify_flag llctx instr_tgt
-      | TYPE -> change_type llctx (choose_random_type llctx) instr_tgt
-    in
-    match mutation_result with
-    | Some _ -> mutate_inner_bb llctx mode (times - 1) llm distance
-    | None -> mutate_inner_bb llctx mode times llm distance
+let rec mutate_inner_bb llctx mode llm distance =
+  (* find function and target location *)
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr_tgt = AUtil.list_random all_instrs in
+  (* depending on mode, available mutations differ *)
+  let mutation = choose_mutation mode distance in
+  (* mutate and recurse *)
+  let mutation_result =
+    match mutation with
+    | CREATE -> make_chain llctx 2 None instr_tgt
+    | OPCODE -> subst_rand_instr llctx instr_tgt
+    | OPERAND -> subst_rand_opd llctx None instr_tgt
+    | FLAG -> modify_flag llctx instr_tgt
+    | TYPE -> change_type llctx (choose_random_type llctx) instr_tgt
+  in
+  match mutation_result with
+  | Some _ -> llm
+  | None -> mutate_inner_bb llctx mode llm distance
 
 (* TODO: add fuzzing configuration *)
-let run llctx mode times llm distance =
+let run llctx mode llm distance =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode times llm_clone distance |> mutate_CFG
+  mutate_inner_bb llctx mode llm_clone distance |> mutate_CFG

@@ -12,51 +12,55 @@ let rec run pool llctx cov_set gen_count =
   let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
 
   (* each mutant is mutated m times *)
-  let mutate_seed (pool, cov_set, gen_count) =
-    let mutant = Mutator.run llctx mode !Config.num_mutation seed distance in
-    let filename = AUtil.get_new_name (ALlvm.string_of_llmodule mutant) in
-    (* if muatant is duplicated then just pass*)
-    if filename = "" then (pool, cov_set, gen_count + 1)
+  let rec mutate_seed (pool, cov_set, gen_count, seed, times) =
+    if times = 0 then (pool, cov_set, gen_count, seed, times)
+    else if times < 0 then
+      raise (invalid_arg "mutation must be made by nonnegative num of times")
     else
-      (* TODO: not using run result, only caring coverage *)
-      let _, cov_mutant = Oracle.run_bins filename mutant in
-      let new_distance = CovSet.min_elt cov_mutant in
-      (* check whether the seed is covering the target *)
-      let covered = !Config.cov_directed <> "" && new_distance = 0 in
+      let mutant = Mutator.run llctx mode seed distance in
+      let filename = AUtil.get_new_name (ALlvm.string_of_llmodule mutant) in
+      (* if muatant is duplicated then just pass*)
+      if filename = "" then (pool, cov_set, gen_count + 1, seed, times)
+      else
+        (* TODO: not using run result, only caring coverage *)
+        let _, cov_mutant = Oracle.run_bins filename mutant in
+        let new_distance = CovSet.min_elt cov_mutant in
+        (* check whether the seed is covering the target *)
+        let covered = !Config.cov_directed <> "" && new_distance = 0 in
 
-      (* induce new pool and coverage *)
-      let pool', cov_set', gen_count =
-        (* when mutated code cover target then push to queue *)
-        if covered then (
-          ALlvm.save_ll !Config.corpus_dir filename mutant;
-          let pool = SeedPool.push (mutant, covered, new_distance) pool in
-          (pool, cov_set, gen_count + 1)
-          (* when mutated code is closer to the target than before then push to queue *))
-        else if new_distance < distance then (
-          ALlvm.save_ll !Config.corpus_dir filename mutant;
-          let pool = SeedPool.push (mutant, covered, new_distance) pool in
-          let cov_set = CovSet.union cov_set cov_mutant in
-          F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
-            (gen_count + 1) (CovSet.cardinal cov_set);
-          (pool, cov_set, gen_count + 1))
-        else (pool, cov_set, gen_count)
-      in
+        (* induce new pool and coverage *)
+        let pool', cov_set', gen_count, seed', times' =
+          (* when mutated code cover target then push to queue *)
+          if covered then (
+            ALlvm.save_ll !Config.corpus_dir filename mutant;
+            let pool = SeedPool.push (mutant, covered, new_distance) pool in
+            (pool, cov_set, gen_count + 1, mutant, times)
+            (* when mutated code is closer to the target than before then push to queue *))
+          else if new_distance < distance then (
+            ALlvm.save_ll !Config.corpus_dir filename mutant;
+            let pool = SeedPool.push (mutant, covered, new_distance) pool in
+            let cov_set = CovSet.union cov_set cov_mutant in
+            F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
+              (gen_count + 1) (CovSet.cardinal cov_set);
+            (pool, cov_set, gen_count + 1, mutant, times))
+          else mutate_seed (pool, cov_set, gen_count, mutant, times - 1)
+        in
 
-      (* timestamp *)
-      if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
-        AUtil.recent_time := AUtil.now ();
-        output_string AUtil.timestamp_fp
-          (string_of_int (AUtil.now () - !AUtil.start_time)
-          ^ " "
-          ^ string_of_int (CovSet.cardinal cov_set')
-          ^ "\n"));
-      (pool', cov_set', gen_count)
+        (* timestamp *)
+        if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
+          AUtil.recent_time := AUtil.now ();
+          output_string AUtil.timestamp_fp
+            (string_of_int (AUtil.now () - !AUtil.start_time)
+            ^ " "
+            ^ string_of_int (CovSet.cardinal cov_set')
+            ^ "\n"));
+        (pool', cov_set', gen_count, seed', times')
   in
 
   (* each seed is mutated into n mutants *)
-  let pool', cov_set', gen_count =
+  let pool', cov_set', gen_count, _, _ =
     AUtil.repeat_fun mutate_seed
-      (pool_popped, cov_set, gen_count)
+      (pool_popped, cov_set, gen_count, seed, !Config.num_mutation)
       !Config.num_mutant
   in
   let pool' = SeedPool.push (seed, covered, distance) pool' in
