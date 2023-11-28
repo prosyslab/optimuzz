@@ -45,7 +45,9 @@ let main () =
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     let all_instances = Pattern.Instantiation.run name pat in
     List.iter
-      (ALlvm.save_ll !Config.out_dir (AUtil.get_new_name ()))
+      (fun llm ->
+        let filename = AUtil.get_new_name (ALlvm.string_of_llmodule llm) in
+        if filename = "" then () else ALlvm.save_ll !Config.out_dir filename llm)
       all_instances;
     exit 0);
 

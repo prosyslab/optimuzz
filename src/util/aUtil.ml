@@ -1,3 +1,10 @@
+module Llset = Set.Make (struct
+  type t = Sha256.t
+
+  let compare sha1 sha2 = compare (Sha256.to_hex sha1) (Sha256.to_hex sha2)
+end)
+
+let llset = ref Llset.empty
 let ( >> ) x f = f x |> ignore
 let command_args args = args |> String.concat " " |> Sys.command
 
@@ -7,12 +14,24 @@ let timestamp = "timestamp.txt"
 let start_time = ref 0
 let recent_time = ref 0
 let timestamp_fp = open_out timestamp
+
+let get_current_time () =
+  let tm = Unix.gettimeofday () |> Unix.localtime in
+  string_of_int (tm.tm_year + 1900)
+  ^ string_of_int (tm.tm_mon + 1)
+  ^ string_of_int tm.tm_mday ^ string_of_int tm.tm_hour
+  ^ string_of_int tm.tm_min ^ string_of_int tm.tm_sec
+
 let now () = Unix.time () |> int_of_float
 let count = ref 0
 
-let get_new_name () =
-  count := !count + 1;
-  string_of_int !count ^ ".ll"
+let get_new_name llm =
+  let hash = Sha256.string llm in
+  match Llset.find_opt hash !llset with
+  | Some _ -> ""
+  | None ->
+      llset := Llset.add hash !llset;
+      Sha256.to_hex hash ^ get_current_time () ^ ".ll"
 
 let name_opted_ver filename =
   if String.ends_with ~suffix:".ll" filename then

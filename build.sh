@@ -27,4 +27,5 @@ opam pin https://github.com/prosyslab/logger.git
 opam install -j $NCPU llvm.13.0.0
 opam install -j $NCPU dune z3 yojson logger
 opam install -j $NCPU ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server # for development
+opam install -j $NCPU sha.1.15.4
 make

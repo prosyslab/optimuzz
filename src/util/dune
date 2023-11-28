@@ -1,7 +1,7 @@
 (library
  (name util)
  (modules aLlvm aUtil)
- (libraries llvm)
+ (libraries llvm sha)
  (foreign_stubs
   (language cxx)
   (flags
