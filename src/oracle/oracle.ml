@@ -49,7 +49,7 @@ let run_opt filename =
         !Config.opt_bin;
         filename;
         "-S";
-        "--passes=instcombine";
+        "--passes=\"globaldce,simplifycfg,instsimplify,instcombine\"";
         "-o";
         (* AUtil.name_opted_ver filename; *)
         "/dev/null";
