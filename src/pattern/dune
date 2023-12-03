@@ -1,4 +1,4 @@
 (library
  (name pattern)
  (modules instantiation IR parser)
- (libraries llvm str util))
+ (libraries llvm llvm.transform_utils str util))

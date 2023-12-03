@@ -44,7 +44,7 @@ let subst_binary llctx instr opcode =
   replace_and_ret instr new_instr
 
 let subst_cast llctx instr =
-  (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc *)
+  (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None) *)
   match instr_opcode instr with
   | ZExt ->
       let new_instr =
@@ -68,116 +68,6 @@ let subst_cmp llctx instr icmp =
   in
   replace_and_ret instr new_instr
 
-(* CFG MODIFYING MUTATION HELPERS *)
-
-module CFG_Modifier = struct
-  (** [make_conditional llctx instr] substitutes
-    an unconditional branch instruction [instr]
-    into always-true conditional branch instruction.
-    (Block instructions are cloned between both destinations, except names.)
-    Returns the conditional branch instruction. *)
-  let make_conditional llctx instr =
-    match instr |> get_branch |> Option.get with
-    | `Unconditional target_block ->
-        let block = instr_parent instr in
-        let fbb = append_block llctx "" (block_parent block) in
-        move_block_after target_block fbb;
-        iter_instrs
-          (fun i ->
-            insert_into_builder (instr_clone i) "" (builder_at_end llctx fbb))
-          target_block;
-        delete_instruction instr;
-        build_cond_br
-          (const_int (i1_type llctx) 1)
-          target_block fbb
-          (builder_at_end llctx block)
-    | `Conditional _ -> failwith "Conditional branch already"
-
-  (** [make_unconditional llctx instr] substitutes
-    a conditional branch instruction [instr]
-    into unconditional branch instruction targets for true-branch.
-    (False branch block remains in the module; just not used by the branch.)
-    Returns the unconditional branch instruction. *)
-  let make_unconditional llctx instr =
-    match instr |> get_branch |> Option.get with
-    | `Conditional (_, tbb, _) ->
-        let block = instr_parent instr in
-        delete_instruction instr;
-        build_br tbb (builder_at_end llctx block)
-    | `Unconditional _ -> failwith "Unconditional branch already"
-
-  (** [set_unconditional_dest llctx instr bb] sets
-    the destinations of the unconditional branch instruction [instr] to [bb].
-    Returns the new instruction. *)
-  let set_unconditional_dest llctx instr bb =
-    match instr |> get_branch |> Option.get with
-    | `Unconditional _ ->
-        let result = build_br bb (builder_before llctx instr) in
-        delete_instruction instr;
-        result
-    | `Conditional _ -> failwith "Conditional branch"
-
-  (** [set_conditional_dest llctx instr tbb fbb] sets
-    the destinations of the conditional branch instruction [instr].
-    If given as [None], retains the original destination.
-    Returns the new instruction. *)
-  let set_conditional_dest llctx instr tbb fbb =
-    match instr |> get_branch |> Option.get with
-    | `Conditional (cond, old_tbb, old_fbb) ->
-        let result =
-          build_cond_br cond
-            (match tbb with Some tbb -> tbb | None -> old_tbb)
-            (match fbb with Some fbb -> fbb | None -> old_fbb)
-            (builder_before llctx instr)
-        in
-        delete_instruction instr;
-        result
-    | `Unconditional _ -> failwith "Unconditional branch"
-
-  (** [split_block llctx loc] splits the parent block of [loc] into two blocks
-    and links them by unconditional branch.
-    [loc] becomes the first instruction of the latter block.
-    Returns the former block. *)
-  let split_block llctx loc =
-    let block = instr_parent loc in
-    let new_block = insert_block llctx "" block in
-    let builder = builder_at_end llctx new_block in
-
-    (* initial setting *)
-    let dummy = build_unreachable builder in
-    position_before dummy builder;
-
-    (* migrating instructions *)
-    let rec aux () =
-      match instr_begin block with
-      | Before i when i = loc -> ()
-      | Before i ->
-          let i_clone = instr_clone i in
-          insert_into_builder i_clone "" builder;
-          replace_hard i i_clone;
-          aux ()
-      | At_end _ -> failwith "NEVER OCCUR"
-    in
-    aux ();
-
-    (* modifying all branches targets original block *)
-    iter_blocks
-      (fun b ->
-        let ter = b |> block_terminator |> Option.get in
-        let succs = ter |> successors in
-        Array.iteri
-          (fun i elem -> if elem = block then set_successor ter i new_block)
-          succs)
-      (loc |> instr_parent |> block_parent);
-
-    (* linking and cleaning *)
-    build_br block builder |> ignore;
-    delete_instruction dummy;
-
-    (* finally done *)
-    new_block
-end
-
 (* HIGH-LEVEL MUTATION HELPERS *)
 
 (** [randget_operand llctx loc ty] gets, or generates
@@ -199,30 +89,29 @@ let randget_operand loc ty =
     with lists of available arguments declared prior to [loc]. *)
 let rec create_rand_instr llctx preferred_opd loc =
   let preds = get_instrs_before ~wide:false loc in
-
-  (* will create integer type instruction only *)
   let preds =
-    List.filter
-      (fun llv -> llv |> type_of |> classify_type = TypeKind.Integer)
-      preds
+    preds @ (loc |> instr_parent |> block_parent |> params |> Array.to_list)
   in
 
   let operand =
     match preferred_opd with
-    | Some pref_opd when pref_opd |> type_of |> classify_type = Integer ->
-        pref_opd
-    | _ ->
+    | Some pref_opd -> pref_opd
+    | None ->
         if preds <> [] then AUtil.list_random preds
-        else randget_operand loc (i32_type llctx) |> Option.get
+        else
+          randget_operand loc
+            (integer_type llctx (AUtil.list_random AUtil.interesting_types))
+          |> Option.get
   in
   let operand_ty = type_of operand in
+  let is_integer = classify_type operand_ty = Integer in
 
   let opcode = OpCls.random_opcode () in
   match OpCls.classify opcode with
-  | BINARY ->
+  | BINARY when is_integer ->
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
-  | CAST -> (
+  | CAST when is_integer -> (
       try
         let dest_ty =
           match opcode with
@@ -233,11 +122,18 @@ let rec create_rand_instr llctx preferred_opd loc =
         create_cast llctx loc opcode operand dest_ty
       with TypeBW.Unsupported_Type ->
         create_rand_instr llctx preferred_opd loc)
-  | CMP ->
+  | CMP when is_integer ->
       create_cmp llctx loc
         (AUtil.list_random OpCls.cmp_kind)
         operand
         (randget_operand loc operand_ty |> Option.get)
+  | MEM ->
+      if opcode = Load && classify_type operand_ty = Pointer then
+        Some
+          (build_load2
+             (integer_type llctx (AUtil.list_random AUtil.interesting_types))
+             operand "" (builder_before llctx loc))
+      else None
   | _ ->
       (* choose another instruction *)
       create_rand_instr llctx preferred_opd loc
@@ -351,145 +247,86 @@ let is_there_hard_op f =
       accu
       ||
       match i |> instr_opcode |> OpCls.classify with
-      | MEM | PHI | OTHER -> true
+      | OTHER -> true
       | _ -> false)
     false f
 
-let is_ret_nonsingle f =
-  fold_left_all_instr
-    (fun accu i -> if instr_opcode i = Ret then accu + 1 else accu)
-    0 f
-  <> 1
-
 let is_mistargeting llv =
-  match classify_value llv with
-  | Instruction opc -> (
-      match OpCls.classify opc with BINARY | CAST -> false | _ -> true)
-  | _ -> false
+  if llv |> type_of |> classify_type = TypeKind.Integer then
+    match classify_value llv with
+    | Instruction opc -> (
+        match OpCls.classify opc with BINARY -> false | _ -> true)
+    | Argument -> false
+    | _ -> true
+  else true
 
-let rec clean f =
-  let aux instr =
-    if Option.is_none (use_begin instr) && instr_opcode instr <> Ret then (
-      delete_instruction instr;
-      true)
-    else false
-  in
-  if fold_left_all_instr (fun accu i -> accu || aux i) false f then clean f
-  else ()
+(** [change_type llctx ty_new llv] changes type of [llv] randomly.
+    All the other associated values are recursively changed.
+    Returns [Some(instr)] if success, or [None] else. *)
+let change_type llctx llv =
+  (* llv is instruction now *)
+  let f = llv |> instr_parent |> block_parent in
 
-let choose_random_type llctx =
-  (* let random_int = Random.int 129 in
-     if random_int = 0 then choose_random_type llctx
-     else integer_type llctx random_int *)
-  let target = AUtil.list_random AUtil.interesting_types in
-  integer_type llctx target
-
-let rec do_change_type llctx ty_new f llv =
-  let ty_old = type_of llv in
-  let bw_old = integer_bitwidth ty_old in
-  let bw_new = integer_bitwidth ty_new in
-
-  (* expect parameter or instruction only *)
-  assert (llv |> is_constant |> not);
-
-  (* two types might be same *)
-  let llv' =
-    if bw_old <> bw_new then (
-      (* create type cast right after definition *)
-      let insert_point =
-        match classify_value llv with
-        | Argument -> f |> entry_block |> instr_begin
-        | Instruction _ -> instr_succ llv
-        | _ -> failwith "Allowing parameter or instruction only"
-      in
-      let llb = builder_at llctx insert_point in
-      (* FIXME: ONLY USING ZEXT *)
-      let build = if bw_old < bw_new then build_zext else build_trunc in
-      let llv' = build llv ty_new "" llb in
-      replace_all_uses_with llv llv';
-      set_operand llv' 0 llv;
-      llv')
+  let llv =
+    if num_operands llv > 0 then
+      AUtil.list_random
+        (let rec loop accu i =
+           if i >= num_operands llv then accu
+           else loop (operand llv i :: accu) (i + 1)
+         in
+         loop [ llv ] 0)
     else llv
   in
 
-  (* propagate over all related llvalues *)
-  let propagate u =
-    let instr = user u in
-    let cls = instr |> instr_opcode |> OpCls.classify in
-    match cls with
-    | TER ->
-        (* TER with operand => return *)
-        let ret_ty = f |> type_of |> return_type |> return_type in
-        let bw_ret = integer_bitwidth ret_ty in
-        if bw_ret < bw_new then
-          let foo =
-            build_trunc (used_value u) ret_ty "" (builder_before llctx instr)
-          in
-          set_operand instr 0 foo
-        else if bw_ret > bw_new then
-          (* FIXME: USING ZEXT ONLY *)
-          let foo =
-            build_zext (used_value u) ret_ty "" (builder_before llctx instr)
-          in
-          set_operand instr 0 foo
-        else ()
-    | BINARY | CMP ->
-        (* find additional llvalues to change type *)
-        let idx = if operand instr 0 = llv' then 1 else 0 in
-        let opd_tgt = operand instr idx in
-        if is_constant opd_tgt then
-          (* FIXME: USING ZEXT ONLY *)
-          let const_edit =
-            if bw_old < bw_new then const_zext else const_trunc
-          in
-          set_operand instr idx (const_edit opd_tgt ty_new)
-        else if opd_tgt |> type_of |> integer_bitwidth <> bw_new then
-          do_change_type llctx ty_new f opd_tgt;
+  if is_there_hard_op f || is_mistargeting llv then None
+  else
+    (* decide type *)
+    let ty_old = type_of llv in
+    let bw_old = integer_bitwidth ty_old in
+    let rec loop () =
+      let bw = AUtil.rand 1 64 in
+      if bw_old = bw then loop () else integer_type llctx bw
+    in
+    let ty_new = loop () in
 
-        if cls = BINARY then (
-          (* the instruction itself should change its type;
-             i34 + i34 still remains i32 if we use `set_operand`.
-             MUST NOT delete this instruction immediately *)
-          let instr' = instr_clone instr in
-          insert_into_builder instr' "" (builder_before llctx instr);
-          replace_all_uses_with instr instr';
+    name_all f;
 
-          (* just triggering propagation *)
-          do_change_type llctx ty_new f instr')
-    | CAST ->
-        ( (* FIXME: type change of operand might affect cast operation *) )
-    | _ -> failwith "NEVER OCCUR"
-  in
-  iter_uses propagate llv'
+    (* infer types *)
+    let typemap = infer_types llctx ty_new llv LLVMap.empty in
+    (* not inferred types are regarded as the same *)
+    let typemap =
+      fold_left_all_instr
+        (fun typemap instr_old ->
+          if
+            LLVMap.mem instr_old typemap
+            || instr_old |> type_of |> classify_type = Void
+          then typemap
+          else LLVMap.add instr_old (type_of instr_old) typemap)
+        typemap f
+    in
+    let typemap =
+      Array.fold_left
+        (fun typemap param_old ->
+          if LLVMap.mem param_old typemap then typemap
+          else LLVMap.add param_old (type_of param_old) typemap)
+        typemap (params f)
+    in
 
-(** [change_type llctx ty_new llv] changes type of [llv] to [ty_new].
-    All the other associated values are recursively changed.
-    Returns [Some(instr)] if success, or [None] else. *)
-let change_type llctx ty_new llv =
-  let f =
-    match classify_value llv with
-    | Argument -> param_parent llv
-    | Instruction _ -> llv |> instr_parent |> block_parent
-    | _ -> failwith "Allowing parameter or instruction only"
-  in
+    (* re-define new (empty) function, involving instruction migration *)
+    let f_new, link = redef_fn llctx f typemap in
 
-  (* regard this attempt unfeasible if... *)
-  if
-    (not (TypeBW.is_llint (type_of llv) && TypeBW.is_llint ty_new))
-    || is_there_hard_op f || is_ret_nonsingle f || is_mistargeting llv
-  then None
-  else (
-    (* actual type change *)
-    do_change_type llctx ty_new f llv;
-    clean f;
-    Some llv)
+    (* type change associated to icmp causes invalid ir.
+       E.g., %0 = icmp eq i32 %x, %y; %1 = and i1 %0, %z.
+       if this occurs, ignore this mutation. *)
+    if Llvm_analysis.verify_function f_new then (
+      delete_function f;
+      llv |> Fun.flip LLVMap.find link |> Option.some)
+    else (
+      delete_function f_new;
+      None)
 
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
-
-(* CFG-related mutation *)
-let mutate_CFG = Fun.id
-
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm distance =
   (* find function and target location *)
@@ -501,17 +338,86 @@ let rec mutate_inner_bb llctx mode llm distance =
   (* mutate and recurse *)
   let mutation_result =
     match mutation with
-    | CREATE -> make_chain llctx 2 None instr_tgt
+    | CREATE -> create_rand_instr llctx None instr_tgt
     | OPCODE -> subst_rand_instr llctx instr_tgt
     | OPERAND -> subst_rand_opd llctx None instr_tgt
-    | FLAG -> modify_flag llctx instr_tgt
-    | TYPE -> change_type llctx (choose_random_type llctx) instr_tgt
+    (* | FLAG -> modify_flag llctx instr_tgt *)
+    | TYPE -> change_type llctx instr_tgt
+    | _ -> None
   in
   match mutation_result with
   | Some _ -> llm
   | None -> mutate_inner_bb llctx mode llm distance
 
+(* CFG-related mutation *)
+let mutate_CFG = Fun.id
+
+let subst_ret llctx loc =
+  let f_old = loc |> instr_parent |> block_parent in
+  name_all f_old;
+  let params_old = params f_old in
+  let param_tys = Array.map type_of params_old in
+  let old_ret_ty = loc |> type_of in
+  let target = get_instr_before ~wide:true loc in
+  match target with
+  | Some i ->
+      let new_ret_ty = type_of i in
+      if old_ret_ty = new_ret_ty then (
+        let _ = build_ret i (builder_before llctx loc) in
+        delete_instruction loc;
+        true)
+      else
+        let f_new =
+          define_function ""
+            (function_type new_ret_ty param_tys)
+            (global_parent f_old)
+        in
+        Array.iteri
+          (fun i param_new ->
+            set_value_name
+              (let param_old = Array.get params_old i in
+               value_name param_old)
+              param_new)
+          (params f_new);
+        copy_function_with_new_retval llctx f_old f_new new_ret_ty;
+        true
+  | None -> true
+
+let check_retval llctx llm =
+  let deleted_functions =
+    fold_left_functions
+      (fun acc f ->
+        let res =
+          fold_left_all_instr
+            (fun res instr ->
+              if res then res
+              else
+                match instr_opcode instr with
+                | Call -> if is_intrinsic instr then res else true
+                | Ret -> (
+                    match classify_value (operand instr 0) with
+                    | ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
+                    | NullValue | Function ->
+                        subst_ret llctx instr
+                    | _ -> (
+                        let ret_ty = operand instr 0 |> type_of in
+                        match classify_type ret_ty with
+                        | TypeKind.Void -> subst_ret llctx instr
+                        | _ -> false))
+                | _ -> false)
+            false f
+        in
+        if res then f :: acc else acc)
+      [] llm
+  in
+  List.iter (fun f -> delete_function f) (List.rev deleted_functions);
+  try
+    let _ = choose_function llm in
+    Some llm
+  with _ -> None
+
 (* TODO: add fuzzing configuration *)
 let run llctx mode llm distance =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode llm_clone distance |> mutate_CFG
+  mutate_inner_bb llctx mode llm_clone distance
+  |> mutate_CFG |> check_retval llctx

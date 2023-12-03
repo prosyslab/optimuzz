@@ -1,5 +1,8 @@
 include Llvm
 
+external set_opaque_pointers : llcontext -> bool -> unit
+  = "llvm_set_opaque_pointers"
+
 let string_of_opcode = function
   | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
@@ -130,11 +133,31 @@ let opcode_of_string = function
 let fold_left_all_instr f a m =
   if is_declaration m then a else fold_left_blocks (fold_left_instrs f) a m
 
+(** [iter_all_instr f m] applies function f to each of instructions in function m*)
+let iter_all_instr f m =
+  if is_declaration m then () else iter_blocks (iter_instrs f) m
+
 (** [get_return_instr f] returns ret instruction from [f]. *)
 let get_return_instr f =
   List.find
     (fun instr -> instr_opcode instr = Opcode.Ret)
     (fold_left_all_instr (fun l g -> g :: l) [] f)
+
+(** [get_instr_before wide i] returns a instr before [i].
+    If [wide], searches all instructions in the ancestral function of [i].
+    Else, searches instructions only within the parental block of [i]. *)
+let get_instr_before ~wide i =
+  let rec aux res rev_pos =
+    match rev_pos with
+    | At_start b ->
+        if wide then
+          match block_pred b with
+          | At_start _ -> None
+          | After b -> aux res (instr_end b)
+        else None
+    | After i -> if is_terminator i then aux res (instr_pred i) else Some i
+  in
+  aux None (instr_pred i)
 
 (** [get_instrs_before wide i] returns a list of all instrs before [i].
     If [wide], includes all instructions in the ancestral function of [i].
@@ -368,6 +391,657 @@ module Flag = struct
   let is_nsw = guard_is can_overflow is_nsw_raw
   let is_exact = guard_is can_be_exact is_exact_raw
 end
+
+(* CFG MODIFYING MUTATION HELPERS *)
+
+module CFG_Modifier = struct
+  (** [make_conditional llctx instr] substitutes
+    an unconditional branch instruction [instr]
+    into always-true conditional branch instruction.
+    (Block instructions are cloned between both destinations, except names.)
+    Returns the conditional branch instruction. *)
+  let make_conditional llctx instr =
+    match instr |> get_branch |> Option.get with
+    | `Unconditional target_block ->
+        let block = instr_parent instr in
+        let fbb = append_block llctx "" (block_parent block) in
+        move_block_after target_block fbb;
+        iter_instrs
+          (fun i ->
+            insert_into_builder (instr_clone i) "" (builder_at_end llctx fbb))
+          target_block;
+        delete_instruction instr;
+        build_cond_br
+          (const_int (i1_type llctx) 1)
+          target_block fbb
+          (builder_at_end llctx block)
+    | `Conditional _ -> failwith "Conditional branch already"
+
+  (** [make_unconditional llctx instr] substitutes
+    a conditional branch instruction [instr]
+    into unconditional branch instruction targets for true-branch.
+    (False branch block remains in the module; just not used by the branch.)
+    Returns the unconditional branch instruction. *)
+  let make_unconditional llctx instr =
+    match instr |> get_branch |> Option.get with
+    | `Conditional (_, tbb, _) ->
+        let block = instr_parent instr in
+        delete_instruction instr;
+        build_br tbb (builder_at_end llctx block)
+    | `Unconditional _ -> failwith "Unconditional branch already"
+
+  (** [set_unconditional_dest llctx instr bb] sets
+    the destinations of the unconditional branch instruction [instr] to [bb].
+    Returns the new instruction. *)
+  let set_unconditional_dest llctx instr bb =
+    match instr |> get_branch |> Option.get with
+    | `Unconditional _ ->
+        let result = build_br bb (builder_before llctx instr) in
+        delete_instruction instr;
+        result
+    | `Conditional _ -> failwith "Conditional branch"
+
+  (** [set_conditional_dest llctx instr tbb fbb] sets
+    the destinations of the conditional branch instruction [instr].
+    If given as [None], retains the original destination.
+    Returns the new instruction. *)
+  let set_conditional_dest llctx instr tbb fbb =
+    match instr |> get_branch |> Option.get with
+    | `Conditional (cond, old_tbb, old_fbb) ->
+        let result =
+          build_cond_br cond
+            (match tbb with Some tbb -> tbb | None -> old_tbb)
+            (match fbb with Some fbb -> fbb | None -> old_fbb)
+            (builder_before llctx instr)
+        in
+        delete_instruction instr;
+        result
+    | `Unconditional _ -> failwith "Unconditional branch"
+
+  (** [split_block llctx loc] splits the parent block of [loc] into two blocks
+    and links them by unconditional branch.
+    [loc] becomes the first instruction of the latter block.
+    Returns the former block. *)
+  let split_block llctx loc =
+    let block = instr_parent loc in
+    let new_block = insert_block llctx "" block in
+    let builder = builder_at_end llctx new_block in
+
+    (* initial setting *)
+    let dummy = build_unreachable builder in
+    position_before dummy builder;
+
+    (* migrating instructions *)
+    let rec aux () =
+      match instr_begin block with
+      | Before i when i = loc -> ()
+      | Before i ->
+          let i_clone = instr_clone i in
+          insert_into_builder i_clone "" builder;
+          replace_hard i i_clone;
+          aux ()
+      | At_end _ -> failwith "NEVER OCCUR"
+    in
+    aux ();
+
+    (* modifying all branches targets original block *)
+    iter_blocks
+      (fun b ->
+        let ter = b |> block_terminator |> Option.get in
+        let succs = ter |> successors in
+        Array.iteri
+          (fun i elem -> if elem = block then set_successor ter i new_block)
+          succs)
+      (loc |> instr_parent |> block_parent);
+
+    (* linking and cleaning *)
+    build_br block builder |> ignore;
+    delete_instruction dummy;
+
+    (* finally done *)
+    new_block
+end
+
+module LLVMap = Map.Make (struct
+  type t = llvalue
+
+  (* same llvalues sometimes map to other key *)
+  let compare llv0 llv1 = compare (value_name llv0) (value_name llv1)
+end)
+
+let disclaim_ty llctx _ =
+  (* print_endline msg;
+     print_endline "This type change attempt will be canceled."; *)
+  i1_type llctx
+
+let rec propagate llctx curr typemap =
+  (* at this moment, curr is added to typemap right before *)
+  let ty_curr = LLVMap.find curr typemap in
+
+  (* propagate to operands *)
+  let typemap =
+    match classify_value curr with
+    | Instruction opc -> (
+        match OpcodeClass.classify opc with
+        | BINARY ->
+            (* propagates the most; instruction, operands, uses are all changed *)
+            let opd0 = operand curr 0 in
+            let opd1 = operand curr 1 in
+            typemap
+            |> infer_types llctx ty_curr opd0
+            |> infer_types llctx ty_curr opd1
+        | MEM ->
+            if opc = Load then
+              infer_types llctx (pointer_type2 llctx) (operand curr 0) typemap
+            else typemap
+        | PHI ->
+            (* propagate over all incoming values *)
+            List.fold_left
+              (fun accu (i, _) -> infer_types llctx ty_curr i accu)
+              typemap (incoming curr)
+        | _ -> typemap)
+    | _ -> typemap
+  in
+
+  (* propagate to users *)
+  fold_left_uses
+    (fun accu use ->
+      let user = user use in
+      let opc_user = instr_opcode user in
+      match OpcodeClass.classify opc_user with
+      | TER ->
+          (* conditional branch, then i1 *)
+          if opc_user = Br && is_conditional user then
+            infer_types llctx (i1_type llctx) (condition user) typemap
+          else typemap
+      | BINARY -> infer_types llctx ty_curr user accu
+      | MEM ->
+          (* opaque ptr: cannot use `element_type`! *)
+          if opc_user = Store then
+            infer_types llctx (pointer_type2 llctx) (operand user 1) accu
+          else typemap
+      | CAST -> infer_types llctx (type_of user) user accu
+      | CMP ->
+          let opd0 = operand user 0 in
+          let opd1 = operand user 1 in
+          (if opd0 = curr then infer_types llctx ty_curr opd1 accu
+          else infer_types llctx ty_curr opd0 accu)
+          |> infer_types llctx (i1_type llctx) user
+      | PHI -> infer_types llctx ty_curr user accu
+      | _ -> accu)
+    typemap curr
+
+and infer_types llctx ty_new curr typemap =
+  match LLVMap.find_opt curr typemap with
+  | Some ty_new' ->
+      if ty_new <> ty_new' then
+        disclaim_ty llctx
+          ("Type conflict at " ^ string_of_llvalue curr ^ " ("
+         ^ string_of_lltype ty_new ^ string_of_lltype ty_new'
+         ^ "). Might leads to invalid IR. If so: ")
+        |> ignore;
+      typemap
+  | None ->
+      if is_constant curr then typemap
+      else typemap |> LLVMap.add curr ty_new |> propagate llctx curr
+
+let block_name block = block |> value_of_block |> value_name
+
+let find_block_by_name f name =
+  match
+    fold_left_blocks
+      (fun accu block ->
+        if Option.is_some accu then accu
+        else if block_name block = name then Some block
+        else accu)
+      None f
+  with
+  | Some block -> block
+  | None -> failwith ("No block named " ^ name)
+
+let migrate_llv llv_old ty_expected link =
+  if is_constant llv_old then
+    match llv_old |> type_of |> classify_type with
+    | Integer ->
+        if is_poison llv_old then poison ty_expected
+        else if is_undef llv_old then undef ty_expected
+        else
+          const_int ty_expected
+            (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+    | Pointer -> const_null ty_expected
+    | _ -> failwith "Unsupported type migration"
+  else LLVMap.find llv_old link
+
+let guess_ptr_elem_ty llctx ptr_llv typemap =
+  let ret =
+    fold_left_uses
+      (fun accu use ->
+        if Option.is_some accu then accu
+        else
+          let user = user use in
+          let opc_user = instr_opcode user in
+          match opc_user with
+          | Load -> (
+              match LLVMap.find_opt user typemap with
+              | Some _ as v -> v
+              | None -> accu)
+          | Store -> (
+              let opd0 = operand user 0 in
+              if ptr_llv = opd0 then accu
+              else
+                match LLVMap.find_opt opd0 typemap with
+                | Some _ as v -> v
+                | None -> accu)
+          | _ -> accu)
+      None ptr_llv
+  in
+  match ret with
+  | Some ret -> ret
+  | None ->
+      disclaim_ty llctx ("Failed to infer type of " ^ value_name ptr_llv ^ ".")
+
+let copy_instr llctx llb instr_old typemap link =
+  (* values *)
+  let f = llb |> insertion_block |> block_parent in
+  let name = value_name instr_old in
+  let opc = instr_opcode instr_old in
+  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link in
+
+  (* copying instruction *)
+  let instr_new =
+    if OpcodeClass.classify opc = BINARY then (
+      let ty_expect = LLVMap.find instr_old typemap in
+      let instr_new =
+        OpcodeClass.build_binary opc
+          (migrate_llv (operand instr_old 0) ty_expect)
+          (migrate_llv (operand instr_old 1) ty_expect)
+          llb
+      in
+      set_value_name name instr_new;
+      instr_new)
+    else
+      match opc with
+      | Ret ->
+          if num_operands instr_old > 0 then
+            let ret_val_old = operand instr_old 0 in
+            let ty_expect =
+              match LLVMap.find_opt ret_val_old typemap with
+              | Some ty -> ty
+              | None -> type_of ret_val_old
+            in
+            let ret_val_new = migrate_llv ret_val_old ty_expect in
+            build_ret ret_val_new llb
+          else build_ret_void llb
+      | Br -> (
+          let find_block block_old =
+            find_block_by_name f (block_name block_old)
+          in
+          match get_branch instr_old with
+          | Some (`Conditional (cond, tb, fb)) ->
+              build_cond_br
+                (migrate_llv cond (i1_type llctx))
+                (find_block tb) (find_block fb) llb
+          | Some (`Unconditional dest) -> build_br (find_block dest) llb
+          | None -> failwith "Not supporting other kind of branches")
+      | Alloca ->
+          build_alloca (guess_ptr_elem_ty llctx instr_old typemap) name llb
+      | Load ->
+          let opd = operand instr_old 0 in
+          build_load2
+            (LLVMap.find instr_old typemap)
+            (migrate_llv opd (guess_ptr_elem_ty llctx opd typemap))
+            name llb
+      | Store -> (
+          let opd0 = operand instr_old 0 in
+          let opd1 = operand instr_old 1 in
+          match (is_constant opd0, is_constant opd1) with
+          | false, false | false, true ->
+              let ty_expcted_opd0 = LLVMap.find opd0 typemap in
+              build_store
+                (migrate_llv opd0 ty_expcted_opd0)
+                (migrate_llv opd1 (pointer_type2 llctx))
+                llb
+          | true, false ->
+              let ty_expcted_opd1 = LLVMap.find opd1 typemap in
+              build_store
+                (migrate_llv opd0 (guess_ptr_elem_ty llctx opd1 typemap))
+                (migrate_llv opd1 ty_expcted_opd1)
+                llb
+          | true, true ->
+              (* just do anything *)
+              build_store
+                (const_int (i32_type llctx) 0)
+                (const_null (pointer_type2 llctx))
+                llb)
+      (* below three cast instructions can be interchanged, or even omitted *)
+      | Trunc | ZExt | SExt ->
+          let opd = operand instr_old 0 in
+          let ty_tgt = LLVMap.find instr_old typemap in
+          let ty_src =
+            match LLVMap.find_opt opd typemap with
+            | Some ty -> ty
+            | None -> type_of opd
+          in
+          let opd' = migrate_llv opd ty_src in
+          let bw_tgt = integer_bitwidth ty_tgt in
+          let bw_src = integer_bitwidth ty_src in
+          if bw_src < bw_tgt then
+            (* FIXME: USING ZEXT ONLY *)
+            build_zext opd' ty_tgt name llb
+          else if bw_src > bw_tgt then build_trunc opd' ty_tgt name llb
+          else build_add opd' (const_int (type_of opd') 0) name llb
+      | ICmp ->
+          let opd0 = operand instr_old 0 in
+          let opd1 = operand instr_old 1 in
+          let ty_expect =
+            match (is_constant opd0, is_constant opd1) with
+            | false, false | false, true -> LLVMap.find opd0 typemap
+            | true, false -> LLVMap.find opd1 typemap
+            | true, true -> type_of opd1
+          in
+          build_icmp
+            (icmp_predicate instr_old |> Option.get)
+            (migrate_llv opd0 ty_expect)
+            (migrate_llv opd1 ty_expect)
+            name llb
+      | PHI -> failwith "TODO: does not support copying PHI"
+      | _ -> failwith "Not supported instruction"
+  in
+  LLVMap.add instr_old instr_new link
+
+let copy_block llctx block_old block_new typemap link =
+  (* assert block_new is empty *)
+  let llb = builder_at llctx (instr_begin block_new) in
+  fold_left_instrs
+    (fun link instr_old -> copy_instr llctx llb instr_old typemap link)
+    link block_old
+
+let migrate llctx f_old f_new typemap =
+  (* assert f_new is empty except prescence of entry block *)
+  let link_init =
+    let params_new = params f_new in
+    Array.mapi
+      (fun i param_old -> (param_old, Array.get params_new i))
+      (params f_old)
+    |> Array.to_seq |> LLVMap.of_seq
+  in
+
+  (* have to build blocks first (for some instructions) *)
+  let entry_new = entry_block f_new in
+  let blocks_old = basic_blocks f_old in
+  let rec loop prev_block i =
+    if i >= Array.length blocks_old then ()
+    else
+      let block_old = Array.get blocks_old i in
+      let block_new = insert_block llctx (block_name block_old) entry_new in
+      move_block_after prev_block block_new;
+      loop block_new (i + 1)
+  in
+  loop entry_new 1;
+
+  (* start migration *)
+  let blocks_new = basic_blocks f_new in
+  let rec loop link i =
+    if i >= Array.length blocks_old then link
+    else
+      let block_old = Array.get blocks_old i in
+      let block_new = Array.get blocks_new i in
+      let link = copy_block llctx block_old block_new typemap link in
+      loop link (i + 1)
+  in
+  loop link_init 0
+
+(** [redef_fn llctx f llv typemap] redefines function [f] according to
+    [typemap]. *)
+let redef_fn llctx f typemap =
+  let ret_ty =
+    fold_left_blocks
+      (fun accu block ->
+        if Option.is_some accu then accu
+        else
+          match block_terminator block with
+          | Some ter ->
+              if instr_opcode ter = Ret then
+                if num_operands ter > 0 then Some (operand ter 0 |> type_of)
+                else Some (void_type llctx)
+              else accu
+          | None -> accu)
+      None f
+    |> Option.get
+  in
+  let params_old = params f in
+  let param_tys =
+    Array.map
+      (fun param ->
+        match LLVMap.find_opt param typemap with
+        | Some ty -> ty
+        | None -> type_of param)
+      params_old
+  in
+
+  let f_new =
+    define_function "" (function_type ret_ty param_tys) (global_parent f)
+  in
+  Array.iteri
+    (fun i param_new ->
+      set_value_name
+        (let param_old = Array.get params_old i in
+         value_name param_old)
+        param_new)
+    (params f_new);
+  (f_new, migrate llctx f f_new typemap)
+
+(* name all instructions *)
+let name_all f =
+  let name i = "val" ^ string_of_int i in
+  let start =
+    Array.fold_left
+      (fun accu param ->
+        if value_name param = "" then (
+          set_value_name (name accu) param;
+          accu + 1)
+        else accu)
+      0 (params f)
+  in
+  fold_left_all_instr
+    (fun accu i ->
+      if value_name i = "" && i |> type_of |> classify_type <> Void then (
+        set_value_name (name accu) i;
+        accu + 1)
+      else accu)
+    start f
+  |> ignore
+
+let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
+  (* values *)
+  let f = llb |> insertion_block |> block_parent in
+  let name = value_name instr_old in
+  let opc = instr_opcode instr_old in
+  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link in
+
+  (* copying instruction *)
+  let instr_new =
+    if OpcodeClass.classify opc = BINARY then (
+      let ty_expect = type_of instr_old in
+      let instr_new =
+        OpcodeClass.build_binary opc
+          (migrate_llv (operand instr_old 0) ty_expect)
+          (migrate_llv (operand instr_old 1) ty_expect)
+          llb
+      in
+      set_value_name name instr_new;
+      instr_new)
+    else
+      match opc with
+      | Ret ->
+          let rec build_ret' loc =
+            let target = get_instr_before ~wide:true loc in
+            match target with
+            | Some i -> (
+                match LLVMap.find_opt i link with
+                | Some new_i ->
+                    if f_new_type = type_of new_i then build_ret new_i llb
+                    else build_ret' i
+                | None -> build_ret' i)
+            | None ->
+                let ty_ret = f |> type_of |> return_type |> return_type in
+                if ty_ret = void_type llctx then build_ret_void llb
+                else build_ret (migrate_llv (operand instr_old 0) ty_ret) llb
+          in
+          build_ret' instr_old
+      | Br -> (
+          let find_block block_old =
+            find_block_by_name f (block_name block_old)
+          in
+          match get_branch instr_old with
+          | Some (`Conditional (cond, tb, fb)) ->
+              build_cond_br
+                (migrate_llv cond (i1_type llctx))
+                (find_block tb) (find_block fb) llb
+          | Some (`Unconditional dest) -> build_br (find_block dest) llb
+          | None -> failwith "Not supporting other kind of branches")
+      | Alloca ->
+          let ty = type_of instr_old in
+          build_alloca (element_type ty) name llb
+      | Load ->
+          let opd = operand instr_old 0 in
+          build_load2 (type_of instr_old)
+            (migrate_llv opd (type_of instr_old))
+            name llb
+      | Store -> (
+          let opd0 = operand instr_old 0 in
+          let opd1 = operand instr_old 1 in
+          match (is_constant opd0, is_constant opd1) with
+          | false, false | false, true ->
+              let ty_expcted_opd0 = type_of opd0 in
+              build_store
+                (migrate_llv opd0 ty_expcted_opd0)
+                (migrate_llv opd1 (pointer_type2 llctx))
+                llb
+          | true, false ->
+              let ty_expcted_opd0 = type_of opd0 in
+              let ty_expcted_opd1 = type_of opd1 in
+              build_store
+                (migrate_llv opd0 ty_expcted_opd0)
+                (migrate_llv opd1 ty_expcted_opd1)
+                llb
+          | true, true ->
+              (* just do anything *)
+              build_store
+                (const_int (i32_type llctx) 0)
+                (const_null (pointer_type2 llctx))
+                llb)
+      (* below three cast instructions can be interchanged, or even omitted *)
+      | Trunc | ZExt | SExt ->
+          let opd = operand instr_old 0 in
+          let ty_tgt = type_of instr_old in
+          let ty_src = type_of opd in
+          let opd' = migrate_llv opd ty_src in
+          let bw_tgt = integer_bitwidth ty_tgt in
+          let bw_src = integer_bitwidth ty_src in
+          if bw_src < bw_tgt then
+            if opc = ZExt then build_zext opd' ty_tgt name llb
+            else build_sext opd' ty_tgt name llb
+          else if bw_src > bw_tgt then build_trunc opd' ty_tgt name llb
+          else build_add opd' (const_int (type_of opd') 0) name llb
+      | ICmp ->
+          let opd0 = operand instr_old 0 in
+          let opd1 = operand instr_old 1 in
+          let ty_expect =
+            match (is_constant opd0, is_constant opd1) with
+            | false, false | false, true -> type_of opd0
+            | true, false -> type_of opd1
+            | true, true -> type_of opd1
+          in
+          build_icmp
+            (icmp_predicate instr_old |> Option.get)
+            (migrate_llv opd0 ty_expect)
+            (migrate_llv opd1 ty_expect)
+            name llb
+      | PHI -> failwith "TODO: does not support copying PHI"
+      | Call ->
+          let num_operands = num_operands instr_old in
+          let calling_fn = operand instr_old (num_operands - 1) in
+          let opds =
+            let rec loop accu i =
+              if i >= num_operands - 1 then accu
+              else
+                let opd = operand instr_old i in
+                loop (migrate_llv opd (type_of opd) :: accu) (i + 1)
+            in
+            loop [] 0 |> Array.of_list
+          in
+          let res =
+            build_call2
+              (function_type (type_of instr_old)
+                 (Array.map (fun p -> type_of p) opds))
+              calling_fn opds name llb
+          in
+          res
+      | _ -> failwith "Not supported instruction"
+  in
+  LLVMap.add instr_old instr_new link
+
+let copy_block_with_new_retval llctx block_old block_new link f_new_type =
+  (* assert block_new is empty *)
+  let llb = builder_at llctx (instr_begin block_new) in
+  fold_left_instrs
+    (fun link instr_old ->
+      copy_instr_with_new_retval llctx llb instr_old link f_new_type)
+    link block_old
+
+let copy_function_with_new_retval llctx f_old f_new f_new_type =
+  (* assert f_new is empty except prescence of entry block *)
+  let link_init =
+    let params_new = params f_new in
+    Array.mapi
+      (fun i param_old -> (param_old, Array.get params_new i))
+      (params f_old)
+    |> Array.to_seq |> LLVMap.of_seq
+  in
+
+  (* have to build blocks first (for some instructions) *)
+  let entry_new = entry_block f_new in
+  let blocks_old = basic_blocks f_old in
+  let rec loop prev_block i =
+    if i >= Array.length blocks_old then ()
+    else
+      let block_old = Array.get blocks_old i in
+      let block_new = insert_block llctx (block_name block_old) entry_new in
+      move_block_after prev_block block_new;
+      loop block_new (i + 1)
+  in
+  loop entry_new 1;
+
+  (* start copy *)
+  let blocks_new = basic_blocks f_new in
+  let rec loop link i =
+    if i >= Array.length blocks_old then ()
+    else
+      let block_old = Array.get blocks_old i in
+      let block_new = Array.get blocks_new i in
+      let link =
+        copy_block_with_new_retval llctx block_old block_new link f_new_type
+      in
+      loop link (i + 1)
+  in
+
+  loop link_init 0
+
+let is_call instr =
+  match Llvm.instr_opcode instr with Llvm.Opcode.Call -> true | _ -> false
+
+let is_llvm_function f =
+  let r1 = Str.regexp "llvm\\.dbg\\..+" in
+  let r2 = Str.regexp "llvm\\.lifetime\\..+" in
+  Str.string_match r1 (Llvm.value_name f) 0
+  || Str.string_match r2 (Llvm.value_name f) 0
+
+let is_llvm_intrinsic instr =
+  if is_call instr then
+    let callee_expr = Llvm.operand instr (Llvm.num_operands instr - 1) in
+    is_llvm_function callee_expr
+  else false
 
 (** save_ll [target_dif] [output filename] [llmodule]*)
 let save_ll dir filename llm =

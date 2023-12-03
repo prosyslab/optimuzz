@@ -1,14 +1,14 @@
 (library
  (name util)
  (modules aLlvm aUtil)
- (libraries llvm sha)
+ (libraries llvm sha str unix)
  (foreign_stubs
   (language cxx)
   (flags
    :standard
-   (-I/usr/lib/llvm-13/include
+   (-I/usr/lib/llvm-15/include
     -D_GNU_SOURCE
     -D__STDC_CONSTANT_MACROS
     -D__STDC_FORMAT_MACROS
     -D__STDC_LIMIT_MACROS)))
- (c_library_flags (-lLLVM-13) (-L/usr/lib/llvm-13/lib) -lstdc++))
+ (c_library_flags (-lLLVM-15) (-L/usr/lib/llvm-15/lib) -lstdc++))

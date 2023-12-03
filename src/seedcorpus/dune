@@ -1,4 +1,4 @@
 (library
  (name seedcorpus)
  (modules seedpool)
- (libraries util coverage oracle))
+ (libraries util llvm.irreader coverage oracle))

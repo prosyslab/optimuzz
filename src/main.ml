@@ -38,6 +38,7 @@ let initialize () =
 
 let main () =
   Printexc.record_backtrace true;
+  ALlvm.set_opaque_pointers llctx true;
   initialize ();
 
   (* pattern *)
