@@ -130,7 +130,7 @@ let rec create_rand_instr llctx preferred_opd loc =
   | MEM ->
       if opcode = Load && classify_type operand_ty = Pointer then
         Some
-          (build_load2
+          (build_load
              (integer_type llctx (AUtil.list_random AUtil.interesting_types))
              operand "" (builder_before llctx loc))
       else None
@@ -384,6 +384,8 @@ let subst_ret llctx loc =
   | None -> true
 
 let check_retval llctx llm =
+  print_endline "in check_retval";
+  print_endline (string_of_llmodule llm);
   let deleted_functions =
     fold_left_functions
       (fun acc f ->
@@ -413,6 +415,8 @@ let check_retval llctx llm =
   List.iter (fun f -> delete_function f) (List.rev deleted_functions);
   try
     let _ = choose_function llm in
+    print_endline "after check_retval";
+    print_endline (string_of_llmodule llm);
     Some llm
   with _ -> None
 

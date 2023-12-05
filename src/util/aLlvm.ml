@@ -143,21 +143,25 @@ let get_return_instr f =
     (fun instr -> instr_opcode instr = Opcode.Ret)
     (fold_left_all_instr (fun l g -> g :: l) [] f)
 
+let is_variable instr =
+  match instr_opcode instr with Invalid | Store -> false | _ -> true
+
 (** [get_instr_before wide i] returns a instr before [i].
     If [wide], searches all instructions in the ancestral function of [i].
     Else, searches instructions only within the parental block of [i]. *)
 let get_instr_before ~wide i =
   let rec aux res rev_pos =
     match rev_pos with
-    | At_start b ->
-        if wide then
-          match block_pred b with
-          | At_start _ -> None
-          | After b -> aux res (instr_end b)
-        else None
-    | After i -> if is_terminator i then aux res (instr_pred i) else Some i
+    | At_start _ -> None
+    | After i ->
+        if is_terminator i || not (is_variable i) then aux res (instr_pred i)
+        else Some i
   in
-  aux None (instr_pred i)
+  if wide then
+    let f = i |> instr_parent |> block_parent in
+    let entry = entry_block f in
+    aux None (instr_end entry)
+  else aux None (instr_pred i)
 
 (** [get_instrs_before wide i] returns a list of all instrs before [i].
     If [wide], includes all instructions in the ancestral function of [i].
@@ -231,14 +235,14 @@ module TypeBW = struct
 
   let random_wider_llint llctx ty =
     let bw = bw_of_llint ty in
-    if bw = 64 then raise Unsupported_Type
+    if bw >= 64 then raise Unsupported_Type
     else
       let bw_wide = AUtil.rand (bw + 1) 64 in
       llint_of_bw llctx bw_wide
 
   let random_narrower_llint llctx ty =
     let bw = bw_of_llint ty in
-    if bw = 1 then raise Unsupported_Type
+    if bw <= 1 then raise Unsupported_Type
     else
       let bw_narrow = AUtil.rand 1 (bw - 1) in
       llint_of_bw llctx bw_narrow
@@ -532,7 +536,7 @@ let rec propagate llctx curr typemap =
             |> infer_types llctx ty_curr opd1
         | MEM ->
             if opc = Load then
-              infer_types llctx (pointer_type2 llctx) (operand curr 0) typemap
+              infer_types llctx (pointer_type llctx) (operand curr 0) typemap
             else typemap
         | PHI ->
             (* propagate over all incoming values *)
@@ -558,7 +562,7 @@ let rec propagate llctx curr typemap =
       | MEM ->
           (* opaque ptr: cannot use `element_type`! *)
           if opc_user = Store then
-            infer_types llctx (pointer_type2 llctx) (operand user 1) accu
+            infer_types llctx (pointer_type llctx) (operand user 1) accu
           else typemap
       | CAST -> infer_types llctx (type_of user) user accu
       | CMP ->
@@ -687,7 +691,7 @@ let copy_instr llctx llb instr_old typemap link =
           build_alloca (guess_ptr_elem_ty llctx instr_old typemap) name llb
       | Load ->
           let opd = operand instr_old 0 in
-          build_load2
+          build_load
             (LLVMap.find instr_old typemap)
             (migrate_llv opd (guess_ptr_elem_ty llctx opd typemap))
             name llb
@@ -699,7 +703,7 @@ let copy_instr llctx llb instr_old typemap link =
               let ty_expcted_opd0 = LLVMap.find opd0 typemap in
               build_store
                 (migrate_llv opd0 ty_expcted_opd0)
-                (migrate_llv opd1 (pointer_type2 llctx))
+                (migrate_llv opd1 (pointer_type llctx))
                 llb
           | true, false ->
               let ty_expcted_opd1 = LLVMap.find opd1 typemap in
@@ -711,7 +715,7 @@ let copy_instr llctx llb instr_old typemap link =
               (* just do anything *)
               build_store
                 (const_int (i32_type llctx) 0)
-                (const_null (pointer_type2 llctx))
+                (const_null (pointer_type llctx))
                 llb)
       (* below three cast instructions can be interchanged, or even omitted *)
       | Trunc | ZExt | SExt ->
@@ -745,6 +749,25 @@ let copy_instr llctx llb instr_old typemap link =
             (migrate_llv opd1 ty_expect)
             name llb
       | PHI -> failwith "TODO: does not support copying PHI"
+      (* | Call ->
+          let num_operands = num_operands instr_old in
+          let calling_fn = operand instr_old (num_operands - 1) in
+          let opds =
+            let rec loop accu i =
+              if i >= num_operands - 1 then accu
+              else
+                let opd = operand instr_old i in
+                loop (migrate_llv opd (type_of opd) :: accu) (i + 1)
+            in
+            loop [] 0 |> Array.of_list
+          in
+          let res =
+            build_call
+              (function_type (type_of instr_old)
+                 (Array.map (fun p -> type_of p) opds))
+              calling_fn opds name llb
+          in
+          res *)
       | _ -> failwith "Not supported instruction"
   in
   LLVMap.add instr_old instr_new link
@@ -905,7 +928,7 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
           build_alloca (element_type ty) name llb
       | Load ->
           let opd = operand instr_old 0 in
-          build_load2 (type_of instr_old)
+          build_load (type_of instr_old)
             (migrate_llv opd (type_of instr_old))
             name llb
       | Store -> (
@@ -916,7 +939,7 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
               let ty_expcted_opd0 = type_of opd0 in
               build_store
                 (migrate_llv opd0 ty_expcted_opd0)
-                (migrate_llv opd1 (pointer_type2 llctx))
+                (migrate_llv opd1 (pointer_type llctx))
                 llb
           | true, false ->
               let ty_expcted_opd0 = type_of opd0 in
@@ -929,7 +952,7 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
               (* just do anything *)
               build_store
                 (const_int (i32_type llctx) 0)
-                (const_null (pointer_type2 llctx))
+                (const_null (pointer_type llctx))
                 llb)
       (* below three cast instructions can be interchanged, or even omitted *)
       | Trunc | ZExt | SExt ->
@@ -972,10 +995,17 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
             loop [] 0 |> Array.of_list
           in
           let res =
-            build_call2
+            build_call
               (function_type (type_of instr_old)
                  (Array.map (fun p -> type_of p) opds))
               calling_fn opds name llb
+          in
+          res
+      | ExtractValue ->
+          let opd0 = operand instr_old 0 in
+          let idx = Array.get (indices instr_old) 0 in
+          let res =
+            build_extractvalue (migrate_llv opd0 (type_of opd0)) idx name llb
           in
           res
       | _ -> failwith "Not supported instruction"
@@ -1028,14 +1058,17 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
 
   loop link_init 0
 
+let is_noncommutative_binary instr =
+  match Llvm.instr_opcode instr with
+  | Llvm.Opcode.Sub | FSub | UDiv | SDiv | FDiv | URem | SRem | FRem -> true
+  | _ -> false
+
 let is_call instr =
   match Llvm.instr_opcode instr with Llvm.Opcode.Call -> true | _ -> false
 
 let is_llvm_function f =
-  let r1 = Str.regexp "llvm\\.dbg\\..+" in
-  let r2 = Str.regexp "llvm\\.lifetime\\..+" in
-  Str.string_match r1 (Llvm.value_name f) 0
-  || Str.string_match r2 (Llvm.value_name f) 0
+  let r = Str.regexp "llvm\\..+" in
+  Str.string_match r (Llvm.value_name f) 0
 
 let is_llvm_intrinsic instr =
   if is_call instr then
