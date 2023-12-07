@@ -38,6 +38,9 @@ let name_opted_ver filename =
     String.sub filename 0 (String.length filename - 3) ^ ".opt.ll"
   else filename ^ ".opt.ll"
 
+(** [rand_bool () ] returns true or false with probability 0.5 each. *)
+let rand_bool _ = Random.bool ()
+
 (** [rand low high] returns a random integer
     between [low] and [high] (both inclusive). *)
 let rand low high = Random.int (high - low + 1) + low
@@ -55,7 +58,8 @@ let repeat_fun f init t =
 let interesting_integers =
   [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
 
-let interesting_types = [ 1; 8; 10; 32; 34; 64; 128 ]
+(* let interesting_types = [ 1; 8; 10; 32; 34; 64; 128 ] *)
+let interesting_types = [ 1; 8; 10; 32; 34; 64 ]
 
 (** [list_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
