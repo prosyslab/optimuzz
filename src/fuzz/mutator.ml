@@ -9,7 +9,9 @@ type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
 let choose_mutation mode distance =
   match mode with
   | EXPAND ->
-      let mutation_list = [ CREATE; OPCODE; OPERAND; FLAG; TYPE ] in
+      let mutation_list =
+        [ CREATE; CREATE; OPCODE; OPCODE; OPERAND; OPERAND; FLAG; FLAG; TYPE ]
+      in
       let random_int = Random.int (distance + List.length mutation_list) in
       if random_int <= distance then List.nth mutation_list 0
       else List.nth mutation_list (random_int - distance)
@@ -31,6 +33,18 @@ let create_cast llctx loc opcode o ty =
 
 let create_cmp llctx loc icmp o0 o1 =
   Some ((OpCls.build_cmp icmp) o0 o1 (builder_before llctx loc))
+
+(* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
+   into another possible instruction, with the same operands,
+   without any extra keywords. Returns the new instruction. *)
+
+let exchange_binary llctx instr =
+  let nth_opd = operand instr in
+  let new_instr =
+    create_binary llctx instr (instr_opcode instr) (nth_opd 1) (nth_opd 0)
+    |> Option.get
+  in
+  replace_and_ret instr new_instr
 
 (* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
    into another possible instruction, with the same operands,
@@ -81,6 +95,13 @@ let randget_operand loc ty =
     if classify_type ty = TypeKind.Integer then
       const_int ty (AUtil.list_random AUtil.interesting_integers) :: candidates
     else candidates
+  in
+  let candidates =
+    loc |> get_function
+    |> fold_left_params
+         (fun candidates param ->
+           if type_of param = ty then param :: candidates else candidates)
+         candidates
   in
   if candidates <> [] then Some (AUtil.list_random candidates) else None
 
@@ -145,8 +166,14 @@ let subst_rand_instr llctx instr =
   let old_opcode = instr_opcode instr in
   match OpCls.classify old_opcode with
   | BINARY ->
-      let new_opcode = OpCls.random_opcode_except old_opcode in
-      subst_binary llctx instr new_opcode
+      if is_noncommutative_binary instr then
+        if AUtil.rand_bool () then exchange_binary llctx instr
+        else
+          let new_opcode = OpCls.random_opcode_except old_opcode in
+          subst_binary llctx instr new_opcode
+      else
+        let new_opcode = OpCls.random_opcode_except old_opcode in
+        subst_binary llctx instr new_opcode
   | CAST -> subst_cast llctx instr
   | CMP ->
       let old_cmp = instr |> icmp_predicate |> Option.get in
@@ -265,9 +292,9 @@ let is_mistargeting llv =
     Returns [Some(instr)] if success, or [None] else. *)
 let change_type llctx llv =
   (* llv is instruction now *)
-  let f = llv |> instr_parent |> block_parent in
+  let f = get_function llv in
 
-  let llv =
+  let target =
     if num_operands llv > 0 then
       AUtil.list_random
         (let rec loop accu i =
@@ -278,21 +305,23 @@ let change_type llctx llv =
     else llv
   in
 
-  if is_there_hard_op f || is_mistargeting llv then None
+  if is_there_hard_op f || is_mistargeting target then None
   else
     (* decide type *)
-    let ty_old = type_of llv in
+    let ty_old = type_of target in
     let bw_old = integer_bitwidth ty_old in
+    let bw_old2 = llv |> type_of |> integer_bitwidth in
     let rec loop () =
-      let bw = AUtil.rand 1 64 in
-      if bw_old = bw then loop () else integer_type llctx bw
+      let bw = AUtil.list_random AUtil.interesting_types in
+      if bw_old = bw || bw = 128 || bw_old2 = bw then loop ()
+      else integer_type llctx bw
     in
     let ty_new = loop () in
 
-    name_all f;
+    get_var_name_all f;
 
     (* infer types *)
-    let typemap = infer_types llctx ty_new llv LLVMap.empty in
+    let typemap = infer_types llctx ty_new target LLVMap.empty in
     (* not inferred types are regarded as the same *)
     let typemap =
       fold_left_all_instr
@@ -320,7 +349,7 @@ let change_type llctx llv =
        if this occurs, ignore this mutation. *)
     if Llvm_analysis.verify_function f_new then (
       delete_function f;
-      llv |> Fun.flip LLVMap.find link |> Option.some)
+      target |> Fun.flip LLVMap.find link |> Option.some)
     else (
       delete_function f_new;
       None)
@@ -354,7 +383,7 @@ let mutate_CFG = Fun.id
 
 let subst_ret llctx loc =
   let f_old = loc |> instr_parent |> block_parent in
-  name_all f_old;
+  get_var_name_all f_old;
   let params_old = params f_old in
   let param_tys = Array.map type_of params_old in
   let old_ret_ty = loc |> type_of in
@@ -384,8 +413,6 @@ let subst_ret llctx loc =
   | None -> true
 
 let check_retval llctx llm =
-  print_endline "in check_retval";
-  print_endline (string_of_llmodule llm);
   let deleted_functions =
     fold_left_functions
       (fun acc f ->
@@ -395,7 +422,7 @@ let check_retval llctx llm =
               if res then res
               else
                 match instr_opcode instr with
-                | Call -> if is_intrinsic instr then res else true
+                | Call -> if is_llvm_intrinsic instr then res else true
                 | Ret -> (
                     match classify_value (operand instr 0) with
                     | ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
@@ -415,13 +442,11 @@ let check_retval llctx llm =
   List.iter (fun f -> delete_function f) (List.rev deleted_functions);
   try
     let _ = choose_function llm in
-    print_endline "after check_retval";
-    print_endline (string_of_llmodule llm);
     Some llm
   with _ -> None
 
 (* TODO: add fuzzing configuration *)
 let run llctx mode llm distance =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode llm_clone distance
-  |> mutate_CFG |> check_retval llctx
+  mutate_inner_bb llctx mode llm_clone distance |> Option.some
+(* |> mutate_CFG |> check_retval llctx *)

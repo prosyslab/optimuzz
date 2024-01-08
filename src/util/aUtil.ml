@@ -25,13 +25,15 @@ let get_current_time () =
 let now () = Unix.time () |> int_of_float
 let count = ref 0
 
+let save_hash llm =
+  let hash = Sha256.string llm in
+  llset := Llset.add hash !llset
+
 let get_new_name llm =
   let hash = Sha256.string llm in
   match Llset.find_opt hash !llset with
   | Some _ -> ""
-  | None ->
-      llset := Llset.add hash !llset;
-      Sha256.to_hex hash ^ get_current_time () ^ ".ll"
+  | None -> get_current_time () ^ "_" ^ Sha256.to_hex hash ^ ".ll"
 
 let name_opted_ver filename =
   if String.ends_with ~suffix:".ll" filename then

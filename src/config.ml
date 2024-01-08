@@ -12,20 +12,21 @@ let gcov_dir = ref "gcov"
 let workspace = ref ""
 
 (* build/binaries *)
-let opt_bin = ref "llvm-project/build/bin/opt"
-let alive2_bin = ref "alive2/build/alive-tv"
+(* let opt_bin = ref "llvm-project/build/bin/opt" *)
+let opt_bin = ref "./opt"
+let alive2_bin = ref "Alive2/alive2/build/alive-tv"
 
 (* seed options *)
-let max_initial_seed = ref 10
+let max_initial_seed = ref 100
 let random_seed = ref 0
-let max_distance = ref 65506
+let max_distance = ref 65536
 
 (* fuzzing options *)
 let time_budget = ref (-1)
 let cov_directed = ref ""
-let num_mutation = ref 1
-let num_mutant = ref 10
-let no_tv = ref true
+let num_mutation = ref 10
+let num_mutant = ref 1
+let no_tv = ref false
 
 (* logging options *)
 let log_time = ref 30

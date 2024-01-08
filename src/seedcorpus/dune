@@ -1,4 +1,10 @@
 (library
  (name seedcorpus)
  (modules seedpool)
- (libraries util llvm.irreader coverage oracle))
+ (libraries
+  util
+  llvm.irreader
+  llvm.analysis
+  llvm.transform_utils
+  coverage
+  oracle))
