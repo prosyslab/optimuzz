@@ -13,7 +13,9 @@ let rec run pool llctx cov_set gen_count =
 
   (* each mutant is mutated m times *)
   let rec mutate_seed (pool, cov_set, gen_count, seed, times) =
-    if times = 0 then (pool, cov_set, gen_count, seed, times)
+    if times = 0 then (
+      AUtil.save_hash (ALlvm.string_of_llmodule seed);
+      (pool, cov_set, gen_count, seed, times))
     else if times < 0 then
       raise (invalid_arg "mutation must be made by nonnegative num of times")
     else
@@ -36,7 +38,7 @@ let rec run pool llctx cov_set gen_count =
               if covered then (
                 ALlvm.save_ll !Config.corpus_dir filename mutant;
                 let pool = SeedPool.push (mutant, covered, new_distance) pool in
-                (pool, cov_set, gen_count + 1, mutant, times)
+                (pool, cov_set, gen_count + 1, mutant, 0)
                 (* when mutated code is closer to the target than before then push to queue *))
               else if new_distance < distance then (
                 ALlvm.save_ll !Config.corpus_dir filename mutant;
@@ -44,7 +46,7 @@ let rec run pool llctx cov_set gen_count =
                 let cov_set = CovSet.union cov_set cov_mutant in
                 F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
                   (gen_count + 1) (CovSet.cardinal cov_set);
-                (pool, cov_set, gen_count + 1, mutant, times))
+                (pool, cov_set, gen_count + 1, mutant, 0))
               else mutate_seed (pool, cov_set, gen_count, mutant, times - 1)
             in
 
@@ -60,7 +62,7 @@ let rec run pool llctx cov_set gen_count =
       | None -> mutate_seed (pool, cov_set, gen_count, seed, times - 1)
   in
 
-  (* each seed is mutated into n mutants *)
+  (* each seed is mutated upto n mutants *)
   let pool', cov_set', gen_count, _, _ =
     AUtil.repeat_fun mutate_seed
       (pool_popped, cov_set, gen_count, seed, !Config.num_mutation)

@@ -3,6 +3,9 @@ include Llvm
 external set_opaque_pointers : llcontext -> bool -> unit
   = "llvm_set_opaque_pointers"
 
+external verify_module : llmodule -> bool = "wrap_llvm_verify_module"
+external get_allocated_type : llvalue -> lltype = "llvm_get_alloca_type"
+
 let string_of_opcode = function
   | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
@@ -146,22 +149,69 @@ let get_return_instr f =
 let is_variable instr =
   match instr_opcode instr with Invalid | Store -> false | _ -> true
 
+let is_assignment = function
+  | Llvm.Opcode.Invoke | Invalid2 | Add | FAdd | Sub | FSub | Mul | FMul | UDiv
+  | SDiv | FDiv | URem | SRem | FRem | Shl | LShr | AShr | And | Or | Xor
+  | Alloca | Load | GetElementPtr | Trunc | ZExt | SExt | FPToUI | FPToSI
+  | UIToFP | SIToFP | FPTrunc | FPExt | PtrToInt | IntToPtr | BitCast | ICmp
+  | FCmp | PHI | Select | UserOp1 | UserOp2 | VAArg | ExtractElement
+  | InsertElement | ShuffleVector | ExtractValue | InsertValue | Call
+  | LandingPad ->
+      true
+  | _ -> false
+
+let is_noncommutative_binary instr =
+  match Llvm.instr_opcode instr with
+  | Llvm.Opcode.Sub | FSub | UDiv | SDiv | FDiv | URem | SRem | FRem -> true
+  | _ -> false
+
+let is_call instr =
+  match Llvm.instr_opcode instr with Llvm.Opcode.Call -> true | _ -> false
+
+let is_llvm_function f =
+  let r = Str.regexp "llvm\\..+" in
+  Str.string_match r (Llvm.value_name f) 0
+
+let is_llvm_intrinsic instr =
+  if is_call instr then
+    let callee_expr = Llvm.operand instr (Llvm.num_operands instr - 1) in
+    is_llvm_function callee_expr
+  else false
+
+(** save_ll [target_dif] [output filename] [llmodule]*)
+let save_ll dir filename llm =
+  let output_name = Filename.concat dir filename in
+  print_module output_name llm
+
 (** [get_instr_before wide i] returns a instr before [i].
     If [wide], searches all instructions in the ancestral function of [i].
     Else, searches instructions only within the parental block of [i]. *)
 let get_instr_before ~wide i =
-  let rec aux res rev_pos =
-    match rev_pos with
-    | At_start _ -> None
-    | After i ->
-        if is_terminator i || not (is_variable i) then aux res (instr_pred i)
-        else Some i
-  in
   if wide then
+    let rec aux res rev_pos =
+      match rev_pos with
+      | At_start b -> (
+          match block_pred b with
+          | At_start _ -> None
+          | After b -> aux res (instr_end b))
+      | After i ->
+          if is_terminator i || not (i |> instr_opcode |> is_assignment) then
+            aux res (instr_pred i)
+          else Some i
+    in
+    aux None (instr_pred i)
+  else
+    let rec aux res rev_pos =
+      match rev_pos with
+      | At_start _ -> None
+      | After i ->
+          if is_terminator i || not (i |> instr_opcode |> is_assignment) then
+            aux res (instr_pred i)
+          else Some i
+    in
     let f = i |> instr_parent |> block_parent in
     let entry = entry_block f in
     aux None (instr_end entry)
-  else aux None (instr_pred i)
 
 (** [get_instrs_before wide i] returns a list of all instrs before [i].
     If [wide], includes all instructions in the ancestral function of [i].
@@ -193,6 +243,9 @@ let get_blocks_after bb =
     | At_start _ -> failwith "NEVER OCCUR"
   in
   aux (bb |> block_parent |> block_end) []
+
+(** [get_function instr] returns the function that contains [instr]. *)
+let get_function instr = instr |> Llvm.instr_parent |> Llvm.block_parent
 
 (** [choose_function llm] returns an arbitrary function in [llm]. *)
 let choose_function llm =
@@ -513,6 +566,16 @@ module LLVMap = Map.Make (struct
   let compare llv0 llv1 = compare (value_name llv0) (value_name llv1)
 end)
 
+module LLBMap = Map.Make (struct
+  type t = llbasicblock
+
+  (* same llbasicblocks sometimes map to other key *)
+  let compare llb0 llb1 =
+    compare
+      (llb0 |> value_of_block |> value_name)
+      (llb1 |> value_of_block |> value_name)
+end)
+
 let disclaim_ty llctx _ =
   (* print_endline msg;
      print_endline "This type change attempt will be canceled."; *)
@@ -603,18 +666,22 @@ let find_block_by_name f name =
   | Some block -> block
   | None -> failwith ("No block named " ^ name)
 
-let migrate_llv llv_old ty_expected link =
+let migrate_llv llv_old ty_expected link_instr =
   if is_constant llv_old then
     match llv_old |> type_of |> classify_type with
-    | Integer ->
+    | Integer -> (
         if is_poison llv_old then poison ty_expected
         else if is_undef llv_old then undef ty_expected
         else
-          const_int ty_expected
-            (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+          try
+            const_int ty_expected
+              (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+          with _ -> exit 1)
     | Pointer -> const_null ty_expected
     | _ -> failwith "Unsupported type migration"
-  else LLVMap.find llv_old link
+  else LLVMap.find llv_old link_instr
+
+let migrate_llb llb_old link_block = LLBMap.find llb_old link_block
 
 let guess_ptr_elem_ty llctx ptr_llv typemap =
   let ret =
@@ -625,6 +692,7 @@ let guess_ptr_elem_ty llctx ptr_llv typemap =
           let user = user use in
           let opc_user = instr_opcode user in
           match opc_user with
+          | Alloca -> Some (get_allocated_type user)
           | Load -> (
               match LLVMap.find_opt user typemap with
               | Some _ as v -> v
@@ -644,12 +712,13 @@ let guess_ptr_elem_ty llctx ptr_llv typemap =
   | None ->
       disclaim_ty llctx ("Failed to infer type of " ^ value_name ptr_llv ^ ".")
 
-let copy_instr llctx llb instr_old typemap link =
+let copy_instr llctx llb instr_old typemap link_instr link_block =
   (* values *)
   let f = llb |> insertion_block |> block_parent in
   let name = value_name instr_old in
   let opc = instr_opcode instr_old in
-  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link in
+  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link_instr in
+  let migrate_llb llb = migrate_llb llb link_block in
 
   (* copying instruction *)
   let instr_new =
@@ -748,7 +817,19 @@ let copy_instr llctx llb instr_old typemap link =
             (migrate_llv opd0 ty_expect)
             (migrate_llv opd1 ty_expect)
             name llb
-      | PHI -> failwith "TODO: does not support copying PHI"
+      | PHI ->
+          let incoming = Llvm.incoming instr_old in
+          let new_incoming =
+            List.map
+              (fun (llv, llb) ->
+                let ty_expect =
+                  if is_constant llv then type_of llv
+                  else LLVMap.find llv typemap
+                in
+                (migrate_llv llv ty_expect, migrate_llb llb))
+              incoming
+          in
+          build_phi new_incoming name llb
       (* | Call ->
           let num_operands = num_operands instr_old in
           let calling_fn = operand instr_old (num_operands - 1) in
@@ -770,18 +851,19 @@ let copy_instr llctx llb instr_old typemap link =
           res *)
       | _ -> failwith "Not supported instruction"
   in
-  LLVMap.add instr_old instr_new link
+  LLVMap.add instr_old instr_new link_instr
 
-let copy_block llctx block_old block_new typemap link =
+let copy_block llctx block_old block_new typemap link_instr link_block =
   (* assert block_new is empty *)
   let llb = builder_at llctx (instr_begin block_new) in
   fold_left_instrs
-    (fun link instr_old -> copy_instr llctx llb instr_old typemap link)
-    link block_old
+    (fun link_instr instr_old ->
+      copy_instr llctx llb instr_old typemap link_instr link_block)
+    link_instr block_old
 
 let migrate llctx f_old f_new typemap =
   (* assert f_new is empty except prescence of entry block *)
-  let link_init =
+  let link_instr_init =
     let params_new = params f_new in
     Array.mapi
       (fun i param_old -> (param_old, Array.get params_new i))
@@ -804,15 +886,18 @@ let migrate llctx f_old f_new typemap =
 
   (* start migration *)
   let blocks_new = basic_blocks f_new in
-  let rec loop link i =
-    if i >= Array.length blocks_old then link
+  let rec loop link_instr link_block i =
+    if i >= Array.length blocks_old then link_instr
     else
       let block_old = Array.get blocks_old i in
       let block_new = Array.get blocks_new i in
-      let link = copy_block llctx block_old block_new typemap link in
-      loop link (i + 1)
+      let link_block = LLBMap.add block_old block_new link_block in
+      let link_instr =
+        copy_block llctx block_old block_new typemap link_instr link_block
+      in
+      loop link_instr link_block (i + 1)
   in
-  loop link_init 0
+  loop link_instr_init LLBMap.empty 0
 
 (** [redef_fn llctx f llv typemap] redefines function [f] according to
     [typemap]. *)
@@ -830,32 +915,34 @@ let redef_fn llctx f typemap =
               else accu
           | None -> accu)
       None f
-    |> Option.get
   in
-  let params_old = params f in
-  let param_tys =
-    Array.map
-      (fun param ->
-        match LLVMap.find_opt param typemap with
-        | Some ty -> ty
-        | None -> type_of param)
-      params_old
-  in
+  if Option.is_none ret_ty then failwith "function does not have return"
+  else
+    let ret_ty = Option.get ret_ty in
+    let params_old = params f in
+    let param_tys =
+      Array.map
+        (fun param ->
+          match LLVMap.find_opt param typemap with
+          | Some ty -> ty
+          | None -> type_of param)
+        params_old
+    in
 
-  let f_new =
-    define_function "" (function_type ret_ty param_tys) (global_parent f)
-  in
-  Array.iteri
-    (fun i param_new ->
-      set_value_name
-        (let param_old = Array.get params_old i in
-         value_name param_old)
-        param_new)
-    (params f_new);
-  (f_new, migrate llctx f f_new typemap)
+    let f_new =
+      define_function "" (function_type ret_ty param_tys) (global_parent f)
+    in
+    Array.iteri
+      (fun i param_new ->
+        set_value_name
+          (let param_old = Array.get params_old i in
+           value_name param_old)
+          param_new)
+      (params f_new);
+    (f_new, migrate llctx f f_new typemap)
 
 (* name all instructions *)
-let name_all f =
+let get_var_name_all f =
   let name i = "val" ^ string_of_int i in
   let start =
     Array.fold_left
@@ -875,12 +962,14 @@ let name_all f =
     start f
   |> ignore
 
-let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
+let copy_instr_with_new_retval llctx llb instr_old link_instr link_block
+    f_new_type =
   (* values *)
   let f = llb |> insertion_block |> block_parent in
   let name = value_name instr_old in
   let opc = instr_opcode instr_old in
-  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link in
+  let migrate_llv llv ty_expect = migrate_llv llv ty_expect link_instr in
+  let migrate_llb llb = migrate_llb llb link_block in
 
   (* copying instruction *)
   let instr_new =
@@ -899,9 +988,10 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
       | Ret ->
           let rec build_ret' loc =
             let target = get_instr_before ~wide:true loc in
+
             match target with
             | Some i -> (
-                match LLVMap.find_opt i link with
+                match LLVMap.find_opt i link_instr with
                 | Some new_i ->
                     if f_new_type = type_of new_i then build_ret new_i llb
                     else build_ret' i
@@ -924,8 +1014,8 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
           | Some (`Unconditional dest) -> build_br (find_block dest) llb
           | None -> failwith "Not supporting other kind of branches")
       | Alloca ->
-          let ty = type_of instr_old in
-          build_alloca (element_type ty) name llb
+          let allocate_type = get_allocated_type instr_old in
+          build_alloca allocate_type name llb
       | Load ->
           let opd = operand instr_old 0 in
           build_load (type_of instr_old)
@@ -981,7 +1071,15 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
             (migrate_llv opd0 ty_expect)
             (migrate_llv opd1 ty_expect)
             name llb
-      | PHI -> failwith "TODO: does not support copying PHI"
+      | PHI ->
+          let incoming = Llvm.incoming instr_old in
+          let new_incoming =
+            List.map
+              (fun (llv, llb) ->
+                (migrate_llv llv (type_of llv), migrate_llb llb))
+              incoming
+          in
+          build_phi new_incoming name llb
       | Call ->
           let num_operands = num_operands instr_old in
           let calling_fn = operand instr_old (num_operands - 1) in
@@ -1008,21 +1106,36 @@ let copy_instr_with_new_retval llctx llb instr_old link f_new_type =
             build_extractvalue (migrate_llv opd0 (type_of opd0)) idx name llb
           in
           res
-      | _ -> failwith "Not supported instruction"
-  in
-  LLVMap.add instr_old instr_new link
+      | GetElementPtr ->
+          (* let opd0 = operand instr_old 0 in
+             let indices =
+               num_operands instr_old - 1
+               |> (Fun.flip List.init) (fun i ->
+                      print_endline (string_of_llvalue (operand instr_old (i + 1)));
+                      operand instr_old (i + 1))
+             in *)
 
-let copy_block_with_new_retval llctx block_old block_new link f_new_type =
+          (* build_gep type_of  *)
+          failwith "Not supported instruction"
+      | _ ->
+          (* print_endline (string_of_llvalue instr_old); *)
+          failwith "Not supported instruction"
+  in
+  LLVMap.add instr_old instr_new link_instr
+
+let copy_block_with_new_retval llctx block_old block_new link_instr link_block
+    f_new_type =
   (* assert block_new is empty *)
   let llb = builder_at llctx (instr_begin block_new) in
   fold_left_instrs
-    (fun link instr_old ->
-      copy_instr_with_new_retval llctx llb instr_old link f_new_type)
-    link block_old
+    (fun link_instr instr_old ->
+      copy_instr_with_new_retval llctx llb instr_old link_instr link_block
+        f_new_type)
+    link_instr block_old
 
 let copy_function_with_new_retval llctx f_old f_new f_new_type =
   (* assert f_new is empty except prescence of entry block *)
-  let link_init =
+  let link_instr_init =
     let params_new = params f_new in
     Array.mapi
       (fun i param_old -> (param_old, Array.get params_new i))
@@ -1045,38 +1158,17 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
 
   (* start copy *)
   let blocks_new = basic_blocks f_new in
-  let rec loop link i =
+  let rec loop link_instr link_block i =
     if i >= Array.length blocks_old then ()
     else
       let block_old = Array.get blocks_old i in
       let block_new = Array.get blocks_new i in
-      let link =
-        copy_block_with_new_retval llctx block_old block_new link f_new_type
+      let link_block = LLBMap.add block_old block_new link_block in
+      let link_instr =
+        copy_block_with_new_retval llctx block_old block_new link_instr
+          link_block f_new_type
       in
-      loop link (i + 1)
+      loop link_instr link_block (i + 1)
   in
 
-  loop link_init 0
-
-let is_noncommutative_binary instr =
-  match Llvm.instr_opcode instr with
-  | Llvm.Opcode.Sub | FSub | UDiv | SDiv | FDiv | URem | SRem | FRem -> true
-  | _ -> false
-
-let is_call instr =
-  match Llvm.instr_opcode instr with Llvm.Opcode.Call -> true | _ -> false
-
-let is_llvm_function f =
-  let r = Str.regexp "llvm\\..+" in
-  Str.string_match r (Llvm.value_name f) 0
-
-let is_llvm_intrinsic instr =
-  if is_call instr then
-    let callee_expr = Llvm.operand instr (Llvm.num_operands instr - 1) in
-    is_llvm_function callee_expr
-  else false
-
-(** save_ll [target_dif] [output filename] [llmodule]*)
-let save_ll dir filename llm =
-  let output_name = Filename.concat dir filename in
-  print_module output_name llm
+  loop link_instr_init LLBMap.empty 0
