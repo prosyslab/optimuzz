@@ -39,7 +39,7 @@ let name_opted_ver filename =
     String.sub filename 0 (String.length filename - 3) ^ ".opt.ll"
   else filename ^ ".opt.ll"
 
-(** [rand_bool () ] returns true or false with probability 0.5 each. *)
+(** [rand_bool ()] returns true or false with probability 0.5 each. *)
 let rand_bool _ = Random.bool ()
 
 (** [rand low high] returns a random integer

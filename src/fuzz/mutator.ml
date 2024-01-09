@@ -34,10 +34,9 @@ let create_cast llctx loc opcode o ty =
 let create_cmp llctx loc icmp o0 o1 =
   (OpCls.build_cmp icmp) o0 o1 (builder_before llctx loc)
 
-(* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
-   into another possible instruction, with the same operands,
-   without any extra keywords. Returns the new instruction. *)
-
+(** [exchange_binary llctx instr] exchanges the two operands of the binary
+    instruction [instr], without any extra keywords.
+    Returns the new instruction. *)
 let exchange_binary llctx instr =
   let nth_opd i = operand instr i in
   let new_instr =
@@ -78,8 +77,8 @@ let subst_cmp llctx instr icmp =
 (* HIGH-LEVEL MUTATION HELPERS *)
 
 (** [randget_operand llctx loc ty] gets, or generates
-   a llvalue as an operand, of type [ty], valid at [loc], if possible.
-   NOTE: if [ty] is an integer type, this will always return Some(_). *)
+    a llvalue as an operand, of type [ty], valid at [loc], if possible.
+    NOTE: if [ty] is an integer type, this will always return [Some(_)]. *)
 let randget_operand loc ty =
   let candidates =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
@@ -301,6 +300,7 @@ let change_type llctx llv =
   (* llv is instruction now *)
   let f = get_function llv in
 
+  (* target: select actual llvalue to change type *)
   let target =
     if num_operands llv > 0 then
       AUtil.choose_random
@@ -322,11 +322,13 @@ let change_type llctx llv =
       if ty_old = ty || ty_old2 = ty then loop () else ty
     in
     let ty_new = loop () in
+
+    (* prevent anonymous llvalues (internally they are "")
+       This is necessary because we will use value names as key for LLVMap *)
     set_var_names f;
 
-    (* infer types *)
+    (* infer types, types not inferred are regarded as the same *)
     let typemap = infer_types llctx ty_new target LLVMap.empty in
-    (* not inferred types are regarded as the same *)
     let typemap =
       fold_left_all_instr
         (fun typemap instr_old ->
@@ -345,12 +347,12 @@ let change_type llctx llv =
         typemap (params f)
     in
 
-    (* re-define new (empty) function, involving instruction migration *)
+    (* re-define new (empty) function and migrate instructions *)
     let f_new, link = redef_fn llctx f typemap in
 
-    (* type change associated to icmp causes invalid ir.
+    (* Sometimes to change type is impossible.
        E.g., %0 = icmp eq i32 %x, %y; %1 = and i1 %0, %z.
-       if this occurs, ignore this mutation. *)
+       if so, ignore this mutation. *)
     if Llvm_analysis.verify_function f_new then (
       delete_function f;
       target |> Fun.flip LLVMap.find link |> Option.some)
@@ -360,15 +362,14 @@ let change_type llctx llv =
 
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
+
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm distance =
-  (* find function and target location *)
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr_tgt = AUtil.choose_random all_instrs in
   (* depending on mode, available mutations differ *)
   let mutation = choose_mutation mode distance in
-  (* mutate and recurse *)
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx None instr_tgt

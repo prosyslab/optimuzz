@@ -178,7 +178,7 @@ let is_llvm_intrinsic instr =
     is_llvm_function callee_expr
   else false
 
-(** save_ll [target_dif] [output filename] [llmodule]*)
+(** [save_ll target_dir output filename llmodule] *)
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
   print_module output_name llm
