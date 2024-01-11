@@ -382,19 +382,19 @@ let rec mutate_inner_bb llctx mode llm distance =
 (* CFG-related mutation *)
 let mutate_CFG = Fun.id
 
-let subst_ret llctx loc =
-  let f_old = loc |> instr_parent |> block_parent in
+let subst_ret llctx instr =
+  let f_old = instr |> get_function in
   get_var_name_all f_old;
   let params_old = params f_old in
   let param_tys = Array.map type_of params_old in
-  let old_ret_ty = loc |> type_of in
-  let target = get_instr_before ~wide:true loc in
+  let old_ret_ty = instr |> type_of in
+  let target = get_instr_before ~wide:true instr in
   match target with
   | Some i ->
       let new_ret_ty = type_of i in
       if old_ret_ty = new_ret_ty then (
-        let _ = build_ret i (builder_before llctx loc) in
-        delete_instruction loc;
+        let _ = build_ret i (builder_before llctx instr) in
+        delete_instruction instr;
         true)
       else
         let f_new =
@@ -402,13 +402,9 @@ let subst_ret llctx loc =
             (function_type new_ret_ty param_tys)
             (global_parent f_old)
         in
-        Array.iteri
-          (fun i param_new ->
-            set_value_name
-              (let param_old = Array.get params_old i in
-               value_name param_old)
-              param_new)
-          (params f_new);
+        params f_new
+        |> Array.iteri (fun i param_new ->
+               set_value_name (value_name params_old.(i)) param_new);
         copy_function_with_new_retval llctx f_old f_new new_ret_ty;
         true
   | None -> true
