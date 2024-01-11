@@ -17,7 +17,7 @@ let choose_mutation mode distance =
       else List.nth mutation_list (random_int - distance)
   | FOCUS ->
       let mutation_list = [ OPCODE; OPERAND; FLAG; TYPE ] in
-      AUtil.list_random mutation_list
+      AUtil.choose_random mutation_list
 
 (* CFG PRESERVING MUTATION HELPERS *)
 
@@ -93,7 +93,8 @@ let randget_operand loc ty =
   in
   let candidates =
     if classify_type ty = TypeKind.Integer then
-      const_int ty (AUtil.list_random AUtil.interesting_integers) :: candidates
+      const_int ty (AUtil.choose_random AUtil.interesting_integers)
+      :: candidates
     else candidates
   in
   let candidates =
@@ -103,7 +104,7 @@ let randget_operand loc ty =
            if type_of param = ty then param :: candidates else candidates)
          candidates
   in
-  if candidates <> [] then Some (AUtil.list_random candidates) else None
+  if candidates <> [] then Some (AUtil.choose_random candidates) else None
 
 (** [create_rand_instr llctx preferred_opd loc] creates
     a random instruction before instruction [loc],
@@ -118,10 +119,10 @@ let rec create_rand_instr llctx preferred_opd loc =
     match preferred_opd with
     | Some pref_opd -> pref_opd
     | None ->
-        if preds <> [] then AUtil.list_random preds
+        if preds <> [] then AUtil.choose_random preds
         else
           randget_operand loc
-            (integer_type llctx (AUtil.list_random AUtil.interesting_types))
+            (integer_type llctx (AUtil.choose_random AUtil.interesting_types))
           |> Option.get
   in
   let operand_ty = type_of operand in
@@ -145,14 +146,14 @@ let rec create_rand_instr llctx preferred_opd loc =
         create_rand_instr llctx preferred_opd loc)
   | CMP when is_integer ->
       create_cmp llctx loc
-        (AUtil.list_random OpCls.cmp_kind)
+        (AUtil.choose_random OpCls.cmp_kind)
         operand
         (randget_operand loc operand_ty |> Option.get)
   | MEM ->
       if opcode = Load && classify_type operand_ty = Pointer then
         Some
           (build_load
-             (integer_type llctx (AUtil.list_random AUtil.interesting_types))
+             (integer_type llctx (AUtil.choose_random AUtil.interesting_types))
              operand "" (builder_before llctx loc))
       else None
   | _ ->
@@ -245,7 +246,7 @@ let modify_flag _ instr =
           | true, false -> [ (false, false); (false, true); (true, true) ]
           | true, true -> [ (false, false); (false, true); (true, false) ]
         in
-        let nuw_new, nsw_new = AUtil.list_random cases in
+        let nuw_new, nsw_new = AUtil.choose_random cases in
         set_nuw nuw_new instr;
         set_nsw nsw_new instr;
         Some instr)
@@ -296,7 +297,7 @@ let change_type llctx llv =
 
   let target =
     if num_operands llv > 0 then
-      AUtil.list_random
+      AUtil.choose_random
         (let rec loop accu i =
            if i >= num_operands llv then accu
            else loop (operand llv i :: accu) (i + 1)
@@ -312,7 +313,7 @@ let change_type llctx llv =
     let bw_old = integer_bitwidth ty_old in
     let bw_old2 = llv |> type_of |> integer_bitwidth in
     let rec loop () =
-      let bw = AUtil.list_random AUtil.interesting_types in
+      let bw = AUtil.choose_random AUtil.interesting_types in
       if bw_old = bw || bw = 128 || bw_old2 = bw then loop ()
       else integer_type llctx bw
     in
@@ -361,7 +362,7 @@ let rec mutate_inner_bb llctx mode llm distance =
   (* find function and target location *)
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr_tgt = AUtil.list_random all_instrs in
+  let instr_tgt = AUtil.choose_random all_instrs in
   (* depending on mode, available mutations differ *)
   let mutation = choose_mutation mode distance in
   (* mutate and recurse *)

@@ -63,9 +63,8 @@ let interesting_integers =
 (* let interesting_types = [ 1; 8; 10; 32; 34; 64; 128 ] *)
 let interesting_types = [ 1; 8; 10; 32; 34; 64 ]
 
-(** [list_random l] returns a random element from a list [l].
+(** [choose_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
-
-let list_random l =
-  if l <> [] then List.nth l (Random.int (List.length l))
-  else raise (Invalid_argument "Empty list")
+let choose_random = function
+  | [] -> raise (Invalid_argument "Empty list")
+  | l -> List.nth l (Random.int (List.length l))

@@ -362,10 +362,10 @@ module OpcodeClass = struct
     | PHI -> phi_list
     | OTHER -> other_list
 
-  let random_op_of opcls = opcls |> oplist_of |> AUtil.list_random
+  let random_op_of opcls = opcls |> oplist_of |> AUtil.choose_random
 
   (** [random_opcode ()] returns a random opcode. *)
-  let random_opcode () = AUtil.list_random total_list
+  let random_opcode () = AUtil.choose_random total_list
 
   (** [random_opcode_except opcode] returns another random opcode in its class.
         If [opcode] is the only one in its class, returns [opcode]. *)
@@ -373,9 +373,9 @@ module OpcodeClass = struct
     let l =
       List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
     in
-    if l <> [] then AUtil.list_random l else opcode
+    match l with [] -> opcode | _ -> AUtil.choose_random l
 
-  let random_cmp () = AUtil.list_random cmp_kind
+  let random_cmp () = AUtil.choose_random cmp_kind
 
   let build_binary opcode o0 o1 llb =
     (match opcode with
