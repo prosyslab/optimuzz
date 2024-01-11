@@ -1,6 +1,5 @@
 open Util
 open Oracle
-(* module Oracle = Oracle *)
 
 module SeedTuple = struct
   type t = Llvm.llmodule * int
@@ -39,20 +38,6 @@ let push s pool =
 let pop pool = (Queue.pop pool, pool)
 let cardinal = Queue.length
 
-let of_dir dir llctx =
-  assert (Sys.file_exists dir && Sys.is_directory dir);
-  Sys.readdir dir |> Array.to_list
-  |> List.filter (fun file -> Filename.extension file = ".ll")
-  |> List.fold_left
-       (fun queue file ->
-         let path = Filename.concat dir file in
-         let membuf = ALlvm.MemoryBuffer.of_file path in
-         (* skip invalid IR *)
-         (* fix here llvm_irreader*)
-         try push (Llvm_irreader.parse_ir llctx membuf, false) queue
-         with _ -> queue)
-       (Queue.create ())
-
 let check_exist_ret f =
   ALlvm.fold_left_all_instr
     (fun res instr ->
@@ -60,30 +45,34 @@ let check_exist_ret f =
       else match ALlvm.instr_opcode instr with Ret -> true | _ -> false)
     false f
 
-let subst_ret llctx loc wide =
-  let f_old = ALlvm.get_function loc in
+let collect_instruction_types f =
+  ALlvm.fold_left_all_instr
+    (fun types instr_old ->
+      let ty = ALlvm.type_of instr_old in
+      match ALlvm.classify_type ty with Void -> types | _ -> ty :: types)
+    [] f
+
+(** *)
+let subst_ret llctx instr wide =
+  let f_old = ALlvm.get_function instr in
+  (* Set var names *)
   ALlvm.get_var_name_all f_old;
 
-  let types =
-    ALlvm.fold_left_all_instr
-      (fun types instr_old ->
-        if instr_old |> ALlvm.type_of |> ALlvm.classify_type = Void then types
-        else ALlvm.type_of instr_old :: types)
-      [] f_old
-  in
+  let types = collect_instruction_types f_old in
   let extra_param =
-    if types = [] then [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |]
-    else
-      let ty = AUtil.list_random types in
-      [| ty; ty |]
+    match types with
+    | [] -> [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |]
+    | _ ->
+        let ty = AUtil.choose_random types in
+        [| ty; ty |]
   in
 
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param
   in
-  (* let old_ret_ty = ALlvm.operand loc 0 |> ALlvm.type_of in *)
-  let target = ALlvm.get_instr_before ~wide loc in
+
+  let target = ALlvm.get_instr_before ~wide instr in
   match target with
   | Some i ->
       let new_ret_ty = ALlvm.type_of i in
@@ -92,15 +81,14 @@ let subst_ret llctx loc wide =
           (ALlvm.function_type new_ret_ty param_tys)
           (ALlvm.global_parent f_old)
       in
-      Array.iteri
-        (fun i param_new ->
-          if i >= Array.length params_old then ()
-          else
-            ALlvm.set_value_name
-              (let param_old = Array.get params_old i in
-               ALlvm.value_name param_old)
-              param_new)
-        (ALlvm.params f_new);
+      (* Copy names of the parameters (other than the extra parameters)
+         to parameters of the newly created function, position-wise. *)
+      ALlvm.params f_new
+      |> Array.iteri (fun i param_new ->
+             if i >= Array.length params_old then ()
+             else
+               param_new
+               |> ALlvm.set_value_name (ALlvm.value_name params_old.(i)));
       ALlvm.copy_function_with_new_retval llctx f_old f_new new_ret_ty;
       true
   | None -> true
