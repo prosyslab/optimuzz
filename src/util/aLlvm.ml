@@ -183,33 +183,37 @@ let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
   print_module output_name llm
 
-(** [get_instr_before wide i] returns a instr before [i].
+(** [get_function instr] returns the function that contains [instr]. *)
+let get_function instr = instr |> Llvm.instr_parent |> Llvm.block_parent
+
+(** [get_instr_before wide instr] returns a instr before [i].
     If [wide], searches all instructions in the ancestral function of [i].
     Else, searches instructions only within the parental block of [i]. *)
-let get_instr_before ~wide i =
+let get_instr_before ~wide instr =
+  let is_interesting i =
+    (* we are looking for non-terminator assignment instruction *)
+    (not (is_terminator i)) && i |> instr_opcode |> is_assignment
+  in
+
   if wide then
     let rec aux res rev_pos =
       match rev_pos with
       | At_start b -> (
+          (* For wide search, also investigate preceding blocks in the function *)
           match block_pred b with
           | At_start _ -> None
           | After b -> aux res (instr_end b))
-      | After i ->
-          if is_terminator i || not (i |> instr_opcode |> is_assignment) then
-            aux res (instr_pred i)
-          else Some i
+      | After i -> if is_interesting i then Some i else aux res (instr_pred i)
     in
-    aux None (instr_pred i)
+    aux None (instr_pred instr)
   else
     let rec aux res rev_pos =
       match rev_pos with
+      (* For narrow search, only look into the block which contains the instruction *)
       | At_start _ -> None
-      | After i ->
-          if is_terminator i || not (i |> instr_opcode |> is_assignment) then
-            aux res (instr_pred i)
-          else Some i
+      | After i -> if is_interesting i then Some i else aux res (instr_pred i)
     in
-    let f = i |> instr_parent |> block_parent in
+    let f = instr |> get_function in
     let entry = entry_block f in
     aux None (instr_end entry)
 
@@ -243,9 +247,6 @@ let get_blocks_after bb =
     | At_start _ -> failwith "NEVER OCCUR"
   in
   aux (bb |> block_parent |> block_end) []
-
-(** [get_function instr] returns the function that contains [instr]. *)
-let get_function instr = instr |> Llvm.instr_parent |> Llvm.block_parent
 
 (** [choose_function llm] returns an arbitrary function in [llm]. *)
 let choose_function llm =
@@ -632,7 +633,7 @@ let rec propagate llctx curr typemap =
           let opd0 = operand user 0 in
           let opd1 = operand user 1 in
           (if opd0 = curr then infer_types llctx ty_curr opd1 accu
-          else infer_types llctx ty_curr opd0 accu)
+           else infer_types llctx ty_curr opd0 accu)
           |> infer_types llctx (i1_type llctx) user
       | PHI -> infer_types llctx ty_curr user accu
       | _ -> accu)
@@ -1136,10 +1137,10 @@ let copy_block_with_new_retval llctx block_old block_new link_instr link_block
 let copy_function_with_new_retval llctx f_old f_new f_new_type =
   (* assert f_new is empty except prescence of entry block *)
   let link_instr_init =
+    (* NOTE: params_new is longer than params_old *)
     let params_new = params f_new in
-    Array.mapi
-      (fun i param_old -> (param_old, Array.get params_new i))
-      (params f_old)
+    params f_old
+    |> Array.mapi (fun i param_old -> (param_old, params_new.(i)))
     |> Array.to_seq |> LLVMap.of_seq
   in
 
@@ -1149,8 +1150,9 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
   let rec loop prev_block i =
     if i >= Array.length blocks_old then ()
     else
-      let block_old = Array.get blocks_old i in
-      let block_new = insert_block llctx (block_name block_old) entry_new in
+      let block_new =
+        insert_block llctx (block_name blocks_old.(i)) entry_new
+      in
       move_block_after prev_block block_new;
       loop block_new (i + 1)
   in
@@ -1161,8 +1163,8 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
   let rec loop link_instr link_block i =
     if i >= Array.length blocks_old then ()
     else
-      let block_old = Array.get blocks_old i in
-      let block_new = Array.get blocks_new i in
+      let block_old = blocks_old.(i) in
+      let block_new = blocks_new.(i) in
       let link_block = LLBMap.add block_old block_new link_block in
       let link_instr =
         copy_block_with_new_retval llctx block_old block_new link_instr
