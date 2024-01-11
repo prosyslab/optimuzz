@@ -146,7 +146,7 @@ let make_seedpool llctx =
     |> List.fold_left
          (fun (queue, seedset) file ->
            let path = Filename.concat dir file in
-           match Oracle.run_opt path with
+           match Oracle.run_optimizer path with
            | CRASH | INVALID ->
                path |> AUtil.name_opted_ver |> Oracle.clean;
                (queue, seedset)
@@ -160,7 +160,7 @@ let make_seedpool llctx =
                match llm with
                | Some llm -> (
                    Coverage.Measurer.clean ();
-                   match Oracle.run_opt_llm llm with
+                   match Oracle.run_optimizer_llm llm with
                    | CRASH | INVALID -> (queue, seedset)
                    | VALID -> (
                        let distance =

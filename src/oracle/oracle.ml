@@ -45,7 +45,7 @@ let run_alive2 filename =
       if is_num_zero str_incorrect then VALID else INVALID)
   else VALID
 
-let run_opt filename =
+let run_optimizer filename =
   let exit_state =
     cmd
       [
@@ -60,7 +60,7 @@ let run_opt filename =
   in
   if exit_state = 0 then VALID else CRASH
 
-let run_opt_llm llm =
+let run_optimizer_llm llm =
   let filename = AUtil.get_new_name (ALlvm.string_of_llmodule llm) in
   if filename = "" then INVALID
   else (
@@ -88,7 +88,7 @@ let run_bins filename llm =
   let filename_out = Filename.concat !Config.out_dir filename in
 
   (* run opt/alive2 and evaluate *)
-  let res_opt = run_opt filename_out in
+  let res_opt = run_optimizer filename_out in
   let coverage =
     if res_opt = CRASH then CovSet.singleton !Config.max_distance
     else Coverage.Measurer.run ()

@@ -54,7 +54,7 @@ let main () =
 
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then (
-    Oracle.run_opt !Config.cov_tgt_path |> ignore;
+    Oracle.run_optimizer !Config.cov_tgt_path |> ignore;
     let cov = Coverage.Measurer.run () in
     print_string "Total coverage: ";
     cov |> CovSet.cardinal |> string_of_int |> print_endline;
