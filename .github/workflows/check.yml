@@ -13,10 +13,10 @@ jobs:
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: 4.13.1
+          ocaml-compiler: 5.0.0
 
       - name: Install ocamlformat
-        run: opam install ocamlformat.0.24.1
+        run: opam install ocamlformat.0.26.1
 
       - name: Check format
         run: |
