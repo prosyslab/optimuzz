@@ -943,7 +943,7 @@ let redef_fn llctx f typemap =
     (f_new, migrate llctx f f_new typemap)
 
 (* name all instructions *)
-let get_var_name_all f =
+let set_var_names f =
   let name i = "val" ^ string_of_int i in
   let start =
     Array.fold_left
