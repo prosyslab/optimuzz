@@ -319,7 +319,7 @@ let change_type llctx llv =
     in
     let ty_new = loop () in
 
-    get_var_name_all f;
+    set_var_names f;
 
     (* infer types *)
     let typemap = infer_types llctx ty_new target LLVMap.empty in
@@ -384,7 +384,7 @@ let mutate_CFG = Fun.id
 
 let subst_ret llctx instr =
   let f_old = instr |> get_function in
-  get_var_name_all f_old;
+  set_var_names f_old;
   let params_old = params f_old in
   let param_tys = Array.map type_of params_old in
   let old_ret_ty = instr |> type_of in

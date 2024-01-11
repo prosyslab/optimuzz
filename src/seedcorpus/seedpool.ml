@@ -56,7 +56,7 @@ let collect_instruction_types f =
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
   (* Set var names *)
-  ALlvm.get_var_name_all f_old;
+  ALlvm.set_var_names f_old;
 
   let types = collect_instruction_types f_old in
   let extra_param =
