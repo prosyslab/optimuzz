@@ -1,4 +1,4 @@
 (library
  (name oracle)
  (modules oracle)
- (libraries llvm util coverage))
+ (libraries util coverage))
