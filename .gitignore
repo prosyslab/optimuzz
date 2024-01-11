@@ -51,10 +51,11 @@ llfuzz
 alive-tv.txt
 timestamp.txt
 
-# log & memo
-memo/
-logs/
-
-Alive2
-builds
+# targets
 opt
+builds/
+cov.cov
+
+# development and others
+.vscode/
+memo/
