@@ -137,7 +137,7 @@ let rec clean_llm llctx wide llm =
     else None
   with _ -> if wide then clean_llm llctx false llm else None
 
-(** make seedpool from Config.seed_dir. this queue contains, llmodule, covered, distance*)
+(** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
 let make llctx =
   let dir = !Config.seed_dir in
   assert (Sys.file_exists dir && Sys.is_directory dir);

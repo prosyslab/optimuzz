@@ -1,8 +1,6 @@
 open Util
 open Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
-
-(* open Mutator *)
 module OpCls = ALlvm.OpcodeClass
 module F = Format
 
@@ -21,7 +19,7 @@ let rec run pool llctx cov_set gen_count =
     else
       let mutant = Mutator.run llctx mode seed distance in
       let filename = AUtil.get_new_name (ALlvm.string_of_llmodule mutant) in
-      (* if muatant is duplicated then just pass*)
+      (* if mutant is duplicated then just pass*)
       if filename = "" then (pool, cov_set, gen_count + 1, seed, times)
       else
         (* TODO: not using run result, only caring coverage *)
