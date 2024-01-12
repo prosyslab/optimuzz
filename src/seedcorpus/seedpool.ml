@@ -147,7 +147,12 @@ let make llctx =
     |> List.fold_left
          (fun (queue, seedset) file ->
            let path = Filename.concat dir file in
-           match Oracle.run_optimizer path with
+           match
+             Oracle.Optimizer.run
+               ~passes:
+                 [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+               path
+           with
            | CRASH | INVALID ->
                path |> AUtil.name_opted_ver |> Oracle.clean;
                (queue, seedset)
@@ -161,7 +166,9 @@ let make llctx =
                match llm with
                | Some llm -> (
                    Coverage.Measurer.clean ();
-                   match Oracle.run_optimizer_llm llm with
+                   match
+                     Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llm
+                   with
                    | CRASH | INVALID -> (queue, seedset)
                    | VALID -> (
                        let distance =
