@@ -20,7 +20,8 @@ let initialize () =
     |> Filename.dirname |> Filename.dirname;
 
   Config.opt_bin := Filename.concat !Config.project_home !Config.opt_bin;
-  Config.alive2_bin := Filename.concat !Config.project_home !Config.alive2_bin;
+  Config.alive_tv_bin :=
+    Filename.concat !Config.project_home !Config.alive_tv_bin;
 
   Config.out_dir := Filename.concat !Config.project_home !Config.out_dir;
   Config.crash_dir := Filename.concat !Config.out_dir !Config.crash_dir;

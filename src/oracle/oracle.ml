@@ -17,7 +17,7 @@ let run_alive2 filename =
     let exit_state =
       cmd
         [
-          !Config.alive2_bin;
+          !Config.alive_tv_bin;
           filename;
           AUtil.name_opted_ver filename;
           "| tail -n 4 >";

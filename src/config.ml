@@ -14,7 +14,7 @@ let workspace = ref ""
 (* build/binaries *)
 (* let opt_bin = ref "llvm-project/build/bin/opt" *)
 let opt_bin = ref "./opt"
-let alive2_bin = ref "Alive2/alive2/build/alive-tv"
+let alive_tv_bin = ref "Alive2/alive2/build/alive-tv"
 
 (* seed options *)
 let max_initial_seed = ref 100
