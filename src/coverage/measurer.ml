@@ -1,7 +1,7 @@
 open Domain
 module F = Format
 
-let clean () = Util.AUtil.cmd [ "rm"; "cov.cov"; "2>/dev/null" ] |> ignore
+let clean () = Util.AUtil.clean "cov.cov"
 
 (** parse coverage lines and return parsed string list
   example: InstCombineCompares.cpp:visitICmpInst:50_0 -> [InstCombineCompares.cpp ; visitICmpInst; 50; 0]

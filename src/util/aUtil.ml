@@ -72,3 +72,6 @@ let readlines filename =
   let lines = loop [] |> List.rev in
   close_in file;
   lines
+
+let clean filename =
+  cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] |> ignore

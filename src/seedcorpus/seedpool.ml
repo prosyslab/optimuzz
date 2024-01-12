@@ -154,10 +154,10 @@ let make llctx =
                path
            with
            | CRASH | INVALID ->
-               path |> AUtil.name_opted_ver |> Oracle.clean;
+               AUtil.name_opted_ver path |> AUtil.clean;
                (queue, seedset)
            | VALID -> (
-               path |> AUtil.name_opted_ver |> Oracle.clean;
+               AUtil.name_opted_ver path |> AUtil.clean;
                let llm =
                  path |> ALlvm.MemoryBuffer.of_file
                  |> Llvm_irreader.parse_ir llctx

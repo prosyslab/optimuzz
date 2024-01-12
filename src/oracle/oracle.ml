@@ -3,9 +3,6 @@ open Util
 
 type res_t = CRASH | INVALID | VALID
 
-let clean filename =
-  AUtil.cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] |> ignore
-
 (** [Validation] runs translation validation program (alive-tv).
     We use this program as an oracle to detect a miscompilation. *)
 module Validator = struct
@@ -59,7 +56,7 @@ module Optimizer = struct
       ALlvm.save_ll !Config.out_dir filename llm;
       let input = Filename.concat !Config.out_dir filename in
       let result = run ~passes input in
-      clean input;
+      AUtil.clean input;
       result)
 end
 
