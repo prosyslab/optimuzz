@@ -5,7 +5,6 @@ module Llset = Set.Make (struct
 end)
 
 let llset = ref Llset.empty
-let ( >> ) x f = f x |> ignore
 let command_args args = args |> String.concat " " |> Sys.command
 
 (* for logging *)

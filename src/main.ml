@@ -6,9 +6,6 @@ module SeedPool = Seedcorpus.Seedpool
 
 let llctx = ALlvm.create_context ()
 
-(* alias *)
-let cmd = AUtil.command_args
-
 let initialize () =
   Arg.parse Config.opts
     (fun _ -> failwith "There must be no anonymous arguments.")
