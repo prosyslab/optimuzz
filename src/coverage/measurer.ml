@@ -18,7 +18,7 @@ let parse_line line =
     | _ -> failwith "Invalid coverage line"
   in
   let cov_tree = List.nth chunks 2 in
-  [ List.nth chunks 0; List.nth chunks 1 ] @ String.split_on_char '_' cov_tree
+  List.nth chunks 0 :: List.nth chunks 1 :: String.split_on_char '_' cov_tree
 
 (** get distance on tree *)
 let get_distance seed =
