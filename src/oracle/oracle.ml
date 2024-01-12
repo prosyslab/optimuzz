@@ -24,15 +24,7 @@ let run_alive2 filename =
     (* review result *)
     if exit_state <> 0 then CRASH
     else
-      let file = open_in AUtil.alive2_log in
-      let rec loop accu =
-        match input_line file with
-        | exception End_of_file -> accu
-        | line -> loop (line :: accu)
-      in
-      let lines = [] |> loop |> List.rev in
-      close_in file;
-
+      let lines = AUtil.readlines AUtil.alive2_log in
       let is_num_zero str =
         str |> String.trim |> String.split_on_char ' ' |> List.hd
         |> int_of_string = 0
