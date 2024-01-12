@@ -257,14 +257,14 @@ let choose_function llm =
   aux (function_begin llm)
 
 (** [replace_hard bef aft] replaces
-    all uses of [bef] to [aft] and delete [bef]. *)
-let replace_hard bef aft =
-  replace_all_uses_with bef aft;
-  delete_instruction bef
+    all uses of [before] to [after] and delete [before]. *)
+let replace_hard before after =
+  replace_all_uses_with before after;
+  delete_instruction before
 
 let replace_and_ret instr_old instr_new =
   replace_hard instr_old instr_new;
-  Some instr_new
+  instr_new
 
 let set_opd_and_ret instr i opd =
   set_operand instr i opd;
