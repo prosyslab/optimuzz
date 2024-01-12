@@ -6,32 +6,34 @@ type res_t = CRASH | INVALID | VALID
 let clean filename =
   AUtil.cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] |> ignore
 
-let run_alive2 filename =
-  let opted_filename = AUtil.name_opted_ver filename in
-  if Sys.file_exists filename && Sys.file_exists opted_filename then
-    (* run alive2 *)
-    let exit_state =
-      AUtil.cmd
-        [
-          !Config.alive_tv_bin;
-          filename;
-          opted_filename;
-          "| tail -n 4 >";
-          AUtil.alive2_log;
-        ]
-    in
-
-    (* review result *)
-    if exit_state <> 0 then CRASH
-    else
-      let lines = AUtil.readlines AUtil.alive2_log in
-      let is_num_zero str =
-        str |> String.trim |> String.split_on_char ' ' |> List.hd
-        |> int_of_string = 0
+(** [Validation] runs translation validation program (alive-tv).
+    We use this program as an oracle to detect a miscompilation. *)
+module Validator = struct
+  let run src optimized =
+    assert (optimized = AUtil.name_opted_ver src);
+    if Sys.file_exists src && Sys.file_exists optimized then
+      let exit_status =
+        AUtil.cmd
+          [
+            !Config.alive_tv_bin;
+            src;
+            optimized;
+            "| tail -n 4 >";
+            AUtil.alive2_log;
+          ]
       in
-      let str_incorrect = List.nth lines 1 in
-      if is_num_zero str_incorrect then VALID else INVALID
-  else VALID
+      match exit_status with
+      | 0 ->
+          let lines = AUtil.readlines AUtil.alive2_log in
+          let is_num_zero str =
+            str |> String.trim |> String.split_on_char ' ' |> List.hd
+            |> int_of_string = 0
+          in
+          let str_incorrect = List.nth lines 1 in
+          if is_num_zero str_incorrect then VALID else INVALID
+      | _ -> CRASH
+    else VALID
+end
 
 let optimizer_passes =
   [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
@@ -66,22 +68,24 @@ let run_bins filename llm =
   Coverage.Measurer.clean ();
   ALlvm.save_ll !Config.out_dir filename llm;
   let filename_out = Filename.concat !Config.out_dir filename in
+  let optimized_ir_filename = AUtil.name_opted_ver filename_out in
 
   (* run opt/alive2 and evaluate *)
-  let res_opt = Optimizer.run ~passes:optimizer_passes filename_out in
+  let optimization_res = Optimizer.run ~passes:optimizer_passes filename_out in
   let coverage =
-    if res_opt = CRASH then CovSet.singleton !Config.max_distance
+    if optimization_res = CRASH then CovSet.singleton !Config.max_distance
     else Coverage.Measurer.run ()
   in
+
   if !Config.no_tv then (
-    if res_opt <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
-    (* clean filename_out; *)
+    if optimization_res <> VALID then
+      ALlvm.save_ll !Config.crash_dir filename llm;
     clean filename_out;
-    clean (AUtil.name_opted_ver filename_out);
-    (res_opt, coverage))
+    clean optimized_ir_filename;
+    (optimization_res, coverage))
   else
-    let res_alive2 = run_alive2 filename_out in
-    if res_alive2 <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
+    let validation_res = Validator.run filename_out optimized_ir_filename in
+    if validation_res <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
     clean filename_out;
-    clean (AUtil.name_opted_ver filename_out);
-    (res_alive2, coverage)
+    clean optimized_ir_filename;
+    (validation_res, coverage)
