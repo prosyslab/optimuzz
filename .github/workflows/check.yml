@@ -37,6 +37,7 @@ jobs:
       - name: Install LLVM 16
         run: |
           sudo apt-get update
+          sudo add-apt-repository -y 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main'
           sudo apt-get install -y llvm-16 llvm-16-dev
 
       - name: Build LLFuzz
