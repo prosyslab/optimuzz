@@ -378,67 +378,67 @@ let rec mutate_inner_bb llctx mode llm distance =
 (* let mutate_CFG = Fun.id *)
 
 (* let subst_ret llctx instr =
-  let f_old = instr |> get_function in
-  set_var_names f_old;
-  let params_old = params f_old in
-  let param_tys = Array.map type_of params_old in
-  let old_ret_ty = instr |> type_of in
-  let target = get_instr_before ~wide:true instr in
-  match target with
-  | Some i ->
-      let new_ret_ty = type_of i in
-      if old_ret_ty = new_ret_ty then (
-        let _ = build_ret i (builder_before llctx instr) in
-        delete_instruction instr;
-        true)
-      else
-        let f_new =
-          define_function ""
-            (function_type new_ret_ty param_tys)
-            (global_parent f_old)
-        in
-        params f_new
-        |> Array.iteri (fun i param_new ->
-               set_value_name (value_name params_old.(i)) param_new);
-        copy_function_with_new_retval llctx f_old f_new new_ret_ty;
-        true
-  | None -> true
+     let f_old = instr |> get_function in
+     set_var_names f_old;
+     let params_old = params f_old in
+     let param_tys = Array.map type_of params_old in
+     let old_ret_ty = instr |> type_of in
+     let target = get_instr_before ~wide:true instr in
+     match target with
+     | Some i ->
+         let new_ret_ty = type_of i in
+         if old_ret_ty = new_ret_ty then (
+           let _ = build_ret i (builder_before llctx instr) in
+           delete_instruction instr;
+           true)
+         else
+           let f_new =
+             define_function ""
+               (function_type new_ret_ty param_tys)
+               (global_parent f_old)
+           in
+           params f_new
+           |> Array.iteri (fun i param_new ->
+                  set_value_name (value_name params_old.(i)) param_new);
+           copy_function_with_new_retval llctx f_old f_new new_ret_ty;
+           true
+     | None -> true
 
-let check_retval llctx llm =
-  let deleted_functions =
-    fold_left_functions
-      (fun acc f ->
-        let res =
-          fold_left_all_instr
-            (fun res instr ->
-              if res then res
-              else
-                match instr_opcode instr with
-                | Call -> if is_llvm_intrinsic instr then res else true
-                | Ret -> (
-                    match classify_value (operand instr 0) with
-                    | ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
-                    | NullValue | Function ->
-                        subst_ret llctx instr
-                    | _ -> (
-                        let ret_ty = operand instr 0 |> type_of in
-                        match classify_type ret_ty with
-                        | TypeKind.Void -> subst_ret llctx instr
-                        | _ -> false))
-                | _ -> false)
-            false f
-        in
-        if res then f :: acc else acc)
-      [] llm
-  in
-  List.iter (fun f -> delete_function f) (List.rev deleted_functions);
-  try
-    let _ = choose_function llm in
-    Some llm
+   let check_retval llctx llm =
+     let deleted_functions =
+       fold_left_functions
+         (fun acc f ->
+           let res =
+             fold_left_all_instr
+               (fun res instr ->
+                 if res then res
+                 else
+                   match instr_opcode instr with
+                   | Call -> if is_llvm_intrinsic instr then res else true
+                   | Ret -> (
+                       match classify_value (operand instr 0) with
+                       | ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
+                       | NullValue | Function ->
+                           subst_ret llctx instr
+                       | _ -> (
+                           let ret_ty = operand instr 0 |> type_of in
+                           match classify_type ret_ty with
+                           | TypeKind.Void -> subst_ret llctx instr
+                           | _ -> false))
+                   | _ -> false)
+               false f
+           in
+           if res then f :: acc else acc)
+         [] llm
+     in
+     List.iter (fun f -> delete_function f) (List.rev deleted_functions);
+     try
+       let _ = choose_function llm in
+       Some llm
      with _ -> None *)
 
 (* TODO: add fuzzing configuration *)
 let run llctx mode llm distance =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode llm_clone distance |> Option.some
+  mutate_inner_bb llctx mode llm_clone distance
 (* |> mutate_CFG |> check_retval llctx *)
