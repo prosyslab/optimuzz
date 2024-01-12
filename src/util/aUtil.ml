@@ -5,7 +5,7 @@ module Llset = Set.Make (struct
 end)
 
 let llset = ref Llset.empty
-let command_args args = args |> String.concat " " |> Sys.command
+let cmd args = args |> String.concat " " |> Sys.command
 
 (* for logging *)
 let alive2_log = "alive-tv.txt"
