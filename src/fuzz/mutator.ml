@@ -9,15 +9,15 @@ type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
 let choose_mutation mode distance =
   match mode with
   | EXPAND ->
-      let mutation_list =
-        [ CREATE; CREATE; OPCODE; OPCODE; OPERAND; OPERAND; FLAG; FLAG; TYPE ]
+      let mutations =
+        [| CREATE; CREATE; OPCODE; OPCODE; OPERAND; OPERAND; FLAG; FLAG; TYPE |]
       in
-      let random_int = Random.int (distance + List.length mutation_list) in
-      if random_int <= distance then List.nth mutation_list 0
-      else List.nth mutation_list (random_int - distance)
+      let r = Random.int (distance + Array.length mutations) in
+      if r <= distance then mutations.(0) else mutations.(r - distance)
   | FOCUS ->
-      let mutation_list = [ OPCODE; OPERAND; FLAG; TYPE ] in
-      AUtil.choose_random mutation_list
+      let mutations = [| OPCODE; OPERAND; FLAG; TYPE |] in
+      let r = Random.int (Array.length mutations) in
+      mutations.(r)
 
 (* CFG PRESERVING MUTATION HELPERS *)
 
