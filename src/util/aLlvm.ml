@@ -262,6 +262,8 @@ let replace_hard before after =
   replace_all_uses_with before after;
   delete_instruction before
 
+(** [replace_and_ret] replaces all uses of [instr_old]
+    with the ones of [instr_new] and returns [instr_new] *)
 let replace_and_ret instr_old instr_new =
   replace_hard instr_old instr_new;
   instr_new

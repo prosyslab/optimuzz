@@ -375,9 +375,9 @@ let rec mutate_inner_bb llctx mode llm distance =
   | None -> mutate_inner_bb llctx mode llm distance
 
 (* CFG-related mutation *)
-let mutate_CFG = Fun.id
+(* let mutate_CFG = Fun.id *)
 
-let subst_ret llctx instr =
+(* let subst_ret llctx instr =
   let f_old = instr |> get_function in
   set_var_names f_old;
   let params_old = params f_old in
@@ -435,7 +435,7 @@ let check_retval llctx llm =
   try
     let _ = choose_function llm in
     Some llm
-  with _ -> None
+     with _ -> None *)
 
 (* TODO: add fuzzing configuration *)
 let run llctx mode llm distance =

@@ -6,12 +6,13 @@ module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
 
-(** [run pool llctx cov_set get_count] pop seed from [pool] and mutate seed [Config.num_mutant] times.*)
+(** [run pool llctx cov_set get_count] pops seed from [pool]
+    and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx cov_set gen_count =
   let (seed, covered, distance), pool_popped = SeedPool.pop pool in
   let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
 
-  (* each mutant is mutated m times *)
+  (* each mutant is mutated [Config.num_mutation] times *)
   let rec mutate_seed (pool, cov_set, gen_count, seed, times) =
     if times = 0 then (
       AUtil.save_hash (ALlvm.string_of_llmodule seed);
