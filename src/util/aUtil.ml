@@ -61,3 +61,14 @@ let repeat_fun f init t =
 let choose_random = function
   | [] -> raise (Invalid_argument "Empty list")
   | l -> List.nth l (Random.int (List.length l))
+
+let readlines filename =
+  let file = open_in filename in
+  let rec loop accu =
+    match input_line file with
+    | exception End_of_file -> accu
+    | line -> loop (line :: accu)
+  in
+  let lines = loop [] |> List.rev in
+  close_in file;
+  lines
