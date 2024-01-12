@@ -1,2 +1,2 @@
-val run : unit -> Domain.Group.t
+val run : unit -> Domain.CovSet.t
 val clean : unit -> unit
