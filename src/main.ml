@@ -59,7 +59,7 @@ let main () =
     exit 0);
 
   (* fuzzing *)
-  let seed_pool = SeedPool.make_seedpool llctx in
+  let seed_pool = SeedPool.make llctx in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
   AUtil.start_time := AUtil.now ();

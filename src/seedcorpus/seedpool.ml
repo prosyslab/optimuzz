@@ -29,7 +29,8 @@ module SeedSet = struct
       else filtered
 end
 
-type t = (ALlvm.llmodule * bool) Queue.t
+type elt = Llvm.llmodule * bool * int
+type t = elt Queue.t
 
 let push s pool =
   Queue.push s pool;
@@ -137,7 +138,7 @@ let rec clean_llm llctx wide llm =
   with _ -> if wide then clean_llm llctx false llm else None
 
 (** make seedpool from Config.seed_dir. this queue contains, llmodule, covered, distance*)
-let make_seedpool llctx =
+let make llctx =
   let dir = !Config.seed_dir in
   assert (Sys.file_exists dir && Sys.is_directory dir);
   let seedpool, seedset =
