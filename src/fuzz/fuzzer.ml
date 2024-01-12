@@ -4,6 +4,32 @@ module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
 
+(** runs optimizer with an input file
+    and measure its coverage.
+    Returns the results *)
+let measure_optimizer_coverage filename llm =
+  let open Oracle in
+  Coverage.Measurer.clean ();
+  ALlvm.save_ll !Config.out_dir filename llm;
+  let filename_out = Filename.concat !Config.out_dir filename in
+  let optimized_ir_filename = AUtil.name_opted_ver filename_out in
+
+  let optimization_res = Optimizer.run ~passes:optimizer_passes filename_out in
+  let coverage =
+    match optimization_res with
+    | CRASH ->
+        (* leave the maximum distance to the coverage set
+           for later fuzzing steps to be able to use it as a reference *)
+        CovSet.singleton !Config.max_distance
+    | _ -> Coverage.Measurer.run ()
+  in
+
+  let validation_res = Validator.run filename_out optimized_ir_filename in
+  if validation_res <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
+  AUtil.clean filename_out;
+  AUtil.clean optimized_ir_filename;
+  (optimization_res, validation_res, coverage)
+
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx cov_set gen_count =
@@ -23,7 +49,10 @@ let rec run pool llctx cov_set gen_count =
       if filename = "" then (pool, cov_set, gen_count + 1, seed, times)
       else
         (* TODO: not using run result, only caring coverage *)
-        let _, cov_mutant = Oracle.run_bins filename mutant in
+        let _optim_res, _valid_res, cov_mutant =
+          measure_optimizer_coverage filename mutant
+        in
+
         let new_distance = CovSet.min_elt cov_mutant in
         (* check whether the seed is covering the target *)
         let covered = !Config.cov_directed <> "" && new_distance = 0 in

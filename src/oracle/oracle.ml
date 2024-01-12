@@ -59,30 +59,3 @@ module Optimizer = struct
       AUtil.clean input;
       result)
 end
-
-(* run opt (and tv) and measure coverage *)
-let run_bins filename llm =
-  Coverage.Measurer.clean ();
-  ALlvm.save_ll !Config.out_dir filename llm;
-  let filename_out = Filename.concat !Config.out_dir filename in
-  let optimized_ir_filename = AUtil.name_opted_ver filename_out in
-
-  (* run opt/alive2 and evaluate *)
-  let optimization_res = Optimizer.run ~passes:optimizer_passes filename_out in
-  let coverage =
-    if optimization_res = CRASH then CovSet.singleton !Config.max_distance
-    else Coverage.Measurer.run ()
-  in
-
-  if !Config.no_tv then (
-    if optimization_res <> VALID then
-      ALlvm.save_ll !Config.crash_dir filename llm;
-    clean filename_out;
-    clean optimized_ir_filename;
-    (optimization_res, coverage))
-  else
-    let validation_res = Validator.run filename_out optimized_ir_filename in
-    if validation_res <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
-    clean filename_out;
-    clean optimized_ir_filename;
-    (validation_res, coverage)
