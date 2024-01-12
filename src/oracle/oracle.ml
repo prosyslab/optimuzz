@@ -3,19 +3,15 @@ open Util
 
 type res_t = CRASH | INVALID | VALID
 
-let cmd = AUtil.command_args
-
 let clean filename =
-  let _ = cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] in
-  (* if exit_state = 0 then VALID else CRASH *)
-  ()
+  AUtil.cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] |> ignore
 
 let run_alive2 filename =
   let opted_filename = AUtil.name_opted_ver filename in
   if Sys.file_exists filename && Sys.file_exists opted_filename then (
     (* run alive2 *)
     let exit_state =
-      cmd
+      AUtil.cmd
         [
           !Config.alive_tv_bin;
           filename;
@@ -47,7 +43,7 @@ let run_alive2 filename =
 
 let run_optimizer filename =
   let exit_state =
-    cmd
+    Util.AUtil.cmd
       [
         !Config.opt_bin;
         filename;
@@ -66,7 +62,7 @@ let run_optimizer_llm llm =
   else (
     ALlvm.save_ll !Config.out_dir filename llm;
     let exit_state =
-      cmd
+      AUtil.cmd
         [
           !Config.opt_bin;
           Filename.concat !Config.out_dir filename;
