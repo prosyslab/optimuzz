@@ -26,6 +26,6 @@ eval $(SHELL=bash opam config env --switch=$LLFUZZ_OPAM_SWITCH)
 opam pin https://github.com/prosyslab/logger.git
 opam install -j $NCPU llvm.16.0.6+nnp
 opam install -j $NCPU dune z3 yojson logger
-opam install -j $NCPU ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server # for development
+opam install -j $NCPU ocamlformat.0.26.1 merlin ocp-index ocp-indent ocaml-lsp-server # for development
 opam install -j $NCPU sha.1.15.4
 make
