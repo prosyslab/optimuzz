@@ -20,6 +20,7 @@ let initialize () =
   (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
 
   Random.init !Config.random_seed;
+  Config.set_intereseting_types llctx;
 
   ()
 
