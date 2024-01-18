@@ -675,10 +675,42 @@ let migrate_llv llv_old ty_expected link_instr =
         else if is_undef llv_old then undef ty_expected
         else
           try
-            const_int ty_expected
-              (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+            match classify_type ty_expected with
+            | Integer ->
+                const_int ty_expected
+                  (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+            | Vector ->
+                let el_ty = element_type ty_expected in
+                let vec_size = vector_size ty_expected in
+                let llv_arr =
+                  Array.make vec_size
+                    (const_int el_ty
+                       (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
+                in
+                const_vector llv_arr
+            | _ -> failwith "Unsupported type migration"
           with _ -> exit 1)
     | Pointer -> const_null ty_expected
+    | Vector -> (
+        try
+          match classify_type ty_expected with
+          | Integer ->
+              const_int ty_expected
+                (aggregate_element llv_old 0
+                |> Option.get |> int64_of_const |> Option.get |> Int64.to_int)
+          | Vector ->
+              let el_ty = element_type ty_expected in
+              let vec_size = vector_size ty_expected in
+              let llv_arr =
+                Array.make vec_size
+                  (const_int el_ty
+                     (aggregate_element llv_old 0
+                     |> Option.get |> int64_of_const |> Option.get
+                     |> Int64.to_int))
+              in
+              const_vector llv_arr
+          | _ -> failwith "Unsupported type migration"
+        with _ -> exit 1)
     | _ -> failwith "Unsupported type migration"
   else LLVMap.find llv_old link_instr
 
@@ -911,7 +943,10 @@ let redef_fn llctx f typemap =
           match block_terminator block with
           | Some ter ->
               if instr_opcode ter = Ret then
-                if num_operands ter > 0 then Some (operand ter 0 |> type_of)
+                if num_operands ter > 0 then
+                  if LLVMap.mem (operand ter 0) typemap then
+                    LLVMap.find_opt (operand ter 0) typemap
+                  else Some (type_of (operand ter 0))
                 else Some (void_type llctx)
               else accu
           | None -> accu)
@@ -1111,16 +1146,10 @@ let copy_instr_with_new_retval llctx llb instr_old link_instr link_block
           (* let opd0 = operand instr_old 0 in
              let indices =
                num_operands instr_old - 1
-               |> (Fun.flip List.init) (fun i ->
-                      print_endline (string_of_llvalue (operand instr_old (i + 1)));
-                      operand instr_old (i + 1))
+               |> (Fun.flip List.init) (fun i -> operand instr_old (i + 1))
              in *)
-
-          (* build_gep type_of  *)
           failwith "Not supported instruction"
-      | _ ->
-          (* print_endline (string_of_llvalue instr_old); *)
-          failwith "Not supported instruction"
+      | _ -> failwith "Not supported instruction"
   in
   LLVMap.add instr_old instr_new link_instr
 

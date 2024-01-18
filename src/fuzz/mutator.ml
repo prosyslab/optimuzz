@@ -92,10 +92,20 @@ let randget_operand loc ty =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
   in
   let candidates =
-    if classify_type ty = TypeKind.Integer then
-      const_int ty (AUtil.choose_random AUtil.interesting_integers)
-      :: candidates
-    else candidates
+    match classify_type ty with
+    | TypeKind.Integer ->
+        const_int ty (AUtil.choose_random !Config.interesting_integers)
+        :: candidates
+    | Vector ->
+        (* TODO: check this *)
+        let el_ty = element_type ty in
+        let vec_size = vector_size ty in
+        let llv_arr =
+          Array.make vec_size
+            (const_int el_ty (AUtil.choose_random !Config.interesting_integers))
+        in
+        const_vector llv_arr :: candidates
+    | _ -> candidates
   in
   let candidates =
     loc |> get_function
@@ -122,7 +132,7 @@ let rec create_rand_instr llctx preferred_opd loc =
         if preds <> [] then AUtil.choose_random preds
         else
           randget_operand loc
-            (integer_type llctx (AUtil.choose_random AUtil.interesting_types))
+            (AUtil.choose_random !Config.interesting_integer_types)
           |> Option.get
   in
   let operand_ty = type_of operand in
@@ -153,7 +163,7 @@ let rec create_rand_instr llctx preferred_opd loc =
       if opcode = Load && classify_type operand_ty = Pointer then
         Some
           (build_load
-             (integer_type llctx (AUtil.choose_random AUtil.interesting_types))
+             (AUtil.choose_random !Config.interesting_integer_types)
              operand "" (builder_before llctx loc))
       else None
   | _ ->
@@ -280,13 +290,14 @@ let is_there_hard_op f =
     false f
 
 let is_mistargeting llv =
-  if llv |> type_of |> classify_type = TypeKind.Integer then
-    match classify_value llv with
-    | Instruction opc -> (
-        match OpCls.classify opc with BINARY -> false | _ -> true)
-    | Argument -> false
-    | _ -> true
-  else true
+  match llv |> type_of |> classify_type with
+  | TypeKind.Integer | Vector -> (
+      match classify_value llv with
+      | Instruction opc -> (
+          match OpCls.classify opc with BINARY -> false | _ -> true)
+      | Argument -> false
+      | _ -> true)
+  | _ -> true
 
 (** [change_type llctx ty_new llv] changes type of [llv] randomly.
     All the other associated values are recursively changed.
@@ -310,15 +321,12 @@ let change_type llctx llv =
   else
     (* decide type *)
     let ty_old = type_of target in
-    let bw_old = integer_bitwidth ty_old in
-    let bw_old2 = llv |> type_of |> integer_bitwidth in
+    let ty_old2 = type_of llv in
     let rec loop () =
-      let bw = AUtil.choose_random AUtil.interesting_types in
-      if bw_old = bw || bw = 128 || bw_old2 = bw then loop ()
-      else integer_type llctx bw
+      let ty = AUtil.choose_random !Config.interesting_types in
+      if ty_old = ty || ty_old2 = ty then loop () else ty
     in
     let ty_new = loop () in
-
     set_var_names f;
 
     (* infer types *)

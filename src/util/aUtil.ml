@@ -56,12 +56,6 @@ let repeat_fun f init t =
     in
     aux init t
 
-let interesting_integers =
-  [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
-
-(* let interesting_types = [ 1; 8; 10; 32; 34; 64; 128 ] *)
-let interesting_types = [ 1; 8; 10; 32; 34; 64 ]
-
 (** [choose_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
 let choose_random = function
