@@ -6,6 +6,7 @@ EXE=llfuzz
 
 all:
 	$(DUNE) build src/main.exe
+	$(DUNE) build test/mutator/test.exe
 	$(LN) _build/default/src/main.exe $(EXE)
 
 test: all

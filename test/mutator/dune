@@ -1,0 +1,17 @@
+(executable
+ (name test)
+ (modules test)
+ (libraries fuzz))
+
+(rule
+ (deps 55291.ll)
+ (targets 55291.output)
+ (action
+  (with-stdout-to
+   %{targets}
+   (run ./test.exe %{deps}))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff 55291.expected 55291.output)))
