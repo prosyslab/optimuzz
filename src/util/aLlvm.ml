@@ -256,7 +256,7 @@ let choose_function llm =
   in
   aux (function_begin llm)
 
-(** [replace_hard bef aft] replaces
+(** [replace_hard befpre aftter] replaces
     all uses of [before] to [after] and delete [before]. *)
 let replace_hard before after =
   replace_all_uses_with before after;
