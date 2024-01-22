@@ -22,7 +22,7 @@ ninja
 cd Alive2/alive2
 mkdir build
 cd build
-cmake -GNinja -DCMAKE_PREFIX_PATH=../../llvm-project/build -DBUILD_TV=1 -DCMAKE_BUILD_TYPE=Release ..
+cmake -GNinja -DCMAKE_PREFIX_PATH=$(realpath ../../llvm-project/build) -DBUILD_TV=1 -DCMAKE_BUILD_TYPE=Release $(realpath ..)
 ninja
 ```
 ### Build target LLVM and link `opt`
