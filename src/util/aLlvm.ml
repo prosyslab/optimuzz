@@ -985,15 +985,13 @@ let set_var_names f =
   let start =
     Array.fold_left
       (fun accu param ->
-        if value_name param = "" then (
-          set_value_name (name accu) param;
-          accu + 1)
-        else accu)
+        set_value_name (name accu) param;
+        accu + 1)
       0 (params f)
   in
   fold_left_all_instr
     (fun accu i ->
-      if value_name i = "" && i |> type_of |> classify_type <> Void then (
+      if i |> type_of |> classify_type <> Void then (
         set_value_name (name accu) i;
         accu + 1)
       else accu)
