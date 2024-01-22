@@ -160,9 +160,7 @@ let rec create_rand_instr llctx preferred_opd loc =
              (AUtil.choose_random !Config.interesting_integer_types)
              operand "" (builder_before llctx loc))
       else None
-  | _ ->
-      (* choose another instruction *)
-      create_rand_instr llctx preferred_opd loc
+  | _ -> None
 
 (** [subst_rand_instr llctx instr] substitutes
     the instruction [instr] into another random instruction in its class,
@@ -355,7 +353,7 @@ let change_type llctx llv =
        if so, ignore this mutation. *)
     if Llvm_analysis.verify_function f_new then (
       delete_function f;
-      target |> Fun.flip LLVMap.find link |> Option.some)
+      Some (LLVMap.find target link))
     else (
       delete_function f_new;
       None)
@@ -375,9 +373,8 @@ let rec mutate_inner_bb llctx mode llm distance =
     | CREATE -> create_rand_instr llctx None instr_tgt
     | OPCODE -> subst_rand_instr llctx instr_tgt
     | OPERAND -> subst_rand_opd llctx None instr_tgt
-    (* | FLAG -> modify_flag llctx instr_tgt *)
+    | FLAG -> modify_flag llctx instr_tgt
     | TYPE -> change_type llctx instr_tgt
-    | _ -> None
   in
   match mutation_result with
   | Some _ -> llm
