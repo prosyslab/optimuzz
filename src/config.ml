@@ -87,6 +87,9 @@ let opts =
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     (* logging options *)
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
+    ( "-dry-run",
+      Arg.Set dry_run,
+      "Do not run fuzzing. (for testing configuration)" );
     (* gcov whitelist *)
     ( "-instcombine",
       Arg.Set _instCombine,
