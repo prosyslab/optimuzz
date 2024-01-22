@@ -12,6 +12,7 @@ let crash_dir = ref "crash"
 let corpus_dir = ref "corpus"
 let gcov_dir = ref "gcov"
 let workspace = ref ""
+let dry_run = ref false
 
 (* build/binaries *)
 (* let opt_bin = ref "llvm-project/build/bin/opt" *)
@@ -159,3 +160,32 @@ let init_gcov_list () =
   |> List.map (fun elem -> List.map to_gcov (snd elem))
   |> List.concat
   |> fun x -> gcov_list := x
+
+let initialize llctx () =
+  Arg.parse opts
+    (fun _ -> failwith "no anonymous arguments")
+    "Usage: llfuzz [options]";
+
+  (* consider dune directory *)
+  project_home :=
+    Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
+    |> Filename.dirname |> Filename.dirname;
+
+  opt_bin := Filename.concat !project_home !opt_bin;
+  alive_tv_bin := Filename.concat !project_home !alive_tv_bin;
+
+  out_dir := Filename.concat !project_home !out_dir;
+  crash_dir := Filename.concat !out_dir !crash_dir;
+  corpus_dir := Filename.concat !out_dir !corpus_dir;
+
+  set_intereseting_types llctx;
+
+  if !dry_run then (
+    opts
+    |> List.iter (fun (name, spec, _) ->
+           match spec with
+           | Arg.Set b -> Format.printf "%s: %b\n" name !b
+           | Arg.Set_string s -> Format.printf "%s: %s\n" name !s
+           | Arg.Set_int i -> Format.printf "%s: %d\n" name !i
+           | _ -> failwith "not implemented");
+    exit 0)
