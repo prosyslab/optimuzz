@@ -4,7 +4,8 @@ module F = Format
 let clean () = Util.AUtil.clean "cov.cov"
 
 (** parse coverage lines and return parsed string list
-  example: InstCombineCompares.cpp:visitICmpInst:50_0 -> [InstCombineCompares.cpp ; visitICmpInst; 50; 0]
+  example: InstCombineCompares.cpp:visitICmpInst:50_0 ->
+    \["InstCombineCompares.cpp" ; "visitICmpInst"; "50"; "0"\]
     *)
 let parse_line line =
   let chunks = String.split_on_char ':' line in
