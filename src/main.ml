@@ -7,22 +7,7 @@ module SeedPool = Seedcorpus.Seedpool
 let llctx = ALlvm.create_context ()
 
 let initialize () =
-  Arg.parse Config.opts
-    (fun _ -> failwith "There must be no anonymous arguments.")
-    "Usage: llfuzz [options]";
-
-  (* consider dune directory *)
-  Config.project_home :=
-    Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
-    |> Filename.dirname |> Filename.dirname;
-
-  Config.opt_bin := Filename.concat !Config.project_home !Config.opt_bin;
-  Config.alive_tv_bin :=
-    Filename.concat !Config.project_home !Config.alive_tv_bin;
-
-  Config.out_dir := Filename.concat !Config.project_home !Config.out_dir;
-  Config.crash_dir := Filename.concat !Config.out_dir !Config.crash_dir;
-  Config.corpus_dir := Filename.concat !Config.out_dir !Config.corpus_dir;
+  Config.initialize llctx ();
 
   (* make directories first *)
   (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
@@ -30,7 +15,6 @@ let initialize () =
   (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
 
   Random.init !Config.random_seed;
-  Config.set_intereseting_types llctx;
 
   (* Clean previous coverage data *)
   Coverage.Measurer.clean ()
@@ -65,6 +49,8 @@ let main () =
   (* fuzzing *)
   let seed_pool = SeedPool.make llctx in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
+
+  if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
   let coverage = Fuzzer.run seed_pool llctx CovSet.empty 0 in
