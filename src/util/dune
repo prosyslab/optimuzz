@@ -6,9 +6,6 @@
   (language cxx)
   (flags
    :standard
-   (-I/usr/lib/llvm-16/include
-    -D_GNU_SOURCE
-    -D__STDC_CONSTANT_MACROS
-    -D__STDC_FORMAT_MACROS
-    -D__STDC_LIMIT_MACROS)))
+   (-I/usr/lib/llvm-16/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS
+     -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)))
  (c_library_flags (-lLLVM-16) (-L/usr/lib/llvm-16/lib) -lstdc++))

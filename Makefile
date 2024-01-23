@@ -5,11 +5,14 @@ RM=@rm
 EXE=llfuzz
 
 all:
-	$(DUNE) build src/main.exe
+	- $(DUNE) build @fmt --auto-promote src/main.exe
 	$(LN) _build/default/src/main.exe $(EXE)
 
 test: all
 	$(DUNE) test
+
+fmt:
+	- $(DUNE) fmt
 
 clean:
 	$(DUNE) clean
