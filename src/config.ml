@@ -10,6 +10,7 @@ let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "crash"
 let corpus_dir = ref "corpus"
+let cov_file = ref "cov.cov"
 let gcov_dir = ref "gcov"
 let workspace = ref ""
 let dry_run = ref false
