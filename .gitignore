@@ -23,6 +23,9 @@ setup.log
 # Merlin configuring file for Vim and Emacs
 .merlin
 
+# vim files
+*.swp
+
 # Mac
 .DS_Store
 
@@ -59,3 +62,5 @@ cov.cov
 # development and others
 .vscode/
 memo/
+
+llfuzz-out
