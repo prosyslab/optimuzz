@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain measurer)
+ (modules domain measurer line)
  (libraries unix util config))
