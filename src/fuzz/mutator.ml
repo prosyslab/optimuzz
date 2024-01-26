@@ -384,7 +384,7 @@ let rec mutate_inner_bb llctx mode llm score =
     | CREATE -> create_rand_instr llctx None instr_tgt
     | OPCODE -> subst_rand_instr llctx instr_tgt
     | OPERAND -> subst_rand_opd llctx None instr_tgt
-    | FLAG -> None (*modify_flag llctx instr_tgt*)
+    | FLAG -> modify_flag llctx instr_tgt
     | TYPE -> change_type llctx instr_tgt
   in
   match mutation_result with
