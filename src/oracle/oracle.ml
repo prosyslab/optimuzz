@@ -1,4 +1,3 @@
-open Coverage.Domain
 open Util
 
 type res_t = CRASH | INVALID | VALID

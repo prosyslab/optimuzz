@@ -1,6 +1,6 @@
 (env
  (dev
   (flags
-   (:standard -warn-error -A))))
+   (:standard -warn-error -A -w -32))))
 
 (dirs src test)
