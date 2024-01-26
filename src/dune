@@ -6,5 +6,15 @@
 (executable
  (name main)
  (modules main)
- (libraries llvm llvm.bitreader llvm.irreader llvm.transform_utils str unix
-   coverage seedcorpus fuzz pattern util))
+ (libraries
+  llvm
+  llvm.bitreader
+  llvm.irreader
+  llvm.transform_utils
+  str
+  unix
+  coverage
+  seedcorpus
+  fuzz
+  pattern
+  util))
