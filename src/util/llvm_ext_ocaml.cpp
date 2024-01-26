@@ -44,53 +44,63 @@ void *from_val(value v)
   return (void *)(v ^ 1);
 }
 
+#define Value_val(v) ((LLVMValueRef)from_val(v))
 #define Module_val(v) ((LLVMModuleRef)from_val(v))
 
 extern "C"
 {
   /* bool -> llvalue -> unit */
-  value llvm_set_nuw(value flag, LLVMValueRef instr)
+  value llvm_set_nuw(value flag, value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    foo->setHasNoUnsignedWrap(Bool_val(flag));
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    cast<Instruction>(value)->setHasNoUnsignedWrap(Bool_val(flag));
     return Val_unit;
   }
 
   /* bool -> llvalue -> unit */
-  value llvm_set_nsw(value flag, LLVMValueRef instr)
+  value llvm_set_nsw(value flag, value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    foo->setHasNoSignedWrap(Bool_val(flag));
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    cast<Instruction>(value)->setHasNoSignedWrap(Bool_val(flag));
     return Val_unit;
   }
 
   /* bool -> llvalue -> unit */
-  value llvm_set_exact(value flag, LLVMValueRef instr)
+  value llvm_set_exact(value flag, value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    foo->setIsExact(Bool_val(flag));
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    cast<Instruction>(value)->setIsExact(Bool_val(flag));
     return Val_unit;
   }
 
   /* llvalue -> bool */
-  value llvm_is_nuw(LLVMValueRef instr)
+  value llvm_is_nuw(value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    return foo->hasNoUnsignedWrap();
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(value)->hasNoUnsignedWrap();
+    return Val_bool(ret);
   }
 
   /* llvalue -> bool */
-  value llvm_is_nsw(LLVMValueRef instr)
+  value llvm_is_nsw(value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    return foo->hasNoSignedWrap();
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(value)->hasNoSignedWrap();
+    return Val_bool(ret);
   }
 
   /* llvalue -> bool */
-  value llvm_is_exact(LLVMValueRef instr)
+  value llvm_is_exact(value instr)
   {
-    auto foo = dyn_cast<Instruction>(unwrap(instr));
-    return foo->isExact();
+    LLVMValueRef value_ref = Value_val(instr);
+    Value* value = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(value)->isExact();
+    return Val_bool(ret);
   }
 
   value llvm_set_opaque_pointers(value Ctx, value Enable)
