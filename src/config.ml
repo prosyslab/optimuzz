@@ -175,6 +175,11 @@ let initialize llctx () =
   opt_bin := Filename.concat !project_home !opt_bin;
   alive_tv_bin := Filename.concat !project_home !alive_tv_bin;
 
+  if Sys.file_exists !opt_bin |> not then
+    failwith ("opt binary not found: " ^ !opt_bin);
+  if Sys.file_exists !alive_tv_bin |> not then
+    failwith ("alive-tv binary not found: " ^ !alive_tv_bin);
+
   out_dir := Filename.concat !project_home !out_dir;
   crash_dir := Filename.concat !out_dir !crash_dir;
   corpus_dir := Filename.concat !out_dir !corpus_dir;
