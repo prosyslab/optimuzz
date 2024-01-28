@@ -88,6 +88,7 @@ let opts =
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ("-metric", Arg.Set_string metric, "Metric to give a score to a coverage");
     (* logging options *)
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
     ( "-dry-run",
