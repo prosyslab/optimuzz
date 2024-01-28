@@ -173,7 +173,7 @@ let make llctx =
                    | VALID -> (
                        let distance =
                          Coverage.Measurer.run ()
-                         |> Coverage.Domain.CovSet.min_elt
+                         |> Coverage.Domain.DistanceSet.min_elt
                        in
                        if distance == 0 then
                          (push (llm, true, distance) queue, seedset)
