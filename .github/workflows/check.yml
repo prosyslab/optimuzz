@@ -5,6 +5,8 @@ on:
   pull_request:
     types:
       - opened
+      - reopened
+      - synchronize
 
 jobs:
   check:
@@ -37,7 +39,7 @@ jobs:
             ~/.opam
             ./_opam
           key: ${{ env.cache-name }}-build-${{ hashFiles('build.sh') }}
-      
+
       - name: Install LLVM 16
         run: |
           sudo apt-get update
