@@ -32,6 +32,16 @@ let measure_optimizer_coverage filename llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res, coverage)
 
+let record_timestamp distances =
+  (* timestamp *)
+  if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
+    AUtil.recent_time := AUtil.now ();
+    output_string AUtil.timestamp_fp
+      (string_of_int (AUtil.now () - !AUtil.start_time)
+      ^ " "
+      ^ string_of_int (DistanceSet.cardinal distances)
+      ^ "\n"))
+
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx cov_set gen_count =
@@ -80,14 +90,8 @@ let rec run pool llctx cov_set gen_count =
           else mutate_seed (pool, cov_set, gen_count, mutant, times - 1)
         in
 
-        (* timestamp *)
-        if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
-          AUtil.recent_time := AUtil.now ();
-          output_string AUtil.timestamp_fp
-            (string_of_int (AUtil.now () - !AUtil.start_time)
-            ^ " "
-            ^ string_of_int (DistanceSet.cardinal cov_set')
-            ^ "\n"));
+        record_timestamp cov_set';
+
         (pool', cov_set', gen_count, seed', times')
   in
 
