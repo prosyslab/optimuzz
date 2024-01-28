@@ -9,7 +9,15 @@ end
 module Id = Int
 
 (* set of id *)
-module CovSet = Set.Make (Int)
+module CovSet = struct
+  include Set.Make (Id)
+
+  let avg_elt set =
+    if cardinal set = 0 then raise Not_found
+    else
+      let total = fold (fun total i -> total + i) set 0 in
+      total / cardinal set
+end
 
 (* map from location to group  *)
 module CovMap = struct
