@@ -1,4 +1,5 @@
 type t = { file : string; func : string; path : string list }
+(** represents a line in the coverage file *)
 
 (** parse coverage lines and return parsed string list
     example: InstCombineCompares.cpp:visitICmpInst:50:0 ->
