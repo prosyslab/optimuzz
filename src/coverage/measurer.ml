@@ -13,11 +13,12 @@ let run () =
       match input_line file with
       | line ->
           let l = Line.parse line in
-          aux (CovSet.add (dist l) accu)
+          aux (DistanceSet.add (dist l) accu)
       | exception End_of_file ->
           close_in file;
-          if CovSet.is_empty accu then CovSet.singleton !Config.max_distance
+          if DistanceSet.is_empty accu then
+            DistanceSet.singleton !Config.max_distance
           else accu
     in
-    aux CovSet.empty
-  with Sys_error _ -> CovSet.singleton !Config.max_distance
+    aux DistanceSet.empty
+  with Sys_error _ -> DistanceSet.singleton !Config.max_distance

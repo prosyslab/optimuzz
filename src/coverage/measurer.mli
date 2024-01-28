@@ -1,2 +1,2 @@
-val run : unit -> Domain.CovSet.t
+val run : unit -> Domain.DistanceSet.t
 val clean : unit -> unit
