@@ -4,8 +4,8 @@ LN=@ln -sf
 RM=@rm
 EXE=llfuzz
 
-all:
-	- $(DUNE) build @fmt --auto-promote src/main.exe
+all: fmt
+	$(DUNE) build src/main.exe
 	$(LN) _build/default/src/main.exe $(EXE)
 
 test: all
