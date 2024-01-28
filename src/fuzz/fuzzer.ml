@@ -53,9 +53,11 @@ let rec run pool llctx cov_set gen_count =
           measure_optimizer_coverage filename mutant
         in
 
-        let mutant_score = DistanceSet.min_elt cov_mutant in
+        let mutant_score = DistanceSet.metric cov_mutant in
         (* check whether the seed is covering the target *)
-        let covered = !Config.cov_directed <> "" && new_distance = 0 in
+        let covered =
+          !Config.cov_directed <> "" && DistanceSet.cover_target cov_mutant
+        in
 
         (* induce new pool and coverage *)
         let pool', cov_set', gen_count, seed', times' =
