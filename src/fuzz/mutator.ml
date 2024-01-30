@@ -203,6 +203,7 @@ let subst_rand_instr llctx instr =
 let rec subst_rand_opd llctx preferred_opd instr =
   let num_operands = num_operands instr in
   let opd_i = operand instr in
+  let use_other_opd () = subst_rand_opd llctx None instr in
 
   match preferred_opd with
   | Some preferred_opd -> (
@@ -213,29 +214,27 @@ let rec subst_rand_opd llctx preferred_opd instr =
           match num_operands with
           | 1 ->
               let operand_old = opd_i 0 in
-              if check_ty operand_old then set_opd_and_ret instr 0 preferred_opd
-              else subst_rand_opd llctx None instr
+              if check_ty operand_old then
+                Some (set_opd_and_ret instr 0 preferred_opd)
+              else use_other_opd ()
           | 2 -> (
               (* try best to use the preferred operand *)
               match (check_ty (opd_i 0), check_ty (opd_i 1)) with
-              | false, false ->
-                  (* cannot use the preferred operand *)
-                  subst_rand_opd llctx None instr
-              | false, true -> set_opd_and_ret instr 1 preferred_opd
-              | true, false -> set_opd_and_ret instr 0 preferred_opd
+              | false, false -> use_other_opd ()
+              | false, true -> Some (set_opd_and_ret instr 1 preferred_opd)
+              | true, false -> Some (set_opd_and_ret instr 0 preferred_opd)
               | true, true ->
                   (* both are ok; replace random one into the preferred one *)
                   let i = Random.int 2 in
-                  set_opd_and_ret instr i preferred_opd)
+                  Some (set_opd_and_ret instr i preferred_opd))
           | _ -> None)
       | _ -> None)
   | None ->
       if num_operands > 0 then
         let i = Random.int num_operands in
         let operand_old = opd_i i in
-        match randget_operand instr (type_of operand_old) with
-        | Some operand_new -> set_opd_and_ret instr i operand_new
-        | None -> None
+        randget_operand instr (type_of operand_old)
+        |> Option.map (set_opd_and_ret instr i)
       else None
 
 (** [modify_flag llctx instr] tries to grant or retrieve
@@ -273,13 +272,13 @@ let modify_flag _ instr =
     calling this will make: ... -> (chain of length [len]) -> instr -> i1,
     where an operand of instr will be replaced of the last mutation of chain.
     Returns operand-substitued [instr]. *)
-let make_chain llctx len first_opd instr =
-  assert (len >= 2);
-  let create pref = create_rand_instr llctx pref instr in
-  let rec aux i accu =
-    if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
-  in
-  subst_rand_opd llctx (aux len first_opd) instr
+(* let make_chain llctx len first_opd instr =
+   assert (len >= 2);
+   let create pref = create_rand_instr llctx pref instr in
+   let rec aux i accu =
+     if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
+   in
+   subst_rand_opd llctx (aux len first_opd) instr *)
 
 let is_there_hard_op f =
   fold_left_all_instr
@@ -301,30 +300,30 @@ let is_mistargeting llv =
       | _ -> true)
   | _ -> true
 
-(** [change_type llctx ty_new llv] changes type of [llv] randomly.
+(** [change_type llctx ty_new instr] changes type of [instr] randomly.
     All the other associated values are recursively changed.
     Returns [Some(instr)] if success, or [None] else. *)
-let change_type llctx llv =
+let change_type llctx instr =
   (* llv is instruction now *)
-  let f = get_function llv in
+  let f = get_function instr in
 
   (* target: select actual llvalue to change type *)
   let target =
-    if num_operands llv > 0 then
+    if num_operands instr > 0 then
       AUtil.choose_random
         (let rec loop accu i =
-           if i >= num_operands llv then accu
-           else loop (operand llv i :: accu) (i + 1)
+           if i >= num_operands instr then accu
+           else loop (operand instr i :: accu) (i + 1)
          in
-         loop [ llv ] 0)
-    else llv
+         loop [ instr ] 0)
+    else instr
   in
 
   if is_there_hard_op f || is_mistargeting target then None
   else
     (* decide type *)
     let ty_old = type_of target in
-    let ty_old2 = type_of llv in
+    let ty_old2 = type_of instr in
     let rec loop () =
       let ty = AUtil.choose_random !Config.interesting_types in
       if ty_old = ty || ty_old2 = ty then loop () else ty
@@ -333,7 +332,7 @@ let change_type llctx llv =
 
     (* prevent anonymous llvalues (internally they are "")
        This is necessary because we will use value names as key for LLVMap *)
-    set_var_names f;
+    reset_var_names f;
 
     (* infer types, types not inferred are regarded as the same *)
     let typemap = infer_types llctx ty_new target LLVMap.empty in
@@ -396,7 +395,7 @@ let rec mutate_inner_bb llctx mode llm score =
 
 (* let subst_ret llctx instr =
      let f_old = instr |> get_function in
-     set_var_names f_old;
+     reset_var_names f_old;
      let params_old = params f_old in
      let param_tys = Array.map type_of params_old in
      let old_ret_ty = instr |> type_of in
