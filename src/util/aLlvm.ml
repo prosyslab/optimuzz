@@ -256,21 +256,23 @@ let choose_function llm =
   in
   aux (function_begin llm)
 
-(** [replace_hard befpre aftter] replaces
+(** [replace_hard before after] replaces
     all uses of [before] to [after] and delete [before]. *)
 let replace_hard before after =
   replace_all_uses_with before after;
   delete_instruction before
 
-(** [replace_and_ret] replaces all uses of [instr_old]
-    with the ones of [instr_new] and returns [instr_new] *)
+(** [replace_and_ret instr_old instr_new] replaces all uses of [instr_old]
+    to [instr_new] and returns [instr_new]. *)
 let replace_and_ret instr_old instr_new =
   replace_hard instr_old instr_new;
   instr_new
 
+(** [set_opd_and_ret instr i opd] sets [i]-th operand of [instr] to [opd]
+    and returns [instr]. *)
 let set_opd_and_ret instr i opd =
   set_operand instr i opd;
-  Some instr
+  instr
 
 exception Out_of_integer_domain
 
@@ -995,8 +997,10 @@ let redef_fn llctx f typemap =
       (params f_new);
     (f_new, migrate llctx f f_new typemap)
 
-(* name all instructions *)
-let set_var_names f =
+(** [reset_var_names f] sets names of all parameters and instructions in
+    function [f]. This is specially useful when we have to assure all values
+    have own names. *)
+let reset_var_names f =
   let name i = "val" ^ string_of_int i in
   let start =
     Array.fold_left

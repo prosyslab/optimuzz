@@ -59,8 +59,14 @@ let repeat_fun f init t =
 (** [choose_random l] returns a random element from a list [l].
     @raise Invalid_argument if [l] is empty. *)
 let choose_random = function
-  | [] -> raise (Invalid_argument "Empty list")
+  | [] -> invalid_arg "Empty list"
   | l -> List.nth l (Random.int (List.length l))
+
+(** [choose_arr a] returns a random element from an array [a].
+    @raise Invalid_argument if [a] is empty. *)
+let choose_arr a =
+  let len = Array.length a in
+  if len == 0 then invalid_arg "Empty array" else Array.get a (Random.int len)
 
 let readlines filename =
   let file = open_in filename in

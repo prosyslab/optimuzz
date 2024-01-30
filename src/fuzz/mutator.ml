@@ -203,7 +203,8 @@ let rec subst_rand_opd llctx preferred_opd instr =
           match num_operands with
           | 1 ->
               let operand_old = opd_i 0 in
-              if check_ty operand_old then set_opd_and_ret instr 0 preferred_opd
+              if check_ty operand_old then
+                Some (set_opd_and_ret instr 0 preferred_opd)
               else subst_rand_opd llctx None instr
           | 2 -> (
               (* try best to use the preferred operand *)
@@ -211,21 +212,20 @@ let rec subst_rand_opd llctx preferred_opd instr =
               | false, false ->
                   (* cannot use the preferred operand *)
                   subst_rand_opd llctx None instr
-              | false, true -> set_opd_and_ret instr 1 preferred_opd
-              | true, false -> set_opd_and_ret instr 0 preferred_opd
+              | false, true -> Some (set_opd_and_ret instr 1 preferred_opd)
+              | true, false -> Some (set_opd_and_ret instr 0 preferred_opd)
               | true, true ->
                   (* both are ok; replace random one into the preferred one *)
                   let i = Random.int 2 in
-                  set_opd_and_ret instr i preferred_opd)
+                  Some (set_opd_and_ret instr i preferred_opd))
           | _ -> None)
       | _ -> None)
   | None ->
       if num_operands > 0 then
         let i = Random.int num_operands in
         let operand_old = opd_i i in
-        match randget_operand instr (type_of operand_old) with
-        | Some operand_new -> set_opd_and_ret instr i operand_new
-        | None -> None
+        randget_operand instr (type_of operand_old)
+        |> Option.map (set_opd_and_ret instr i)
       else None
 
 (** [modify_flag llctx instr] tries to grant or retrieve
@@ -263,13 +263,13 @@ let modify_flag _ instr =
     calling this will make: ... -> (chain of length [len]) -> instr -> i1,
     where an operand of instr will be replaced of the last mutation of chain.
     Returns operand-substitued [instr]. *)
-let make_chain llctx len first_opd instr =
-  assert (len >= 2);
-  let create pref = create_rand_instr llctx pref instr in
-  let rec aux i accu =
-    if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
-  in
-  subst_rand_opd llctx (aux len first_opd) instr
+(* let make_chain llctx len first_opd instr =
+   assert (len >= 2);
+   let create pref = create_rand_instr llctx pref instr in
+   let rec aux i accu =
+     if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
+   in
+   subst_rand_opd llctx (aux len first_opd) instr *)
 
 let is_there_hard_op f =
   fold_left_all_instr
@@ -323,7 +323,7 @@ let change_type llctx llv =
 
     (* prevent anonymous llvalues (internally they are "")
        This is necessary because we will use value names as key for LLVMap *)
-    set_var_names f;
+    reset_var_names f;
 
     (* infer types, types not inferred are regarded as the same *)
     let typemap = infer_types llctx ty_new target LLVMap.empty in
@@ -385,7 +385,7 @@ let rec mutate_inner_bb llctx mode llm distance =
 
 (* let subst_ret llctx instr =
      let f_old = instr |> get_function in
-     set_var_names f_old;
+     reset_var_names f_old;
      let params_old = params f_old in
      let param_tys = Array.map type_of params_old in
      let old_ret_ty = instr |> type_of in
