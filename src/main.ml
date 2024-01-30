@@ -19,10 +19,7 @@ let initialize () =
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
 
-  Random.init !Config.random_seed;
-  Config.set_intereseting_types llctx;
-
-  ()
+  Random.init !Config.random_seed
 
 let main () =
   let open Oracle in
