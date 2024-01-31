@@ -1,11 +1,11 @@
 open Util
 module CD = Coverage.Domain
 
-type res_t = CRASH | INVALID | VALID
-
 (** [Validation] runs translation validation program (alive-tv).
     We use this program as an oracle to detect a miscompilation. *)
 module Validator = struct
+  type res_t = CRASH | INVALID | VALID
+
   let run src optimized =
     assert (optimized = AUtil.name_opted_ver src);
     if Sys.file_exists src && Sys.file_exists optimized then
