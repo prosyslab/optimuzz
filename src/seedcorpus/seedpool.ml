@@ -1,8 +1,8 @@
 open Util
 module CD = Coverage.Domain
 
-type elt = Llvm.llmodule * bool * int
-type t = elt Queue.t
+type seed_t = Llvm.llmodule * bool * int
+type t = seed_t Queue.t
 
 let push s pool =
   Queue.push s pool;
