@@ -21,7 +21,7 @@ end = struct
     let chunks = String.split_on_char ':' s |> List.filter (( <> ) "") in
     match chunks with
     | file :: func :: path -> { file; func; path }
-    | _ -> failwith "ill-formed path"
+    | _ -> failwith ("ill-formed path" ^ s)
 
   (** file and func also count as a length *)
   let length l = 2 + List.length l.path
@@ -77,7 +77,8 @@ end = struct
     close_in ic;
     cov
 
-  let sum_cnt = List.fold_left (fun (total, cnt) x -> (total + x, cnt)) (0, 0)
+  let sum_cnt =
+    List.fold_left (fun (total, cnt) x -> (total + x, cnt + 1)) (0, 0)
 
   let score target_path cov =
     let total, cnt =
@@ -87,6 +88,8 @@ end = struct
           (total + sub_total, sub_cnt + cnt))
         cov (0, 0)
     in
+
+    Format.eprintf "total: %d, cnt: %d@." total cnt;
 
     if cnt = 0 then None else Some (total / cnt)
 
