@@ -1,5 +1,5 @@
 open Util
-open Oracle
+module CD = Coverage.Domain
 
 module SeedTuple = struct
   type t = Llvm.llmodule * int
@@ -140,6 +140,7 @@ let rec clean_llm llctx wide llm =
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
 let make llctx =
   let dir = !Config.seed_dir in
+  let target_path = CD.Path.parse !Config.cov_directed in
   assert (Sys.file_exists dir && Sys.is_directory dir);
   let seedpool, seedset =
     Sys.readdir dir
@@ -157,7 +158,7 @@ let make llctx =
            | CRASH | INVALID ->
                AUtil.name_opted_ver path |> AUtil.clean;
                (queue, seedset)
-           | VALID -> (
+           | VALID _ -> (
                AUtil.name_opted_ver path |> AUtil.clean;
                let llm =
                  path
@@ -172,15 +173,16 @@ let make llctx =
                      Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llm
                    with
                    | CRASH | INVALID -> (queue, seedset)
-                   | VALID -> (
-                       let distance =
-                         Coverage.Measurer.run ()
-                         |> Coverage.Domain.DistanceSet.min_elt
+                   | VALID cov -> (
+                       let covers = CD.Coverage.cover_target target_path cov in
+                       let score = CD.Coverage.score target_path cov in
+                       let score_int =
+                         Option.fold ~none:Int.max_int ~some:Fun.id score
                        in
-                       if distance == 0 then
-                         (push (llm, true, distance) queue, seedset)
+                       if covers then
+                         (push (llm, true, score_int) queue, seedset)
                        else
-                         try (queue, SeedSet.add (llm, distance) seedset)
+                         try (queue, SeedSet.add (llm, score_int) seedset)
                          with _ -> (queue, seedset)))
                | None -> (queue, seedset)))
          (Queue.create (), SeedSet.empty)

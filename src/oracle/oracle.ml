@@ -1,4 +1,5 @@
 open Util
+module CD = Coverage.Domain
 
 type res_t = CRASH | INVALID | VALID
 
@@ -41,21 +42,25 @@ let optimizer_passes =
 (** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
     The input can be a file or LLVM module. *)
 module Optimizer = struct
+  type res_t = VALID of CD.Coverage.t | (* TODO: clearify *) INVALID | CRASH
+
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output =
       match output with None -> "/dev/null" | Some x -> AUtil.name_opted_ver x
     in
+    Coverage.Measurer.clean ();
     let exit_state =
       Util.AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
     in
-    if exit_state = 0 then VALID else CRASH
+    let cov = CD.Coverage.read !Config.cov_file in
+    if exit_state = 0 then VALID cov else CRASH
 
   let run_for_llm ~passes llm =
     let filename = AUtil.get_new_name (ALlvm.string_of_llmodule llm) in
     if filename = "" then INVALID
     else (
-      (* transofrm input into a file for the optimizer *)
+      (* transform input into a file for the optimizer *)
       ALlvm.save_ll !Config.out_dir filename llm;
       let input = Filename.concat !Config.out_dir filename in
       let result = run ~passes input in
