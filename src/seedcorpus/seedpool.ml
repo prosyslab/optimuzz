@@ -1,40 +1,6 @@
 open Util
 module CD = Coverage.Domain
 
-module SeedTuple = struct
-  type t = Llvm.llmodule * int
-
-  let compare (llm1, distance1) (llm2, distance2) =
-    if distance1 == distance2 then
-      let llm1_size = llm1 |> ALlvm.string_of_llmodule |> String.length in
-      let llm2_size = llm2 |> ALlvm.string_of_llmodule |> String.length in
-      Int.compare llm1_size llm2_size
-    else Int.compare distance1 distance2
-end
-
-module SeedSet = struct
-  include Set.Make (SeedTuple)
-
-  let add seedtuple set =
-    if cardinal set < !Config.max_initial_seed then add seedtuple set
-    else
-      let filtered =
-        filter
-          (fun tuple ->
-            if SeedTuple.compare tuple seedtuple <= 0 then true else false)
-          set
-      in
-      if cardinal filtered < !Config.max_initial_seed then
-        add seedtuple filtered
-      else filtered
-end
-
-module SeedQueue = struct
-  include Queue
-
-  type elt = Llvm.llmodule * bool * int
-end
-
 type elt = Llvm.llmodule * bool * int
 type t = elt Queue.t
 
@@ -59,10 +25,8 @@ let collect_instruction_types f =
       match ALlvm.classify_type ty with Void -> types | _ -> ty :: types)
     [] f
 
-(** *)
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
-  (* Set var names *)
   ALlvm.set_var_names f_old;
 
   let types = collect_instruction_types f_old in
@@ -166,42 +130,38 @@ let make llctx llset =
         true
   in
 
-  let seedpool, seedset =
+  let pool_first, pool_later =
     seed_files
     |> List.fold_left
-         (fun (queue, seedset) file ->
+         (fun (pool_first, pool_later) file ->
            let path = Filename.concat dir file in
-           if can_optimize file |> not then (queue, seedset)
+           if can_optimize file |> not then (pool_first, pool_later)
            else
-             (* check if a seed can be optimized *)
              let llm =
-               path
-               |> ALlvm.MemoryBuffer.of_file
+               ALlvm.MemoryBuffer.of_file path
                |> Llvm_irreader.parse_ir llctx
                |> clean_llm llctx true
              in
              match llm with
+             | None -> (pool_first, pool_later)
              | Some llm -> (
                  match
                    Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llset
                      llm
                  with
-                 | CRASH | INVALID -> (queue, seedset)
-                 | VALID cov -> (
+                 | CRASH | INVALID -> (pool_first, pool_later)
+                 | VALID cov ->
                      let covers = CD.Coverage.cover_target target_path cov in
                      let score = CD.Coverage.score target_path cov in
                      let score_int =
                        Option.fold ~none:Int.max_int ~some:Fun.id score
                      in
-                     if covers then (push (llm, true, score_int) queue, seedset)
+                     if covers then
+                       (pool_first |> push (llm, true, score_int), pool_later)
                      else
-                       try (queue, SeedSet.add (llm, score_int) seedset)
-                       with _ -> (queue, seedset)))
-             | None -> (queue, seedset))
-         (Queue.create (), SeedSet.empty)
+                       (pool_first, pool_later |> push (llm, false, score_int))))
+         (Queue.create (), Queue.create ())
   in
-  if Queue.is_empty seedpool then
-    SeedSet.fold
-      (fun (llm, distance) seedpool -> push (llm, false, distance) seedpool)
-      seedset seedpool
-  else seedpool
+
+  Queue.transfer pool_later pool_first;
+  pool_first
