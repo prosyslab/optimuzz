@@ -100,7 +100,8 @@ let randget_operand loc ty =
     | _ -> candidates
   in
   let candidates =
-    loc |> get_function
+    loc
+    |> get_function
     |> fold_left_params
          (fun candidates param ->
            if type_of param = ty then param :: candidates else candidates)

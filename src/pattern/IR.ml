@@ -93,7 +93,9 @@ let string_of_pat pat =
         ^ aux (nSpaces + 2) lhs
         ^ ",\n"
         ^ aux (nSpaces + 2) rhs
-        ^ "\n" ^ indent ^ ")"
+        ^ "\n"
+        ^ indent
+        ^ ")"
   in
   aux 0 pat
 
