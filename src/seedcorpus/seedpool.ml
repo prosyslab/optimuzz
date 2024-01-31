@@ -1,36 +1,8 @@
 open Util
 module CD = Coverage.Domain
 
-module SeedTuple = struct
-  type t = Llvm.llmodule * int
-
-  let compare (llm1, distance1) (llm2, distance2) =
-    if distance1 == distance2 then
-      let llm1_size = llm1 |> ALlvm.string_of_llmodule |> String.length in
-      let llm2_size = llm2 |> ALlvm.string_of_llmodule |> String.length in
-      Int.compare llm1_size llm2_size
-    else Int.compare distance1 distance2
-end
-
-module SeedSet = struct
-  include Set.Make (SeedTuple)
-
-  let add seedtuple set =
-    if cardinal set < !Config.max_initial_seed then add seedtuple set
-    else
-      let filtered =
-        filter
-          (fun tuple ->
-            if SeedTuple.compare tuple seedtuple <= 0 then true else false)
-          set
-      in
-      if cardinal filtered < !Config.max_initial_seed then
-        add seedtuple filtered
-      else filtered
-end
-
-type elt = Llvm.llmodule * bool * int
-type t = elt Queue.t
+type seed_t = Llvm.llmodule * bool * int
+type t = seed_t Queue.t
 
 let push s pool =
   Queue.push s pool;
@@ -38,6 +10,10 @@ let push s pool =
 
 let pop pool = (Queue.pop pool, pool)
 let cardinal = Queue.length
+
+let push_seq s p =
+  Queue.add_seq p s;
+  p
 
 let check_exist_ret f =
   ALlvm.fold_left_all_instr
@@ -53,10 +29,8 @@ let collect_instruction_types f =
       match ALlvm.classify_type ty with Void -> types | _ -> ty :: types)
     [] f
 
-(** *)
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
-  (* Set var names *)
   ALlvm.set_var_names f_old;
 
   let types = collect_instruction_types f_old in
@@ -142,53 +116,64 @@ let make llctx llset =
   let dir = !Config.seed_dir in
   let target_path = CD.Path.parse !Config.cov_directed in
   assert (Sys.file_exists dir && Sys.is_directory dir);
-  let seedpool, seedset =
+
+  let seed_files =
     Sys.readdir dir
     |> Array.to_list
     |> List.filter (fun file -> Filename.extension file = ".ll")
-    |> List.fold_left
-         (fun (queue, seedset) file ->
-           let path = Filename.concat dir file in
-           match
-             Oracle.Optimizer.run
-               ~passes:
-                 [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-               path
-           with
-           | CRASH | INVALID ->
-               AUtil.name_opted_ver path |> AUtil.clean;
-               (queue, seedset)
-           | VALID _ -> (
-               AUtil.name_opted_ver path |> AUtil.clean;
-               let llm =
-                 path
-                 |> ALlvm.MemoryBuffer.of_file
-                 |> Llvm_irreader.parse_ir llctx
-                 |> clean_llm llctx true
-               in
-               match llm with
-               | Some llm -> (
-                   match
-                     Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ]
-                       llset llm
-                   with
-                   | CRASH | INVALID -> (queue, seedset)
-                   | VALID cov -> (
-                       let covers = CD.Coverage.cover_target target_path cov in
-                       let score = CD.Coverage.score target_path cov in
-                       let score_int =
-                         Option.fold ~none:Int.max_int ~some:Fun.id score
-                       in
-                       if covers then
-                         (push (llm, true, score_int) queue, seedset)
-                       else
-                         try (queue, SeedSet.add (llm, score_int) seedset)
-                         with _ -> (queue, seedset)))
-               | None -> (queue, seedset)))
-         (Queue.create (), SeedSet.empty)
   in
-  if Queue.is_empty seedpool then
-    SeedSet.fold
-      (fun (llm, distance) seedpool -> push (llm, false, distance) seedpool)
-      seedset seedpool
-  else seedpool
+
+  let can_optimize file =
+    let path = Filename.concat dir file in
+    match
+      Oracle.Optimizer.run
+        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+        path
+    with
+    | CRASH | INVALID ->
+        AUtil.name_opted_ver path |> AUtil.clean;
+        false
+    | VALID _ ->
+        AUtil.name_opted_ver path |> AUtil.clean;
+        true
+  in
+
+  let pool_first, pool_later =
+    seed_files
+    |> List.fold_left
+         (fun (pool_first, pool_later) file ->
+           let path = Filename.concat dir file in
+           if can_optimize file |> not then (pool_first, pool_later)
+           else
+             let llm =
+               ALlvm.MemoryBuffer.of_file path
+               |> Llvm_irreader.parse_ir llctx
+               |> clean_llm llctx true
+             in
+             match llm with
+             | None -> (pool_first, pool_later)
+             | Some llm -> (
+                 match
+                   Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llset
+                     llm
+                 with
+                 | CRASH | INVALID -> (pool_first, pool_later)
+                 | VALID cov ->
+                     let covers = CD.Coverage.cover_target target_path cov in
+                     let score = CD.Coverage.score target_path cov in
+                     let score_int =
+                       match score with
+                       | None -> !Config.max_distance
+                       | Some x -> x
+                     in
+                     Format.eprintf "seed: %s, score: %d, covers: %b@." file
+                       score_int covers;
+                     if covers then
+                       (pool_first |> push (llm, true, score_int), pool_later)
+                     else
+                       (pool_first, pool_later |> push (llm, false, score_int))))
+         (Queue.create (), Queue.create ())
+  in
+
+  Queue.transfer pool_later pool_first;
+  pool_first
