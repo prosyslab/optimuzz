@@ -19,6 +19,7 @@ let initialize () =
   ()
 
 let main () =
+  let open Oracle in
   Printexc.record_backtrace true;
   ALlvm.set_opaque_pointers llctx true;
   initialize ();
@@ -40,12 +41,12 @@ let main () =
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then (
     let res =
-      Oracle.Optimizer.run
+      Optimizer.run
         ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
         !Config.cov_tgt_path
     in
     (match res with
-    | Oracle.Optimizer.VALID cov ->
+    | Optimizer.VALID cov ->
         F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
     | _ -> ());
     exit 0);
