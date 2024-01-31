@@ -58,7 +58,7 @@ let main () =
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
-  let coverage = Fuzzer.run seed_pool llctx llset CD.Coverage.empty 0 in
+  let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
   let end_time = AUtil.now () in
 
   if not !Config.no_tv then Unix.unlink AUtil.alive2_log;
