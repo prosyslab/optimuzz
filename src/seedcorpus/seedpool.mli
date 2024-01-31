@@ -7,4 +7,5 @@ type t = seed_t Queue.t
 val make : llcontext -> unit LLModuleSet.t -> t
 val pop : t -> seed_t * t
 val push : seed_t -> t -> t
+val push_seq : seed_t Seq.t -> t -> t
 val cardinal : t -> int

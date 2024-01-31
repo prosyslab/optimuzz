@@ -11,6 +11,10 @@ let push s pool =
 let pop pool = (Queue.pop pool, pool)
 let cardinal = Queue.length
 
+let push_seq s p =
+  Queue.add_seq p s;
+  p
+
 let check_exist_ret f =
   ALlvm.fold_left_all_instr
     (fun res instr ->
