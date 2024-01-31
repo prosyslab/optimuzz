@@ -46,11 +46,11 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let target_path = CD.Path.parse !Config.cov_directed
-
 (* each mutant is mutated [Config.num_mutation] times *)
-let rec mutate_seed llctx llset mode best_score seed progress times :
-    SeedPool.seed_t option * Progress.t =
+let rec mutate_seed llctx target_path llset mode best_score seed progress times
+    : SeedPool.seed_t option * Progress.t =
+  assert (best_score > 0);
+
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
     (* used up all allowed mutation times *)
@@ -69,12 +69,15 @@ let rec mutate_seed llctx llset mode best_score seed progress times :
         in
         match optim_res with
         | INVALID | CRASH ->
-            mutate_seed llctx llset mode best_score seed progress times
+            mutate_seed llctx target_path llset mode best_score seed progress
+              times
         | VALID cov_mutant ->
             let mutant_score = CD.Coverage.score target_path cov_mutant in
             let covered = CD.Coverage.cover_target target_path cov_mutant in
             let mutant_score_int =
-              match mutant_score with None -> Int.max_int | Some x -> x
+              match mutant_score with
+              | None -> !Config.max_distance
+              | Some x -> x
             in
             if covered then (
               ALlvm.save_ll !Config.corpus_dir filename mutant;
@@ -92,8 +95,8 @@ let rec mutate_seed llctx llset mode best_score seed progress times :
               (Some new_seed, progress |> Progress.inc_gen))
             else (
               record_timestamp progress.cov_sofar;
-              mutate_seed llctx llset mode best_score mutant progress (times - 1))
-        )
+              mutate_seed llctx target_path llset mode best_score mutant
+                progress (times - 1)))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
@@ -101,7 +104,8 @@ let rec run pool llctx llset progress =
   let (llm, covered, score), pool_popped = SeedPool.pop pool in
   let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
 
-  let mutator = mutate_seed llctx llset mode score in
+  let target_path = CD.Path.parse !Config.cov_directed in
+  let mutator = mutate_seed llctx target_path llset mode score in
 
   (* try generating interesting mutants *)
   (* each seed is mutated upto n mutants *)
