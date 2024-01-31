@@ -18,7 +18,6 @@ let get_current_time () =
   Format.sprintf "%d%02d%02d%02d%02d%02d" year month day hour min sec
 
 let now () = Unix.time () |> int_of_float
-let count = ref 0
 
 let name_opted_ver filename =
   if String.ends_with ~suffix:".ll" filename then
@@ -60,4 +59,4 @@ let readlines filename =
   lines
 
 let clean filename =
-  cmd [ "rm"; filename; "/dev/null"; "2> /dev/null" ] |> ignore
+  cmd [ "rm"; filename; "> /dev/null"; "2> /dev/null" ] |> ignore
