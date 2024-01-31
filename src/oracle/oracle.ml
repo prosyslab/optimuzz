@@ -22,8 +22,12 @@ module Validator = struct
       | 0 ->
           let lines = AUtil.readlines AUtil.alive2_log in
           let is_num_zero str =
-            str |> String.trim |> String.split_on_char ' ' |> List.hd
-            |> int_of_string = 0
+            str
+            |> String.trim
+            |> String.split_on_char ' '
+            |> List.hd
+            |> int_of_string
+            = 0
           in
           let str_incorrect = List.nth lines 1 in
           if is_num_zero str_incorrect then VALID else INVALID

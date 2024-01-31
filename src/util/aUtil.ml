@@ -18,8 +18,10 @@ let get_current_time () =
   let tm = Unix.gettimeofday () |> Unix.localtime in
   string_of_int (tm.tm_year + 1900)
   ^ string_of_int (tm.tm_mon + 1)
-  ^ string_of_int tm.tm_mday ^ string_of_int tm.tm_hour
-  ^ string_of_int tm.tm_min ^ string_of_int tm.tm_sec
+  ^ string_of_int tm.tm_mday
+  ^ string_of_int tm.tm_hour
+  ^ string_of_int tm.tm_min
+  ^ string_of_int tm.tm_sec
 
 let now () = Unix.time () |> int_of_float
 let count = ref 0

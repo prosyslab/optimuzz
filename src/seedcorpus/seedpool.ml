@@ -142,7 +142,8 @@ let make llctx =
   let dir = !Config.seed_dir in
   assert (Sys.file_exists dir && Sys.is_directory dir);
   let seedpool, seedset =
-    Sys.readdir dir |> Array.to_list
+    Sys.readdir dir
+    |> Array.to_list
     |> List.filter (fun file -> Filename.extension file = ".ll")
     |> List.fold_left
          (fun (queue, seedset) file ->
@@ -159,7 +160,8 @@ let make llctx =
            | VALID -> (
                AUtil.name_opted_ver path |> AUtil.clean;
                let llm =
-                 path |> ALlvm.MemoryBuffer.of_file
+                 path
+                 |> ALlvm.MemoryBuffer.of_file
                  |> Llvm_irreader.parse_ir llctx
                  |> clean_llm llctx true
                in

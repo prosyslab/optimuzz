@@ -131,11 +131,13 @@ let run pat_filename =
         let name = List.hd inner_paren in
         let pat_raw = inner_paren |> List.tl |> List.hd in
         ( name,
-          pat_raw |> String.trim
+          pat_raw
+          |> String.trim
           |> Str.global_replace (Str.regexp " ") ""
           |> parse_single_match ))
       lines
-    |> List.to_seq |> NameMap.of_seq
+    |> List.to_seq
+    |> NameMap.of_seq
   in
   (* link all patterns *)
   link patmap
