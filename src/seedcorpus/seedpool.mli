@@ -4,7 +4,7 @@ open Util.ALlvm
 type elt = llmodule * bool * int
 type t = elt Queue.t
 
-val make : llcontext -> t
+val make : llcontext -> unit LLModuleSet.t -> t
 val pop : t -> elt * t
 val push : elt -> t -> t
 val cardinal : t -> int

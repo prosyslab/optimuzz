@@ -1,10 +1,3 @@
-module Llset = Set.Make (struct
-  type t = Sha256.t
-
-  let compare sha1 sha2 = compare (Sha256.to_hex sha1) (Sha256.to_hex sha2)
-end)
-
-let llset = ref Llset.empty
 let cmd args = args |> String.concat " " |> Sys.command
 
 (* for logging *)
@@ -25,16 +18,6 @@ let get_current_time () =
 
 let now () = Unix.time () |> int_of_float
 let count = ref 0
-
-let save_hash llm =
-  let hash = Sha256.string llm in
-  llset := Llset.add hash !llset
-
-let get_new_name llm =
-  let hash = Sha256.string llm in
-  match Llset.find_opt hash !llset with
-  | Some _ -> ""
-  | None -> get_current_time () ^ "_" ^ Sha256.to_hex hash ^ ".ll"
 
 let name_opted_ver filename =
   if String.ends_with ~suffix:".ll" filename then
