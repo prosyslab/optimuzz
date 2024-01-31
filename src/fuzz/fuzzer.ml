@@ -1,5 +1,5 @@
 open Util
-open Coverage.Domain
+module CD = Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
@@ -20,7 +20,7 @@ let measure_optimizer_coverage filename llm =
     | CRASH ->
         (* leave the maximum distance to the coverage set
            for later fuzzing steps to be able to use it as a reference *)
-        DistanceSet.singleton !Config.max_distance
+        CD.DistanceSet.singleton !Config.max_distance
     | _ -> Coverage.Measurer.run ()
   in
 
@@ -39,7 +39,7 @@ let record_timestamp distances =
     output_string AUtil.timestamp_fp
       (string_of_int (AUtil.now () - !AUtil.start_time)
       ^ " "
-      ^ string_of_int (DistanceSet.cardinal distances)
+      ^ string_of_int (CD.DistanceSet.cardinal distances)
       ^ "\n"))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
@@ -65,10 +65,10 @@ let rec run pool llctx cov_set gen_count =
           measure_optimizer_coverage filename mutant
         in
 
-        let mutant_score = DistanceSet.metric cov_mutant in
+        let mutant_score = CD.DistanceSet.metric cov_mutant in
         (* check whether the seed is covering the target *)
         let covered =
-          !Config.cov_directed <> "" && DistanceSet.cover_target cov_mutant
+          !Config.cov_directed <> "" && CD.DistanceSet.cover_target cov_mutant
         in
 
         (* induce new pool and coverage *)
@@ -82,10 +82,10 @@ let rec run pool llctx cov_set gen_count =
           else if mutant_score < distance then (
             ALlvm.save_ll !Config.corpus_dir filename mutant;
             let pool = SeedPool.push (mutant, covered, mutant_score) pool in
-            let cov_set = DistanceSet.union cov_set cov_mutant in
+            let cov_set = CD.DistanceSet.union cov_set cov_mutant in
             F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
               (gen_count + 1)
-              (DistanceSet.cardinal cov_set);
+              (CD.DistanceSet.cardinal cov_set);
             (pool, cov_set, gen_count + 1, mutant, 0))
           else mutate_seed (pool, cov_set, gen_count, mutant, times - 1)
         in
