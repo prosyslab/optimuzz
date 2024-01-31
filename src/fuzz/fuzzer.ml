@@ -34,13 +34,11 @@ let measure_optimizer_coverage filename llm =
 
 let record_timestamp cov =
   (* timestamp *)
-  if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
-    AUtil.recent_time := AUtil.now ();
-    output_string AUtil.timestamp_fp
-      (string_of_int (AUtil.now () - !AUtil.start_time)
-      ^ " "
-      ^ string_of_int (CD.Coverage.cardinal cov)
-      ^ "\n"))
+  let now = AUtil.now () in
+  if now - !AUtil.recent_time > !Config.log_time then (
+    AUtil.recent_time := now;
+    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
+    |> output_string AUtil.timestamp_fp)
 
 let target_path = CD.Path.parse !Config.cov_directed
 
