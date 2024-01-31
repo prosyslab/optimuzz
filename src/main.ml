@@ -23,14 +23,17 @@ let main () =
   ALlvm.set_opaque_pointers llctx true;
   initialize ();
 
+  let llset = ALlvm.LLModuleSet.create 4096 in
+
   (* pattern *)
   if !Config.pattern_path <> "" then (
     let name, pat = !Config.pattern_path |> Pattern.Parser.run in
     let all_instances = Pattern.Instantiation.run name pat in
     List.iter
       (fun llm ->
-        let filename = AUtil.get_new_name (ALlvm.string_of_llmodule llm) in
-        if filename = "" then () else ALlvm.save_ll !Config.out_dir filename llm)
+        match ALlvm.LLModuleSet.get_new_name llset llm with
+        | None -> ()
+        | Some filename -> ALlvm.save_ll !Config.out_dir filename llm)
       all_instances;
     exit 0);
 
@@ -48,13 +51,13 @@ let main () =
     exit 0);
 
   (* fuzzing *)
-  let seed_pool = SeedPool.make llctx in
+  let seed_pool = SeedPool.make llctx llset in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
-  let coverage = Fuzzer.run seed_pool llctx CD.Coverage.empty 0 in
+  let coverage = Fuzzer.run seed_pool llctx llset CD.Coverage.empty 0 in
   let end_time = AUtil.now () in
 
   if not !Config.no_tv then Unix.unlink AUtil.alive2_log;

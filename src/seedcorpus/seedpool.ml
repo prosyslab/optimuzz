@@ -138,7 +138,7 @@ let rec clean_llm llctx wide llm =
   with _ -> if wide then clean_llm llctx false llm else None
 
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-let make llctx =
+let make llctx llset =
   let dir = !Config.seed_dir in
   let target_path = CD.Path.parse !Config.cov_directed in
   assert (Sys.file_exists dir && Sys.is_directory dir);
@@ -169,7 +169,8 @@ let make llctx =
                match llm with
                | Some llm -> (
                    match
-                     Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llm
+                     Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ]
+                       llset llm
                    with
                    | CRASH | INVALID -> (queue, seedset)
                    | VALID cov -> (
