@@ -384,7 +384,7 @@ let rec mutate_inner_bb llctx mode llm score =
     | CREATE -> create_rand_instr llctx None instr_tgt
     | OPCODE -> subst_rand_instr llctx instr_tgt
     | OPERAND -> subst_rand_opd llctx None instr_tgt
-    | FLAG -> None (*modify_flag llctx instr_tgt*)
+    | FLAG -> None (* modify_flag llctx instr_tgt *)
     | TYPE -> change_type llctx instr_tgt
   in
   match mutation_result with
@@ -455,8 +455,7 @@ let rec mutate_inner_bb llctx mode llm score =
      with _ -> None *)
 
 (* TODO: add fuzzing configuration *)
-let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
-  let mode = if seed.covers then FOCUS else EXPAND in
-  let llm_clone = Llvm_transform_utils.clone_module seed.llm in
-  mutate_inner_bb llctx mode llm_clone (int_of_float seed.score)
+let run llctx mode llm score =
+  let llm_clone = Llvm_transform_utils.clone_module llm in
+  mutate_inner_bb llctx mode llm_clone score
 (* |> mutate_CFG |> check_retval llctx *)
