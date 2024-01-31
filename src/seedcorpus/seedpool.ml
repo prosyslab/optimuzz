@@ -125,7 +125,11 @@ let make llctx llset =
 
   let can_optimize file =
     let path = Filename.concat dir file in
-    match Oracle.Optimizer.run ~passes:[ "globaldce" ] path with
+    match
+      Oracle.Optimizer.run
+        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+        path
+    with
     | CRASH | INVALID ->
         AUtil.name_opted_ver path |> AUtil.clean;
         false
@@ -158,8 +162,12 @@ let make llctx llset =
                      let covers = CD.Coverage.cover_target target_path cov in
                      let score = CD.Coverage.score target_path cov in
                      let score_int =
-                       Option.fold ~none:Int.max_int ~some:Fun.id score
+                       match score with
+                       | None -> !Config.max_distance
+                       | Some x -> x
                      in
+                     Format.eprintf "seed: %s, score: %d, covers: %b@." file
+                       score_int covers;
                      if covers then
                        (pool_first |> push (llm, true, score_int), pool_later)
                      else
