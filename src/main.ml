@@ -1,4 +1,4 @@
-open Coverage.Domain
+module CD = Coverage.Domain
 open Fuzz
 open Util
 module F = Format
@@ -43,7 +43,7 @@ let main () =
     |> ignore;
     let cov = Coverage.Measurer.run () in
     print_string "Total coverage: ";
-    cov |> DistanceSet.cardinal |> string_of_int |> print_endline;
+    cov |> CD.DistanceSet.cardinal |> string_of_int |> print_endline;
     exit 0);
 
   (* fuzzing *)
@@ -53,12 +53,12 @@ let main () =
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
-  let coverage = Fuzzer.run seed_pool llctx DistanceSet.empty 0 in
+  let coverage = Fuzzer.run seed_pool llctx CD.DistanceSet.empty 0 in
   let end_time = AUtil.now () in
 
   if not !Config.no_tv then Unix.unlink AUtil.alive2_log;
 
-  F.printf "\ntotal coverage: %d lines@." (DistanceSet.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (CD.DistanceSet.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let _ = main ()
