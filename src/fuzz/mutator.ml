@@ -5,15 +5,24 @@ module OpCls = OpcodeClass
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
 
+let pp_mutation fmt m =
+  match m with
+  | CREATE -> Format.fprintf fmt "CREATE"
+  | OPCODE -> Format.fprintf fmt "OPCODE"
+  | OPERAND -> Format.fprintf fmt "OPERAND"
+  | FLAG -> Format.fprintf fmt "FLAG"
+  | TYPE -> Format.fprintf fmt "TYPE"
+
 (* choose mutation *)
-let choose_mutation mode distance =
+let choose_mutation mode score =
   match mode with
   | EXPAND ->
       let mutations =
         [| CREATE; CREATE; OPCODE; OPCODE; OPERAND; OPERAND; FLAG; FLAG; TYPE |]
       in
-      let r = Random.int (distance + Array.length mutations) in
-      if r <= distance then mutations.(0) else mutations.(r - distance)
+      (* FIXME: highly skewed to CREATE if score is very big *)
+      let r = Random.int (score + Array.length mutations) in
+      if r <= score then mutations.(0) else mutations.(r - score)
   | FOCUS ->
       let mutations = [| OPCODE; OPERAND; FLAG; TYPE |] in
       let r = Random.int (Array.length mutations) in
@@ -363,12 +372,13 @@ let change_type llctx llv =
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx mode llm distance =
+let rec mutate_inner_bb llctx mode llm score =
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr_tgt = AUtil.choose_random all_instrs in
   (* depending on mode, available mutations differ *)
-  let mutation = choose_mutation mode distance in
+  let mutation = choose_mutation mode score in
+  Format.eprintf "mutation: %a, score: %d\n" pp_mutation mutation score;
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx None instr_tgt
@@ -379,7 +389,7 @@ let rec mutate_inner_bb llctx mode llm distance =
   in
   match mutation_result with
   | Some _ -> llm
-  | None -> mutate_inner_bb llctx mode llm distance
+  | None -> mutate_inner_bb llctx mode llm score
 
 (* CFG-related mutation *)
 (* let mutate_CFG = Fun.id *)
@@ -445,7 +455,7 @@ let rec mutate_inner_bb llctx mode llm distance =
      with _ -> None *)
 
 (* TODO: add fuzzing configuration *)
-let run llctx mode llm distance =
+let run llctx mode llm score =
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode llm_clone distance
+  mutate_inner_bb llctx mode llm_clone score
 (* |> mutate_CFG |> check_retval llctx *)
