@@ -1,4 +1,4 @@
-open Domain
+module D = Domain
 module F = Format
 
 let clean () = Util.AUtil.clean !Config.cov_file
@@ -7,18 +7,18 @@ let clean () = Util.AUtil.clean !Config.cov_file
 let run () =
   try
     let file = open_in !Config.cov_file in
-    let target = Path.parse !Config.cov_directed in
-    let dist l = Path.distance l target in
+    let target = D.Path.parse !Config.cov_directed in
+    let dist l = D.Path.distance l target in
     let rec aux accu =
       match input_line file with
       | line ->
-          let l = Path.parse line in
-          aux (DistanceSet.add (dist l) accu)
+          let l = D.Path.parse line in
+          aux (D.DistanceSet.add (dist l) accu)
       | exception End_of_file ->
           close_in file;
-          if DistanceSet.is_empty accu then
-            DistanceSet.singleton !Config.max_distance
+          if D.DistanceSet.is_empty accu then
+            D.DistanceSet.singleton !Config.max_distance
           else accu
     in
-    aux DistanceSet.empty
-  with Sys_error _ -> DistanceSet.singleton !Config.max_distance
+    aux D.DistanceSet.empty
+  with Sys_error _ -> D.DistanceSet.singleton !Config.max_distance

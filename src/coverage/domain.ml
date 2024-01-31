@@ -130,7 +130,7 @@ module Coverage : sig
   val empty : t
   val cardinal : t -> int
   val read : string -> t
-  val score : Path.t -> t -> int
+  val score : Path.t -> t -> int option
   val cover_target : Path.t -> t -> bool
 end = struct
   include Set.Make (Path)
@@ -159,7 +159,7 @@ end = struct
         cov (0, 0)
     in
 
-    total / cnt
+    if cnt = 0 then None else Some (total / cnt)
 
   let cover_target = mem
 end
