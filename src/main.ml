@@ -1,8 +1,8 @@
-module CD = Coverage.Domain
 open Fuzz
 open Util
 module F = Format
 module SeedPool = Seedcorpus.Seedpool
+module CD = Coverage.Domain
 
 let llctx = ALlvm.create_context ()
 
@@ -16,8 +16,7 @@ let initialize () =
 
   Random.init !Config.random_seed;
 
-  (* Clean previous coverage data *)
-  Coverage.Measurer.clean ()
+  ()
 
 let main () =
   Printexc.record_backtrace true;
@@ -37,13 +36,15 @@ let main () =
 
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then (
-    Oracle.Optimizer.run
-      ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-      !Config.cov_tgt_path
-    |> ignore;
-    let cov = Coverage.Measurer.run () in
-    print_string "Total coverage: ";
-    cov |> CD.DistanceSet.cardinal |> string_of_int |> print_endline;
+    let res =
+      Oracle.Optimizer.run
+        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+        !Config.cov_tgt_path
+    in
+    (match res with
+    | Oracle.Optimizer.VALID cov ->
+        F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
+    | _ -> ());
     exit 0);
 
   (* fuzzing *)
