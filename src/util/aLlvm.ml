@@ -1213,3 +1213,19 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
   in
 
   loop link_instr_init LLBMap.empty 0
+
+module LLModuleSet = struct
+  include Hashtbl.Make (struct
+    type t = llmodule
+
+    let equal = ( == )
+    let hash = Hashtbl.hash
+  end)
+
+  let get_new_name set llm =
+    match find_opt set llm with
+    | Some _ -> None
+    | None ->
+        let h = Hashtbl.hash llm |> string_of_int in
+        AUtil.get_current_time () ^ "_" ^ h ^ ".ll" |> Option.some
+end

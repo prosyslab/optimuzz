@@ -56,14 +56,14 @@ module Optimizer = struct
     let cov = CD.Coverage.read !Config.cov_file in
     if exit_state = 0 then VALID cov else CRASH
 
-  let run_for_llm ~passes llm =
-    let filename = AUtil.get_new_name (ALlvm.string_of_llmodule llm) in
-    if filename = "" then INVALID
-    else (
-      (* transform input into a file for the optimizer *)
-      ALlvm.save_ll !Config.out_dir filename llm;
-      let input = Filename.concat !Config.out_dir filename in
-      let result = run ~passes input in
-      AUtil.clean input;
-      result)
+  let run_for_llm ~passes llset llm =
+    match ALlvm.LLModuleSet.get_new_name llset llm with
+    | None -> INVALID
+    | Some filename ->
+        (* transform input into a file for the optimizer *)
+        ALlvm.save_ll !Config.out_dir filename llm;
+        let input = Filename.concat !Config.out_dir filename in
+        let result = run ~passes input in
+        AUtil.clean input;
+        result
 end
