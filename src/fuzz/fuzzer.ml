@@ -9,17 +9,17 @@ module F = Format
     Returns the results *)
 let measure_optimizer_coverage filename llm =
   let open Oracle in
-  Coverage.Measurer.clean ();
   ALlvm.save_ll !Config.out_dir filename llm;
   let filename = Filename.concat !Config.out_dir filename in
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res = Optimizer.run ~passes:optimizer_passes filename in
 
-  if !Config.no_tv then (optimization_res, VALID)
+  if !Config.no_tv then (optimization_res, Validator.VALID)
   else
     let validation_res = Validator.run filename optimized_ir_filename in
-    if validation_res <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
+    if validation_res <> Validator.VALID then
+      ALlvm.save_ll !Config.crash_dir filename llm;
     AUtil.clean filename;
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
