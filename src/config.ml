@@ -171,8 +171,12 @@ let initialize llctx () =
 
   (* consider dune directory *)
   project_home :=
-    Sys.argv.(0) |> Unix.realpath |> Filename.dirname |> Filename.dirname
-    |> Filename.dirname |> Filename.dirname;
+    Sys.argv.(0)
+    |> Unix.realpath
+    |> Filename.dirname
+    |> Filename.dirname
+    |> Filename.dirname
+    |> Filename.dirname;
 
   opt_bin := Filename.concat !project_home !opt_bin;
   alive_tv_bin := Filename.concat !project_home !alive_tv_bin;

@@ -645,9 +645,12 @@ and infer_types llctx ty_new curr typemap =
   | Some ty_new' ->
       if ty_new <> ty_new' then
         disclaim_ty llctx
-          ("Type conflict at " ^ string_of_llvalue curr ^ " ("
-         ^ string_of_lltype ty_new ^ string_of_lltype ty_new'
-         ^ "). Might leads to invalid IR. If so: ")
+          ("Type conflict at "
+          ^ string_of_llvalue curr
+          ^ " ("
+          ^ string_of_lltype ty_new
+          ^ string_of_lltype ty_new'
+          ^ "). Might leads to invalid IR. If so: ")
         |> ignore;
       typemap
   | None ->
@@ -698,7 +701,10 @@ let migrate_llv llv_old ty_expected link_instr =
           | Integer ->
               const_int ty_expected
                 (aggregate_element llv_old 0
-                |> Option.get |> int64_of_const |> Option.get |> Int64.to_int)
+                |> Option.get
+                |> int64_of_const
+                |> Option.get
+                |> Int64.to_int)
           | Vector ->
               let el_ty = element_type ty_expected in
               let vec_size = vector_size ty_expected in
@@ -706,7 +712,9 @@ let migrate_llv llv_old ty_expected link_instr =
                 Array.make vec_size
                   (const_int el_ty
                      (aggregate_element llv_old 0
-                     |> Option.get |> int64_of_const |> Option.get
+                     |> Option.get
+                     |> int64_of_const
+                     |> Option.get
                      |> Int64.to_int))
               in
               const_vector llv_arr
@@ -920,7 +928,8 @@ let migrate llctx f_old f_new typemap =
     Array.mapi
       (fun i param_old -> (param_old, Array.get params_new i))
       (params f_old)
-    |> Array.to_seq |> LLVMap.of_seq
+    |> Array.to_seq
+    |> LLVMap.of_seq
   in
 
   (* have to build blocks first (for some instructions) *)
@@ -1179,7 +1188,8 @@ let copy_function_with_new_retval llctx f_old f_new f_new_type =
     let params_new = params f_new in
     params f_old
     |> Array.mapi (fun i param_old -> (param_old, params_new.(i)))
-    |> Array.to_seq |> LLVMap.of_seq
+    |> Array.to_seq
+    |> LLVMap.of_seq
   in
 
   (* have to build blocks first (for some instructions) *)
