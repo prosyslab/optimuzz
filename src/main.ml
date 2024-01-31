@@ -54,12 +54,12 @@ let main () =
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
-  let coverage = Fuzzer.run seed_pool llctx CD.DistanceSet.empty 0 in
+  let coverage = Fuzzer.run seed_pool llctx CD.Coverage.empty 0 in
   let end_time = AUtil.now () in
 
   if not !Config.no_tv then Unix.unlink AUtil.alive2_log;
 
-  F.printf "\ntotal coverage: %d lines@." (CD.DistanceSet.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let _ = main ()

@@ -1,5 +1,5 @@
 open Util.ALlvm
 open Seedcorpus
-open Coverage.Domain
+module CD = Coverage.Domain
 
-val run : Seedpool.t -> llcontext -> DistanceSet.t -> int -> DistanceSet.t
+val run : Seedpool.t -> llcontext -> CD.Coverage.t -> int -> CD.Coverage.t
