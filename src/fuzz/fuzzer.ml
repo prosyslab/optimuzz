@@ -15,22 +15,14 @@ let measure_optimizer_coverage filename llm =
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res = Optimizer.run ~passes:optimizer_passes filename in
-  let coverage =
-    match optimization_res with
-    | CRASH ->
-        (* leave the maximum distance to the coverage set
-           for later fuzzing steps to be able to use it as a reference *)
-        CD.DistanceSet.singleton !Config.max_distance
-    | _ -> Coverage.Measurer.run ()
-  in
 
-  if !Config.no_tv then (optimization_res, VALID, coverage)
+  if !Config.no_tv then (optimization_res, VALID)
   else
     let validation_res = Validator.run filename optimized_ir_filename in
     if validation_res <> VALID then ALlvm.save_ll !Config.crash_dir filename llm;
     AUtil.clean filename;
     AUtil.clean optimized_ir_filename;
-    (optimization_res, validation_res, coverage)
+    (optimization_res, validation_res)
 
 let record_timestamp distances =
   (* timestamp *)
