@@ -24,15 +24,17 @@ let measure_optimizer_coverage filename llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let record_timestamp distances =
+let record_timestamp cov =
   (* timestamp *)
   if AUtil.now () - !AUtil.recent_time > !Config.log_time then (
     AUtil.recent_time := AUtil.now ();
     output_string AUtil.timestamp_fp
       (string_of_int (AUtil.now () - !AUtil.start_time)
       ^ " "
-      ^ string_of_int (CD.DistanceSet.cardinal distances)
+      ^ string_of_int (CD.Coverage.cardinal cov)
       ^ "\n"))
+
+let target_path = CD.Path.parse !Config.cov_directed
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
@@ -41,50 +43,59 @@ let rec run pool llctx cov_set gen_count =
   let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
 
   (* each mutant is mutated [Config.num_mutation] times *)
-  let rec mutate_seed (pool, cov_set, gen_count, seed, times) =
+  let rec mutate_seed (pool, cov_sofar, gen_count, seed, times) =
     if times = 0 then (
       AUtil.save_hash (ALlvm.string_of_llmodule seed);
-      (pool, cov_set, gen_count, seed, times))
+      (pool, cov_sofar, gen_count, seed, times))
     else if times < 0 then invalid_arg "Expected nonnegative mutation times"
     else
       let mutant = Mutator.run llctx mode seed distance in
       let filename = AUtil.get_new_name (ALlvm.string_of_llmodule mutant) in
       (* if mutant is duplicated then just pass*)
-      if filename = "" then (pool, cov_set, gen_count + 1, seed, times)
+      if filename = "" then (pool, cov_sofar, gen_count + 1, seed, times)
       else
         (* TODO: not using run result, only caring coverage *)
-        let _optim_res, _valid_res, cov_mutant =
+        let optim_res, _valid_res =
           measure_optimizer_coverage filename mutant
         in
 
-        let mutant_score = CD.DistanceSet.metric cov_mutant in
-        (* check whether the seed is covering the target *)
-        let covered =
-          !Config.cov_directed <> "" && CD.DistanceSet.cover_target cov_mutant
-        in
+        match optim_res with
+        | INVALID | CRASH ->
+            mutate_seed (pool, cov_sofar, gen_count, seed, times)
+        | VALID cov_mutant ->
+            let mutant_score = CD.Coverage.score target_path cov_mutant in
+            let covered = CD.Coverage.cover_target target_path cov_mutant in
 
-        (* induce new pool and coverage *)
-        let pool', cov_set', gen_count, seed', times' =
-          (* when mutated code cover target then push to queue *)
-          if covered then (
-            ALlvm.save_ll !Config.corpus_dir filename mutant;
-            let pool = SeedPool.push (mutant, covered, mutant_score) pool in
-            (pool, cov_set, gen_count + 1, mutant, 0)
-            (* when mutated code is closer to the target than before then push to queue *))
-          else if mutant_score < distance then (
-            ALlvm.save_ll !Config.corpus_dir filename mutant;
-            let pool = SeedPool.push (mutant, covered, mutant_score) pool in
-            let cov_set = CD.DistanceSet.union cov_set cov_mutant in
-            F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
-              (gen_count + 1)
-              (CD.DistanceSet.cardinal cov_set);
-            (pool, cov_set, gen_count + 1, mutant, 0))
-          else mutate_seed (pool, cov_set, gen_count, mutant, times - 1)
-        in
+            let mutant_score_int =
+              Option.fold ~none:Int.max_int ~some:Fun.id mutant_score
+            in
 
-        record_timestamp cov_set';
+            (* induce new pool and coverage *)
+            let pool', cov_set', gen_count, seed', times' =
+              (* when mutated code cover target then push to queue *)
+              if covered then (
+                ALlvm.save_ll !Config.corpus_dir filename mutant;
+                let pool =
+                  SeedPool.push (mutant, covered, mutant_score_int) pool
+                in
+                (pool, cov_sofar, gen_count + 1, mutant, 0)
+                (* when mutated code is closer to the target than before then push to queue *))
+              else if mutant_score_int < distance then (
+                ALlvm.save_ll !Config.corpus_dir filename mutant;
+                let pool =
+                  SeedPool.push (mutant, covered, mutant_score_int) pool
+                in
+                let cov_sofar = CD.Coverage.union cov_sofar cov_mutant in
+                F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
+                  (gen_count + 1)
+                  (CD.Coverage.cardinal cov_sofar);
+                (pool, cov_sofar, gen_count + 1, mutant, 0))
+              else mutate_seed (pool, cov_sofar, gen_count, mutant, times - 1)
+            in
 
-        (pool', cov_set', gen_count, seed', times')
+            record_timestamp cov_set';
+
+            (pool', cov_set', gen_count, seed', times')
   in
 
   (* each seed is mutated upto n mutants *)
