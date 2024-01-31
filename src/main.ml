@@ -55,6 +55,10 @@ let main () =
   let seed_pool = SeedPool.make llctx llset in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
+  if SeedPool.cardinal seed_pool = 0 then (
+    F.printf "no seed loaded@.";
+    exit 0);
+
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
