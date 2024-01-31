@@ -49,7 +49,7 @@ module Optimizer = struct
     let output =
       match output with None -> "/dev/null" | Some x -> AUtil.name_opted_ver x
     in
-    Coverage.Measurer.clean ();
+    Util.AUtil.clean !Config.cov_file;
     let exit_state =
       Util.AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
     in

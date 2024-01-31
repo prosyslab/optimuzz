@@ -168,7 +168,6 @@ let make llctx =
                in
                match llm with
                | Some llm -> (
-                   Coverage.Measurer.clean ();
                    match
                      Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llm
                    with
