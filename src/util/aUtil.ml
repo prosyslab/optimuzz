@@ -9,12 +9,13 @@ let timestamp_fp = open_out timestamp
 
 let get_current_time () =
   let tm = Unix.gettimeofday () |> Unix.localtime in
-  string_of_int (tm.tm_year + 1900)
-  ^ string_of_int (tm.tm_mon + 1)
-  ^ string_of_int tm.tm_mday
-  ^ string_of_int tm.tm_hour
-  ^ string_of_int tm.tm_min
-  ^ string_of_int tm.tm_sec
+  let year = tm.tm_year + 1900 in
+  let month = tm.tm_mon + 1 in
+  let day = tm.tm_mday in
+  let hour = tm.tm_hour in
+  let min = tm.tm_min in
+  let sec = tm.tm_sec in
+  Format.sprintf "%d%02d%02d%02d%02d%02d" year month day hour min sec
 
 let now () = Unix.time () |> int_of_float
 let count = ref 0
