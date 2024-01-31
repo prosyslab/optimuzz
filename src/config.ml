@@ -23,7 +23,7 @@ let alive_tv_bin = ref "Alive2/alive2/build/alive-tv"
 (* seed options *)
 let max_initial_seed = ref 100
 let random_seed = ref 0
-let max_distance = ref 65536
+let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 
 (* fuzzing options *)
 let time_budget = ref (-1)
