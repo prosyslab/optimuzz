@@ -1,6 +1,6 @@
 open Util.ALlvm
 
-(* a seed pool is a queue of (seed, covered, distance) *)
+(* a seed pool is a queue of (seed, covered, score) *)
 type elt = llmodule * bool * int
 type t = elt Queue.t
 
