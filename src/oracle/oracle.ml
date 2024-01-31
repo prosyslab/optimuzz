@@ -49,12 +49,17 @@ module Optimizer = struct
     let output =
       match output with None -> "/dev/null" | Some x -> AUtil.name_opted_ver x
     in
-    Util.AUtil.clean !Config.cov_file;
+    AUtil.clean !Config.cov_file;
     let exit_state =
-      Util.AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
+      AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
     in
-    let cov = CD.Coverage.read !Config.cov_file in
-    if exit_state = 0 then VALID cov else CRASH
+    try
+      let cov = CD.Coverage.read !Config.cov_file in
+      if exit_state = 0 then VALID cov else CRASH
+    with Sys_error _ ->
+      (* cov.cov is not generated : the file did not trigger [passes] *)
+      prerr_endline "Optimizer: cov.cov is not generated";
+      INVALID
 
   let run_for_llm ~passes llset llm =
     match ALlvm.LLModuleSet.get_new_name llset llm with
