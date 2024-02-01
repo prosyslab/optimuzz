@@ -1,11 +1,11 @@
 open Util
 module CD = Coverage.Domain
 
-type seed_t = { llm : Llvm.llmodule; covers : bool; score : int }
+type seed_t = { llm : Llvm.llmodule; covers : bool; score : float }
 type t = seed_t Queue.t
 
 let pp_seed fmt seed =
-  Format.fprintf fmt "score: %d, covers: %b@." seed.score seed.covers
+  Format.fprintf fmt "score: %.3f, covers: %b@." seed.score seed.covers
 
 let push s pool =
   Queue.push s pool;
@@ -166,7 +166,7 @@ let make llctx llset =
                      let score = CD.Coverage.score target_path cov in
                      let score_int =
                        match score with
-                       | None -> !Config.max_distance
+                       | None -> !Config.max_distance |> float_of_int
                        | Some x -> x
                      in
                      let seed = { llm; covers; score = score_int } in
