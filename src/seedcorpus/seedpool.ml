@@ -1,8 +1,11 @@
 open Util
 module CD = Coverage.Domain
 
-type seed_t = Llvm.llmodule * bool * int
+type seed_t = { llm : Llvm.llmodule; covers : bool; score : int }
 type t = seed_t Queue.t
+
+let pp_seed fmt seed =
+  Format.fprintf fmt "score: %d, covers: %b@." seed.score seed.covers
 
 let push s pool =
   Queue.push s pool;
@@ -166,12 +169,10 @@ let make llctx llset =
                        | None -> !Config.max_distance
                        | Some x -> x
                      in
-                     Format.eprintf "seed: %s, score: %d, covers: %b@." file
-                       score_int covers;
-                     if covers then
-                       (pool_first |> push (llm, true, score_int), pool_later)
-                     else
-                       (pool_first, pool_later |> push (llm, false, score_int))))
+                     let seed = { llm; covers; score = score_int } in
+                     Format.eprintf "seed: %s, %a@." file pp_seed seed;
+                     if covers then (pool_first |> push seed, pool_later)
+                     else (pool_first, pool_later |> push seed)))
          (Queue.create (), Queue.create ())
   in
 
