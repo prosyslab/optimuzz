@@ -47,17 +47,18 @@ let record_timestamp cov =
     |> output_string AUtil.timestamp_fp)
 
 (* each mutant is mutated [Config.num_mutation] times *)
-let rec mutate_seed llctx target_path llset mode best_score seed progress times
-    : SeedPool.seed_t option * Progress.t =
-  assert (best_score > 0);
+let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
+    times : SeedPool.seed_t option * Progress.t =
+  assert (seed.score > 0);
 
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
     (* used up all allowed mutation times *)
-    ALlvm.LLModuleSet.add llset seed ();
+    ALlvm.LLModuleSet.add llset seed.llm ();
     (None, progress))
   else
-    let mutant = Mutator.run llctx mode seed best_score in
+    let mode = if seed.covers then Mutator.FOCUS else Mutator.EXPAND in
+    let mutant = Mutator.run llctx mode seed.llm seed.score in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
         (* fresh seed *)
@@ -69,8 +70,7 @@ let rec mutate_seed llctx target_path llset mode best_score seed progress times
         in
         match optim_res with
         | INVALID | CRASH ->
-            mutate_seed llctx target_path llset mode best_score seed progress
-              times
+            mutate_seed llctx target_path llset seed progress times
         | VALID cov_mutant ->
             let mutant_score = CD.Coverage.score target_path cov_mutant in
             let covered = CD.Coverage.cover_target target_path cov_mutant in
@@ -79,14 +79,15 @@ let rec mutate_seed llctx target_path llset mode best_score seed progress times
               | None -> !Config.max_distance
               | Some x -> x
             in
+            let new_seed : SeedPool.seed_t =
+              { llm = mutant; covers = covered; score = mutant_score_int }
+            in
             if covered then (
               ALlvm.save_ll !Config.corpus_dir filename mutant;
-              let new_seed = (mutant, covered, mutant_score_int) in
               record_timestamp progress.cov_sofar;
               (Some new_seed, progress |> Progress.inc_gen))
-            else if mutant_score_int < best_score then (
+            else if mutant_score_int < seed.score then (
               ALlvm.save_ll !Config.corpus_dir filename mutant;
-              let new_seed = (mutant, covered, mutant_score_int) in
               let cov_sofar = CD.Coverage.union progress.cov_sofar cov_mutant in
               F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
                 (progress.gen_count + 1)
@@ -95,24 +96,21 @@ let rec mutate_seed llctx target_path llset mode best_score seed progress times
               (Some new_seed, progress |> Progress.inc_gen))
             else (
               record_timestamp progress.cov_sofar;
-              mutate_seed llctx target_path llset mode best_score mutant
-                progress (times - 1)))
+              mutate_seed llctx target_path llset seed progress (times - 1)))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx llset progress =
-  let (llm, covered, score), pool_popped = SeedPool.pop pool in
-  let mode = if covered then Mutator.FOCUS else Mutator.EXPAND in
-
+  let sd, pool_popped = SeedPool.pop pool in
   let target_path = CD.Path.parse !Config.cov_directed in
-  let mutator = mutate_seed llctx target_path llset mode score in
+  let mutator = mutate_seed llctx target_path llset in
 
   (* try generating interesting mutants *)
   (* each seed is mutated upto n mutants *)
   let rec iter times (seeds, progress) =
     if times = 0 then (seeds, progress)
     else
-      let new_seed, p = mutator llm progress !Config.num_mutation in
+      let new_seed, p = mutator sd progress !Config.num_mutation in
       iter (times - 1) (new_seed :: seeds, p |> Progress.union progress)
   in
 
@@ -122,7 +120,7 @@ let rec run pool llctx llset progress =
   let new_pool =
     pool_popped
     |> SeedPool.push_seq (new_seeds |> List.to_seq)
-    |> SeedPool.push (llm, covered, score)
+    |> SeedPool.push sd
   in
 
   (* repeat until the time budget or seed pool exhausts *)
