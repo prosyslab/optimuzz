@@ -1,7 +1,7 @@
 open Util.ALlvm
 
 (* a seed pool is a queue of (seed, covered, score) *)
-type seed_t = llmodule * bool * int
+type seed_t = { llm : llmodule; covers : bool; score : int }
 type t = seed_t Queue.t
 
 val make : llcontext -> unit LLModuleSet.t -> t
