@@ -43,7 +43,7 @@ let record_timestamp cov =
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     times : SeedPool.seed_t option * Progress.t =
-  assert (seed.score > 0);
+  assert (seed.score > 0.0);
 
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
@@ -52,7 +52,7 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     (None, progress))
   else
     let mode = if seed.covers then Mutator.FOCUS else Mutator.EXPAND in
-    let mutant = Mutator.run llctx mode seed.llm seed.score in
+    let mutant = Mutator.run llctx mode seed.llm (int_of_float seed.score) in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
         (* duplicated seed *)
@@ -69,7 +69,9 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
             let covered = CD.Coverage.cover_target target_path cov_mutant in
             let mutant_score =
               CD.Coverage.score target_path cov_mutant
-              |> Option.fold ~none:!Config.max_distance ~some:Fun.id
+              |> Option.fold
+                   ~none:(!Config.max_distance |> float_of_int)
+                   ~some:Fun.id
             in
             let new_seed : SeedPool.seed_t =
               { llm = mutant; covers = covered; score = mutant_score }

@@ -44,7 +44,7 @@ end = struct
     length src - p + (length dst - p)
 
   let distances src dst =
-    src (* A :: B :: C -> [ A ; A :: B ; A :: B :: C ] *)
+    src (* [A; B; C] *)
     |> List.rev (* [C; B; A] *)
     |> List.fold_left (* [ A ; A :: B ; A :: B :: C ] *)
          (fun accu p -> [ p ] :: List.map (fun a -> p :: a) accu)
@@ -72,7 +72,7 @@ module Coverage : sig
   val cardinal : t -> int
   val union : t -> t -> t
   val read : string -> t
-  val score : Path.t -> t -> int option
+  val score : Path.t -> t -> float option
   val cover_target : Path.t -> t -> bool
 end = struct
   include Set.Make (Path)
@@ -90,7 +90,7 @@ end = struct
     close_in ic;
     cov
 
-  let score (target_path : Path.t) (cov : t) =
+  let score target_path cov =
     let distances : DistanceSet.t =
       fold
         (fun path accu ->
@@ -102,7 +102,8 @@ end = struct
 
     Format.eprintf "total: %d, cnt: %d@." total cnt;
 
-    if cnt = 0 then None else Some (total / cnt)
+    if cnt = 0 then None
+    else float_of_int total /. float_of_int cnt |> Option.some
 
   let cover_target = mem
 end
