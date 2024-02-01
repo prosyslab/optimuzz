@@ -6,9 +6,9 @@ module Path : sig
   val parse : string -> t
   val length : t -> int
   val distance : t -> t -> int
-  val distances : t -> t -> int list
+  val distances : t -> t -> (t * int) list
 end = struct
-  type t = { file : string; func : string; path : string list }
+  type t = string list
   (** represents a line in the coverage file *)
 
   let compare = compare
@@ -20,11 +20,11 @@ end = struct
   let parse s =
     let chunks = String.split_on_char ':' s |> List.filter (( <> ) "") in
     match chunks with
-    | file :: func :: path -> { file; func; path }
+    | file :: func :: ids -> file :: func :: ids
     | _ -> failwith ("ill-formed path" ^ s)
 
   (** file and func also count as a length *)
-  let length l = 2 + List.length l.path
+  let length = List.length
 
   (* how many same nodes along the path from the root
    * src : file1 ; func1 ; path1  ; path2  ; ...
@@ -36,9 +36,7 @@ end = struct
       | _ -> acc
     in
 
-    if src.file <> dst.file then 0
-    else if src.func <> dst.func then 1
-    else fold 2 src.path dst.path
+    fold 0 src dst
 
   (** [distance src dst] returns the distance of two nodes in a tree *)
   let distance src dst =
@@ -46,10 +44,25 @@ end = struct
     length src - p + (length dst - p)
 
   let distances src dst =
-    let p = equal_depth src dst in
-    let upper = List.init p (fun i -> i + p) in
-    let lower = List.init (length src - p) (fun i -> i + p) in
-    upper @ lower
+    src (* A :: B :: C -> [ A ; A :: B ; A :: B :: C ] *)
+    |> List.rev (* [C; B; A] *)
+    |> List.fold_left (* [ A ; A :: B ; A :: B :: C ] *)
+         (fun accu p -> [ p ] :: List.map (fun a -> p :: a) accu)
+         []
+    |> List.fold_left (* [ (A, n1); (A :: B, n2); (A :: B :: C; n3) ] *)
+         (fun accu p -> (p, distance p dst) :: accu)
+         []
+end
+
+module DistanceSet = struct
+  include Set.Make (struct
+    type t = Path.t * int
+
+    let compare = compare
+  end)
+
+  let sum_cnt s =
+    (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
 end
 
 module Coverage : sig
@@ -77,17 +90,15 @@ end = struct
     close_in ic;
     cov
 
-  let sum_cnt =
-    List.fold_left (fun (total, cnt) x -> (total + x, cnt + 1)) (0, 0)
-
-  let score target_path cov =
-    let total, cnt =
+  let score (target_path : Path.t) (cov : t) =
+    let distances : DistanceSet.t =
       fold
-        (fun path (total, cnt) ->
-          let sub_total, sub_cnt = Path.distances path target_path |> sum_cnt in
-          (total + sub_total, sub_cnt + cnt))
-        cov (0, 0)
+        (fun path accu ->
+          let ds = Path.distances path target_path |> List.to_seq in
+          accu |> DistanceSet.add_seq ds)
+        cov DistanceSet.empty
     in
+    let total, cnt = DistanceSet.sum_cnt distances in
 
     Format.eprintf "total: %d, cnt: %d@." total cnt;
 
