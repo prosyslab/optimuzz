@@ -10,12 +10,6 @@ module Progress = struct
   let empty = { cov_sofar = CD.Coverage.empty; gen_count = 0 }
   let inc_gen p = { p with gen_count = p.gen_count + 1 }
   let add_cov cov p = { p with cov_sofar = CD.Coverage.union p.cov_sofar cov }
-
-  let union p1 p2 =
-    {
-      cov_sofar = CD.Coverage.union p1.cov_sofar p2.cov_sofar;
-      gen_count = p1.gen_count + p2.gen_count;
-    }
 end
 
 (** runs optimizer with an input file
@@ -61,8 +55,8 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     let mutant = Mutator.run llctx mode seed.llm seed.score in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
-        (* fresh seed *)
-        (None, progress |> Progress.inc_gen)
+        (* duplicated seed *)
+        (None, progress)
     | Some filename -> (
         (* TODO: not using run result, only caring coverage *)
         let optim_res, _valid_res =
@@ -72,28 +66,24 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
         | INVALID | CRASH ->
             mutate_seed llctx target_path llset seed progress times
         | VALID cov_mutant ->
-            let mutant_score = CD.Coverage.score target_path cov_mutant in
             let covered = CD.Coverage.cover_target target_path cov_mutant in
-            let mutant_score_int =
-              match mutant_score with
-              | None -> !Config.max_distance
-              | Some x -> x
+            let mutant_score =
+              CD.Coverage.score target_path cov_mutant
+              |> Option.fold ~none:!Config.max_distance ~some:Fun.id
             in
             let new_seed : SeedPool.seed_t =
-              { llm = mutant; covers = covered; score = mutant_score_int }
+              { llm = mutant; covers = covered; score = mutant_score }
             in
-            if covered then (
+            if covered || mutant_score < seed.score then (
               ALlvm.save_ll !Config.corpus_dir filename mutant;
+              let progress =
+                progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
+              in
+              F.printf "\r#newly generated seeds: %d, total coverage: %d@?"
+                progress.gen_count
+                (CD.Coverage.cardinal progress.cov_sofar);
               record_timestamp progress.cov_sofar;
-              (Some new_seed, progress |> Progress.inc_gen))
-            else if mutant_score_int < seed.score then (
-              ALlvm.save_ll !Config.corpus_dir filename mutant;
-              let cov_sofar = CD.Coverage.union progress.cov_sofar cov_mutant in
-              F.printf "\r#newly generated seeds: %d, total coverge: %d@?"
-                (progress.gen_count + 1)
-                (CD.Coverage.cardinal cov_sofar);
-              record_timestamp progress.cov_sofar;
-              (Some new_seed, progress |> Progress.inc_gen))
+              (Some new_seed, progress))
             else (
               record_timestamp progress.cov_sofar;
               mutate_seed llctx target_path llset seed progress (times - 1)))
@@ -101,17 +91,17 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx llset progress =
-  let sd, pool_popped = SeedPool.pop pool in
+  let seed, pool_popped = SeedPool.pop pool in
   let target_path = CD.Path.parse !Config.cov_directed in
   let mutator = mutate_seed llctx target_path llset in
 
   (* try generating interesting mutants *)
-  (* each seed is mutated upto n mutants *)
+  (* each seed gets mutated upto n times *)
   let rec iter times (seeds, progress) =
     if times = 0 then (seeds, progress)
     else
-      let new_seed, p = mutator sd progress !Config.num_mutation in
-      iter (times - 1) (new_seed :: seeds, p |> Progress.union progress)
+      let new_seed, new_progress = mutator seed progress !Config.num_mutation in
+      iter (times - 1) (new_seed :: seeds, new_progress)
   in
 
   let new_seeds, progress = iter !Config.num_mutant ([], progress) in
@@ -120,7 +110,7 @@ let rec run pool llctx llset progress =
   let new_pool =
     pool_popped
     |> SeedPool.push_seq (new_seeds |> List.to_seq)
-    |> SeedPool.push sd
+    |> SeedPool.push seed
   in
 
   (* repeat until the time budget or seed pool exhausts *)
