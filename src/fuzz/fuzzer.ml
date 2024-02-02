@@ -10,6 +10,10 @@ module Progress = struct
   let empty = { cov_sofar = CD.Coverage.empty; gen_count = 0 }
   let inc_gen p = { p with gen_count = p.gen_count + 1 }
   let add_cov cov p = { p with cov_sofar = CD.Coverage.union p.cov_sofar cov }
+
+  let pp fmt progress =
+    F.fprintf fmt "generated: %d, coverage: %d" progress.gen_count
+      (CD.Coverage.cardinal progress.cov_sofar)
 end
 
 (** runs optimizer with an input file
@@ -81,9 +85,6 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
               in
-              F.printf "\r#newly generated seeds: %d, total coverage: %d@?"
-                progress.gen_count
-                (CD.Coverage.cardinal progress.cov_sofar);
               record_timestamp progress.cov_sofar;
               (Some new_seed, progress))
             else (
@@ -107,8 +108,10 @@ let rec run pool llctx llset progress =
   in
 
   let new_seeds, progress = iter !Config.num_mutant ([], progress) in
+  F.printf "\r%a@?" Progress.pp progress;
 
   let new_seeds = List.filter_map Fun.id new_seeds in
+  List.iter (F.eprintf "%a\n" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
     |> SeedPool.push_seq (new_seeds |> List.to_seq)
