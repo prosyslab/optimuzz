@@ -10,7 +10,12 @@ let initialize () =
   Config.initialize llctx ();
 
   (* make directories first *)
-  (try Sys.mkdir !Config.out_dir 0o755 with _ -> ());
+  (try Sys.mkdir !Config.out_dir 0o755
+   with Sys_error msg ->
+     F.eprintf "%s@." msg;
+     F.eprintf "It seems like the output directory already exists.@.";
+     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
+     exit 0);
   (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
   (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
 
