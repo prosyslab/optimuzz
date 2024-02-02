@@ -58,8 +58,7 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     ALlvm.LLModuleSet.add llset seed.llm ();
     (None, progress))
   else
-    let mode = if seed.covers then Mutator.FOCUS else Mutator.EXPAND in
-    let mutant = Mutator.run llctx mode seed.llm (int_of_float seed.score) in
+    let mutant = Mutator.run llctx seed in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
         (* duplicated seed *)
