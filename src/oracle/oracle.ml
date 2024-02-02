@@ -9,25 +9,26 @@ module Validator = struct
 
   let run src optimized =
     assert (optimized = AUtil.name_opted_ver src);
-    if Sys.file_exists src && Sys.file_exists optimized then (
+    if Sys.file_exists src && Sys.file_exists optimized then
       let tv_process =
         Unix.open_process_args_in !Config.alive_tv_bin
           [| !Config.alive_tv_bin; src; optimized |]
       in
       let text = In_channel.input_all tv_process in
-      F.eprintf "%s@." text;
+      (*F.eprintf "%s@." text;*)
       let status = Unix.close_process_in tv_process in
       match status with
-      | Unix.WEXITED 0 ->
+      | Unix.WEXITED 0 -> (
           let lines =
             text
             |> String.split_on_char '\n'
             |> List.rev
             |> List.to_seq
-            |> Seq.take 4
+            |> Seq.take 5
             |> List.of_seq
             |> List.rev
           in
+          List.iter prerr_endline lines;
           let eq_line line x =
             line
             |> String.trim
@@ -36,22 +37,28 @@ module Validator = struct
             |> int_of_string
             = x
           in
-          let str_correct = List.nth lines 0 in
-          let str_incorrect = List.nth lines 1 in
-          let str_failed = List.nth lines 2 in
-          if eq_line str_correct 1 then (
-            F.eprintf "Validator: %s refines %s@." optimized src;
-            Correct)
-          else if eq_line str_incorrect 1 then (
-            F.eprintf "Validator: %s does not refine %s@." optimized src;
-            Incorrect)
-          else if eq_line str_failed 1 then (
-            F.eprintf "Validator failed to validate %s and %s@." src optimized;
-            Failed)
-          else (
-            F.eprintf "Validator exited with errors@.";
-            Errors)
-      | _ -> Errors)
+          match lines with
+          | correct :: incorrect :: failed :: _errors ->
+              if eq_line correct 1 then (
+                F.eprintf "Validator: %s refines %s@."
+                  (Filename.basename optimized)
+                  (Filename.basename src);
+                Correct)
+              else if eq_line incorrect 1 then (
+                F.eprintf "Validator: %s does not refine %s@."
+                  (Filename.basename optimized)
+                  (Filename.basename src);
+                Incorrect)
+              else if eq_line failed 1 then (
+                F.eprintf "Validator failed to validate %s and %s@."
+                  (Filename.basename src)
+                  (Filename.basename optimized);
+                Failed)
+              else (
+                F.eprintf "Validator exited with errors@.";
+                Errors)
+          | _ -> failwith "unexpected alive-tv output")
+      | _ -> Errors
     else (
       F.eprintf "Validator: %s or %s are not found@." src optimized;
       Errors)

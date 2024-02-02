@@ -72,17 +72,17 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
         | INVALID | CRASH ->
             mutate_seed llctx target_path llset seed progress times
         | VALID cov_mutant ->
-            let covered = CD.Coverage.cover_target target_path cov_mutant in
-            let mutant_score =
-              CD.Coverage.score target_path cov_mutant
-              |> Option.fold
-                   ~none:(!Config.max_distance |> float_of_int)
-                   ~some:Fun.id
-            in
             let new_seed : SeedPool.seed_t =
+              let covered = CD.Coverage.cover_target target_path cov_mutant in
+              let mutant_score =
+                CD.Coverage.score target_path cov_mutant
+                |> Option.fold
+                     ~none:(!Config.max_distance |> float_of_int)
+                     ~some:Fun.id
+              in
               { llm = mutant; covers = covered; score = mutant_score }
             in
-            if covered || mutant_score < seed.score then (
+            if new_seed.covers || new_seed.score < seed.score then (
               ALlvm.save_ll !Config.corpus_dir filename mutant;
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
