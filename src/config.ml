@@ -31,7 +31,7 @@ let cov_directed = ref ""
 let num_mutation = ref 10
 let num_mutant = ref 1
 let no_tv = ref false
-let metric = ref "min"
+let metric = ref "avg"
 
 (* mutation options *)
 let interesting_integers =
