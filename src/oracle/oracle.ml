@@ -1,39 +1,60 @@
 open Util
 module CD = Coverage.Domain
+module F = Format
 
 (** [Validation] runs translation validation program (alive-tv).
     We use this program as an oracle to detect a miscompilation. *)
 module Validator = struct
-  type res_t = CRASH | INVALID | VALID
+  type res_t = Correct | Incorrect | Failed | Errors
 
   let run src optimized =
     assert (optimized = AUtil.name_opted_ver src);
-    if Sys.file_exists src && Sys.file_exists optimized then
-      let exit_status =
-        AUtil.cmd
-          [
-            !Config.alive_tv_bin;
-            src;
-            optimized;
-            "| tail -n 4 >";
-            AUtil.alive2_log;
-          ]
+    if Sys.file_exists src && Sys.file_exists optimized then (
+      let tv_process =
+        Unix.open_process_args_in !Config.alive_tv_bin
+          [| !Config.alive_tv_bin; src; optimized |]
       in
-      match exit_status with
-      | 0 ->
-          let lines = AUtil.readlines AUtil.alive2_log in
-          let is_num_zero str =
-            str
+      let text = In_channel.input_all tv_process in
+      F.eprintf "%s@." text;
+      let status = Unix.close_process_in tv_process in
+      match status with
+      | Unix.WEXITED 0 ->
+          let lines =
+            text
+            |> String.split_on_char '\n'
+            |> List.rev
+            |> List.to_seq
+            |> Seq.take 4
+            |> List.of_seq
+            |> List.rev
+          in
+          let eq_line line x =
+            line
             |> String.trim
             |> String.split_on_char ' '
             |> List.hd
             |> int_of_string
-            = 0
+            = x
           in
+          let str_correct = List.nth lines 0 in
           let str_incorrect = List.nth lines 1 in
-          if is_num_zero str_incorrect then VALID else INVALID
-      | _ -> CRASH
-    else VALID
+          let str_failed = List.nth lines 2 in
+          if eq_line str_correct 1 then (
+            F.eprintf "Validator: %s refines %s@." optimized src;
+            Correct)
+          else if eq_line str_incorrect 1 then (
+            F.eprintf "Validator: %s does not refine %s@." optimized src;
+            Incorrect)
+          else if eq_line str_failed 1 then (
+            F.eprintf "Validator failed to validate %s and %s@." src optimized;
+            Failed)
+          else (
+            F.eprintf "Validator exited with errors@.";
+            Errors)
+      | _ -> Errors)
+    else (
+      F.eprintf "Validator: %s or %s are not found@." src optimized;
+      Errors)
 end
 
 let optimizer_passes =
@@ -46,9 +67,8 @@ module Optimizer = struct
 
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
-    let output =
-      match output with None -> "/dev/null" | Some x -> AUtil.name_opted_ver x
-    in
+    let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
+    F.eprintf "Optimizer: %s -> %s@." filename output;
     AUtil.clean !Config.cov_file;
     let exit_state =
       AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
