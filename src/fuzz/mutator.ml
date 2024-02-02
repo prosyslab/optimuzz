@@ -455,7 +455,8 @@ let rec mutate_inner_bb llctx mode llm score =
      with _ -> None *)
 
 (* TODO: add fuzzing configuration *)
-let run llctx mode llm score =
-  let llm_clone = Llvm_transform_utils.clone_module llm in
-  mutate_inner_bb llctx mode llm_clone score
+let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
+  let mode = if seed.covers then FOCUS else EXPAND in
+  let llm_clone = Llvm_transform_utils.clone_module seed.llm in
+  mutate_inner_bb llctx mode llm_clone (int_of_float seed.score)
 (* |> mutate_CFG |> check_retval llctx *)
