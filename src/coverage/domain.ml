@@ -99,11 +99,10 @@ end = struct
         cov DistanceSet.empty
     in
     let total, cnt = DistanceSet.sum_cnt distances in
-
-    Format.eprintf "total: %d, cnt: %d@." total cnt;
-
     if cnt = 0 then None
-    else float_of_int total /. float_of_int cnt |> Option.some
+    else
+      let avg = float_of_int total /. float_of_int cnt in
+      Some avg
 
   let cover_target = mem
 end

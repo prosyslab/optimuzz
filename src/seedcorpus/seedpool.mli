@@ -4,6 +4,7 @@ open Util.ALlvm
 type seed_t = { llm : llmodule; covers : bool; score : float }
 type t = seed_t Queue.t
 
+val pp_seed : Format.formatter -> seed_t -> unit
 val make : llcontext -> unit LLModuleSet.t -> t
 val pop : t -> seed_t * t
 val push : seed_t -> t -> t
