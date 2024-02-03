@@ -190,6 +190,9 @@ let initialize llctx () =
   crash_dir := Filename.concat !out_dir !crash_dir;
   corpus_dir := Filename.concat !out_dir !corpus_dir;
 
+  if !cov_directed = "" then
+    failwith "Coverage target is not set. Please set -direct option.";
+
   set_intereseting_types llctx;
 
   if !dry_run then (
