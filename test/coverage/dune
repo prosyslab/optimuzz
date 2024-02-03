@@ -1,0 +1,32 @@
+(executable
+ (name test)
+ (modules test)
+ (libraries coverage))
+
+(rule
+ (deps test1.cov)
+ (targets test1.output)
+ (action
+  (with-stdout-to
+   %{targets}
+   (ignore-stderr
+    (run ./test.exe %{deps})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test1.output test1.expected)))
+
+(rule
+ (deps test2.cov)
+ (targets test2.output)
+ (action
+  (with-stdout-to
+   %{targets}
+   (ignore-stderr
+    (run ./test.exe %{deps})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test2.output test2.expected)))
