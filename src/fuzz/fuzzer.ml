@@ -59,6 +59,12 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     (None, progress))
   else
     let mutant = Mutator.run llctx seed in
+    let score_func =
+      match !Config.metric with
+      | "avg" -> CD.Coverage.avg_score
+      | "min" -> CD.Coverage.min_score
+      | _ -> invalid_arg "Invalid metric"
+    in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
         (* duplicated seed *)
@@ -75,7 +81,7 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
             let new_seed : SeedPool.seed_t =
               let covered = CD.Coverage.cover_target target_path cov_mutant in
               let mutant_score =
-                CD.Coverage.score target_path cov_mutant
+                score_func target_path cov_mutant
                 |> Option.fold
                      ~none:(!Config.max_distance |> float_of_int)
                      ~some:Fun.id

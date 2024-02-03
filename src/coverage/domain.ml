@@ -72,7 +72,8 @@ module Coverage : sig
   val cardinal : t -> int
   val union : t -> t -> t
   val read : string -> t
-  val score : Path.t -> t -> float option
+  val avg_score : Path.t -> t -> float option
+  val min_score : Path.t -> t -> float option
   val cover_target : Path.t -> t -> bool
 end = struct
   include Set.Make (Path)
@@ -90,7 +91,8 @@ end = struct
     close_in ic;
     cov
 
-  let score target_path cov =
+  (* TODO: improve algorithm *)
+  let avg_score target_path cov =
     let distances : DistanceSet.t =
       fold
         (fun path accu ->
@@ -103,6 +105,20 @@ end = struct
     else
       let avg = float_of_int total /. float_of_int cnt in
       Some avg
+
+  (* TODO: improve algorithm *)
+  let min_score target_path cov =
+    let distances : DistanceSet.t =
+      fold
+        (fun path accu ->
+          let ds = Path.distances path target_path |> List.to_seq in
+          accu |> DistanceSet.add_seq ds)
+        cov DistanceSet.empty
+    in
+    if DistanceSet.is_empty distances then None
+    else
+      let _, min = DistanceSet.min_elt distances in
+      Some (float_of_int min)
 
   let cover_target = mem
 end
