@@ -1,7 +1,6 @@
 let cmd args = args |> String.concat " " |> Sys.command
 
 (* for logging *)
-let alive2_log = "alive-tv.txt"
 let timestamp = "timestamp.txt"
 let start_time = ref 0
 let recent_time = ref 0

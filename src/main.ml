@@ -70,8 +70,6 @@ let main () =
   let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
   let end_time = AUtil.now () in
 
-  if not !Config.no_tv then Unix.unlink AUtil.alive2_log;
-
   F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
