@@ -141,6 +141,13 @@ let make llctx llset =
         true
   in
 
+  let score_func =
+    match !Config.metric with
+    | "avg" -> CD.Coverage.avg_score
+    | "min" -> CD.Coverage.min_score
+    | _ -> failwith "invalid metric"
+  in
+
   let pool_first, pool_later =
     seed_files
     |> List.fold_left
@@ -163,7 +170,7 @@ let make llctx llset =
                  | CRASH | INVALID -> (pool_first, pool_later)
                  | VALID cov ->
                      let covers = CD.Coverage.cover_target target_path cov in
-                     let score = CD.Coverage.score target_path cov in
+                     let score = score_func target_path cov in
                      let score_int =
                        match score with
                        | None -> !Config.max_distance |> float_of_int
