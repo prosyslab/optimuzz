@@ -65,6 +65,14 @@ module DistanceSet = struct
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
 end
 
+module DistanceSetMin = struct
+  include Set.Make (struct
+    type t = Path.t * int
+
+    let compare (_, d1) (_, d2) = compare d1 d2
+  end)
+end
+
 module Coverage : sig
   type t
 
@@ -108,16 +116,16 @@ end = struct
 
   (* TODO: improve algorithm *)
   let min_score target_path cov =
-    let distances : DistanceSet.t =
+    let distances : DistanceSetMin.t =
       fold
         (fun path accu ->
           let ds = Path.distances path target_path |> List.to_seq in
-          accu |> DistanceSet.add_seq ds)
-        cov DistanceSet.empty
+          accu |> DistanceSetMin.add_seq ds)
+        cov DistanceSetMin.empty
     in
-    if DistanceSet.is_empty distances then None
+    if DistanceSetMin.is_empty distances then None
     else
-      let _, min = DistanceSet.min_elt distances in
+      let _, min = DistanceSetMin.min_elt distances in
       Some (float_of_int min)
 
   let cover_target = mem
