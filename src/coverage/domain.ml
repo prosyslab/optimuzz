@@ -54,37 +54,62 @@ end = struct
          []
 end
 
-module DistanceSet = struct
+module type DISTANCE_SET = sig
+  type elt = Path.t * int
+  type t
+  type result
+
+  val empty : t
+  val add : elt -> t -> t
+  val add_seq : elt Seq.t -> t -> t
+  val metric : t -> result option
+end
+
+module DistanceSetAvg : DISTANCE_SET with type result = float = struct
   include Set.Make (struct
     type t = Path.t * int
 
     let compare = compare
   end)
 
+  type result = float
+
   let sum_cnt s =
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
+
+  let metric s =
+    let total, cnt = sum_cnt s in
+    if cnt = 0 then None else Some (float_of_int total /. float_of_int cnt)
 end
 
-module DistanceSetMin = struct
+module DistanceSetMin : DISTANCE_SET with type result = int = struct
   include Set.Make (struct
     type t = Path.t * int
 
     let compare (_, d1) (_, d2) = compare d1 d2
   end)
+
+  type result = int
+
+  let metric s =
+    let _, min_dist = min_elt s in
+    if is_empty s then None else Some min_dist
 end
 
-module Coverage : sig
+module Coverage (Distances : DISTANCE_SET) : sig
   type t
+  type metric = Distances.result
 
   val empty : t
   val cardinal : t -> int
   val union : t -> t -> t
   val read : string -> t
-  val avg_score : Path.t -> t -> float option
-  val min_score : Path.t -> t -> float option
+  val score : Path.t -> t -> metric option
   val cover_target : Path.t -> t -> bool
 end = struct
   include Set.Make (Path)
+
+  type metric = Distances.result
 
   let read file =
     let ic = open_in file in
@@ -100,33 +125,18 @@ end = struct
     cov
 
   (* TODO: improve algorithm *)
-  let avg_score target_path cov =
-    let distances : DistanceSet.t =
+  let score target_path cov =
+    let distances : Distances.t =
       fold
         (fun path accu ->
           let ds = Path.distances path target_path |> List.to_seq in
-          accu |> DistanceSet.add_seq ds)
-        cov DistanceSet.empty
+          accu |> Distances.add_seq ds)
+        cov Distances.empty
     in
-    let total, cnt = DistanceSet.sum_cnt distances in
-    if cnt = 0 then None
-    else
-      let avg = float_of_int total /. float_of_int cnt in
-      Some avg
-
-  (* TODO: improve algorithm *)
-  let min_score target_path cov =
-    let distances : DistanceSetMin.t =
-      fold
-        (fun path accu ->
-          let ds = Path.distances path target_path |> List.to_seq in
-          accu |> DistanceSetMin.add_seq ds)
-        cov DistanceSetMin.empty
-    in
-    if DistanceSetMin.is_empty distances then None
-    else
-      let _, min = DistanceSetMin.min_elt distances in
-      Some (float_of_int min)
+    Distances.metric distances
 
   let cover_target = mem
 end
+
+module CoverageAvg = Coverage (DistanceSetAvg)
+module CoverageMin = Coverage (DistanceSetMin)
