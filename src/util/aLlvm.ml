@@ -587,7 +587,6 @@ let disclaim_ty llctx _ =
 let rec propagate llctx curr typemap =
   (* at this moment, curr is added to typemap right before *)
   let ty_curr = LLVMap.find curr typemap in
-
   (* propagate to operands *)
   let typemap =
     match classify_value curr with
@@ -822,7 +821,7 @@ let copy_instr llctx llb instr_old typemap link_instr link_block =
                 (const_null (pointer_type llctx))
                 llb)
       (* below three cast instructions can be interchanged, or even omitted *)
-      | Trunc | ZExt | SExt ->
+      | Trunc | ZExt | SExt -> (
           let opd = operand instr_old 0 in
           let ty_tgt = LLVMap.find instr_old typemap in
           let ty_src =
@@ -830,14 +829,32 @@ let copy_instr llctx llb instr_old typemap link_instr link_block =
             | Some ty -> ty
             | None -> type_of opd
           in
-          let opd' = migrate_llv opd ty_src in
-          let bw_tgt = integer_bitwidth ty_tgt in
-          let bw_src = integer_bitwidth ty_src in
-          if bw_src < bw_tgt then
-            (* FIXME: USING ZEXT ONLY *)
-            build_zext opd' ty_tgt name llb
-          else if bw_src > bw_tgt then build_trunc opd' ty_tgt name llb
-          else build_add opd' (const_int (type_of opd') 0) name llb
+          (* FIXME: properly handle else case *)
+          match (classify_type ty_src, classify_type ty_tgt) with
+          | Integer, Integer ->
+              let opd' = migrate_llv opd ty_src in
+              let bw_tgt = integer_bitwidth ty_tgt in
+              let bw_src = integer_bitwidth ty_src in
+              if bw_src < bw_tgt then
+                (* FIXME: USING ZEXT ONLY *)
+                build_zext opd' ty_tgt name llb
+              else if bw_src > bw_tgt then build_trunc opd' ty_tgt name llb
+              else
+                let opd' = migrate_llv (const_int ty_tgt 0) ty_tgt in
+                build_add opd' (const_int (type_of opd') 0) name llb
+          | Vector, Vector ->
+              let opd' = migrate_llv opd ty_src in
+              let opd'' = migrate_llv (const_int ty_tgt 0) ty_tgt in
+              if vector_size ty_src = vector_size ty_tgt then
+                let bw_src = ty_src |> element_type |> integer_bitwidth in
+                let bw_tgt = ty_tgt |> element_type |> integer_bitwidth in
+                if bw_src < bw_tgt then build_zext opd' ty_tgt name llb
+                else if bw_src > bw_tgt then build_trunc opd' ty_tgt name llb
+                else build_add opd'' opd'' name llb
+              else build_add opd'' opd'' name llb
+          | _, _ ->
+              let opd' = migrate_llv (const_int ty_tgt 0) ty_tgt in
+              build_add opd' opd' name llb)
       | ICmp ->
           let opd0 = operand instr_old 0 in
           let opd1 = operand instr_old 1 in
@@ -966,7 +983,6 @@ let redef_fn llctx f typemap =
           | None -> type_of param)
         params_old
     in
-
     let f_new =
       define_function "" (function_type ret_ty param_tys) (global_parent f)
     in
@@ -1024,7 +1040,6 @@ let copy_instr_with_new_retval llctx llb instr_old link_instr link_block
       | Ret ->
           let rec build_ret' loc =
             let target = get_instr_before ~wide:true loc in
-
             match target with
             | Some i -> (
                 match LLVMap.find_opt i link_instr with
@@ -1128,20 +1143,14 @@ let copy_instr_with_new_retval llctx llb instr_old link_instr link_block
             in
             loop [] 0 |> Array.of_list
           in
-          let res =
-            build_call
-              (function_type (type_of instr_old)
-                 (Array.map (fun p -> type_of p) opds))
-              calling_fn opds name llb
-          in
-          res
+          build_call
+            (function_type (type_of instr_old)
+               (Array.map (fun p -> type_of p) opds))
+            calling_fn opds name llb
       | ExtractValue ->
           let opd0 = operand instr_old 0 in
           let idx = Array.get (indices instr_old) 0 in
-          let res =
-            build_extractvalue (migrate_llv opd0 (type_of opd0)) idx name llb
-          in
-          res
+          build_extractvalue (migrate_llv opd0 (type_of opd0)) idx name llb
       | GetElementPtr ->
           (* let opd0 = operand instr_old 0 in
              let indices =
