@@ -63,6 +63,12 @@ module type DISTANCE_SET = sig
   val add : elt -> t -> t
   val add_seq : elt Seq.t -> t -> t
   val metric : t -> result option
+  val max_metric : result
+  val pp_result : Format.formatter -> result -> unit
+
+  (* hack *)
+  val result_int : result -> int
+  val result_float : result -> float
 end
 
 module DistanceSetAvg : DISTANCE_SET with type result = float = struct
@@ -80,6 +86,11 @@ module DistanceSetAvg : DISTANCE_SET with type result = float = struct
   let metric s =
     let total, cnt = sum_cnt s in
     if cnt = 0 then None else Some (float_of_int total /. float_of_int cnt)
+
+  let max_metric = !Config.max_distance |> float_of_int
+  let pp_result fmt res = Format.fprintf fmt "%f" res
+  let result_int = int_of_float
+  let result_float = Fun.id
 end
 
 module DistanceSetMin : DISTANCE_SET with type result = int = struct
@@ -94,22 +105,30 @@ module DistanceSetMin : DISTANCE_SET with type result = int = struct
   let metric s =
     let _, min_dist = min_elt s in
     if is_empty s then None else Some min_dist
+
+  let max_metric = !Config.max_distance
+  let pp_result fmt res = Format.fprintf fmt "%d" res
+  let result_int = Fun.id
+  let result_float = float_of_int
 end
 
-module Coverage (Distances : DISTANCE_SET) : sig
+module type COVERAGE = sig
+  module DistSet : DISTANCE_SET
+
   type t
-  type metric = Distances.result
 
   val empty : t
   val cardinal : t -> int
   val union : t -> t -> t
   val read : string -> t
-  val score : Path.t -> t -> metric option
+  val score : Path.t -> t -> DistSet.result option
   val cover_target : Path.t -> t -> bool
-end = struct
-  include Set.Make (Path)
+  val pp_metric : Format.formatter -> DistSet.result option -> unit
+end
 
-  type metric = Distances.result
+module Make_coverage (Distances : DISTANCE_SET) : COVERAGE = struct
+  include Set.Make (Path)
+  module DistSet = Distances
 
   let read file =
     let ic = open_in file in
@@ -126,17 +145,18 @@ end = struct
 
   (* TODO: improve algorithm *)
   let score target_path cov =
-    let distances : Distances.t =
+    let distances : DistSet.t =
       fold
         (fun path accu ->
           let ds = Path.distances path target_path |> List.to_seq in
-          accu |> Distances.add_seq ds)
-        cov Distances.empty
+          accu |> DistSet.add_seq ds)
+        cov DistSet.empty
     in
-    Distances.metric distances
+    DistSet.metric distances
 
   let cover_target = mem
-end
 
-module CoverageAvg = Coverage (DistanceSetAvg)
-module CoverageMin = Coverage (DistanceSetMin)
+  let pp_metric fmt = function
+    | None -> Format.fprintf fmt "None"
+    | Some m -> Format.fprintf fmt "%a" DistSet.pp_result m
+end

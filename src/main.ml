@@ -1,8 +1,9 @@
 open Fuzz
 open Util
-module F = Format
-module SeedPool = Seedcorpus.Seedpool
 module CD = Coverage.Domain
+module SD = Seedcorpus.Domain
+module F = Format
+module Fuzzer = Fuzz.Fuzzer
 
 let llctx = ALlvm.create_context ()
 
@@ -25,7 +26,6 @@ let initialize () =
   ()
 
 let main () =
-  let open Oracle in
   Printexc.record_backtrace true;
   ALlvm.set_opaque_pointers llctx true;
   initialize ();
@@ -44,34 +44,83 @@ let main () =
       all_instances;
     exit 0);
 
-  (* measure coverage *)
-  if !Config.cov_tgt_path <> "" then (
-    let res =
-      Optimizer.run
-        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-        !Config.cov_tgt_path
-    in
-    (match res with
-    | Optimizer.VALID cov ->
-        F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
-    | _ -> ());
-    exit 0);
+  match !Config.metric with
+  | "avg" ->
+      let module CovAvg = CD.Make_coverage (CD.DistanceSetAvg) in
+      let module SeedPool = SD.NaiveSeedPool (CovAvg) in
+      let module Optimizer = Oracle.Optimizer (CovAvg) in
+      (* measure coverage *)
+      if !Config.cov_tgt_path <> "" then (
+        let res =
+          Optimizer.run
+            ~passes:
+              [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+            !Config.cov_tgt_path
+        in
+        (match res with
+        | Optimizer.VALID cov ->
+            F.printf "Total coverage: %d@." (CovAvg.cardinal cov)
+        | _ -> ());
+        exit 0);
 
-  (* fuzzing *)
-  let seed_pool = SeedPool.make llctx llset in
-  F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
+      let module Campaign = Fuzz.Fuzzer.Campaign (CovAvg) in
+      (* fuzzing *)
+      let seed_pool = SeedPool.make llctx llset in
+      F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
 
-  if SeedPool.cardinal seed_pool = 0 then (
-    F.printf "no seed loaded@.";
-    exit 0);
+      if SeedPool.cardinal seed_pool = 0 then (
+        F.printf "no seed loaded@.";
+        exit 0);
 
-  if !Config.dry_run then exit 0;
+      if !Config.dry_run then exit 0;
 
-  AUtil.start_time := AUtil.now ();
-  let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
-  let end_time = AUtil.now () in
+      AUtil.start_time := AUtil.now ();
+      let coverage =
+        Campaign.run seed_pool llctx llset Campaign.Progress.empty
+      in
+      let end_time = AUtil.now () in
 
-  F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
-  F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
+      F.printf "\ntotal coverage: %d lines@."
+        (Campaign.SeedPool.Cov.cardinal coverage);
+      F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
+  | "min" ->
+      let module CovAvg = CD.Make_coverage (CD.DistanceSetMin) in
+      let module SeedPool = SD.NaiveSeedPool (CovAvg) in
+      let module Optimizer = Oracle.Optimizer (CovAvg) in
+      (* measure coverage *)
+      if !Config.cov_tgt_path <> "" then (
+        let res =
+          Optimizer.run
+            ~passes:
+              [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+            !Config.cov_tgt_path
+        in
+        (match res with
+        | Optimizer.VALID cov ->
+            F.printf "Total coverage: %d@." (CovAvg.cardinal cov)
+        | _ -> ());
+        exit 0);
+
+      let module Campaign = Fuzz.Fuzzer.Campaign (CovAvg) in
+      (* fuzzing *)
+      let seed_pool = SeedPool.make llctx llset in
+      F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
+
+      if SeedPool.cardinal seed_pool = 0 then (
+        F.printf "no seed loaded@.";
+        exit 0);
+
+      if !Config.dry_run then exit 0;
+
+      AUtil.start_time := AUtil.now ();
+      let coverage =
+        Campaign.run seed_pool llctx llset Campaign.Progress.empty
+      in
+      let end_time = AUtil.now () in
+
+      F.printf "\ntotal coverage: %d lines@."
+        (Campaign.SeedPool.Cov.cardinal coverage);
+      F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
+  | _ -> failwith ""
 
 let _ = main ()

@@ -1,6 +1,7 @@
 open Util.ALlvm
 module AUtil = Util.AUtil
 module OpCls = OpcodeClass
+module SD = Seedcorpus.Domain
 
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
@@ -454,8 +455,15 @@ let rec mutate_inner_bb llctx mode llm score =
        Some llm
      with _ -> None *)
 
+module Make_mutator (SeedPool : SD.SEED_POOL) = struct
+  let run llctx ((llm, conf) : SeedPool.seed) =
+    let mode = if SeedPool.worth_exploit conf then FOCUS else EXPAND in
+    let llm_clone = Llvm_transform_utils.clone_module llm in
+    let score = SeedPool.evaluate conf in
+    mutate_inner_bb llctx mode llm_clone (SeedPool.Cov.DistSet.result_int score)
+end
+
 (* TODO: add fuzzing configuration *)
 let run llctx mode llm score =
   let llm_clone = Llvm_transform_utils.clone_module llm in
   mutate_inner_bb llctx mode llm_clone score
-(* |> mutate_CFG |> check_retval llctx *)
