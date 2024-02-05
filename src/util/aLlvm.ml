@@ -1227,7 +1227,7 @@ module LLModuleSet = struct
   include Hashtbl.Make (struct
     type t = llmodule
 
-    let equal = ( == )
+    let equal = ( = )
     let hash = Hashtbl.hash
   end)
 
