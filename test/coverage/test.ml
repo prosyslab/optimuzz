@@ -1,16 +1,19 @@
 module CD = Coverage.Domain
+module CovAvg = CD.Make_coverage (CD.DistanceSetAvg)
+module CovMin = CD.Make_coverage (CD.DistanceSetMin)
 
 let _ =
   let target_path = CD.Path.parse "A:B:C:D" in
-  let cov = CD.CoverageAvg.read Sys.argv.(1) in
-  let avg = CD.CoverageAvg.score target_path cov in
+  let cov = CovAvg.read Sys.argv.(1) in
+  let avg = CovAvg.score target_path cov in
 
-  let cov = CD.CoverageMin.read Sys.argv.(1) in
-  let min = CD.CoverageMin.score target_path cov in
+  Format.printf "%a\n" CovAvg.pp_metric avg;
+  CovAvg.cover_target target_path cov |> Printf.printf "%b\n";
 
-  Printf.printf "%f\n" (Option.get avg);
-  Printf.printf "%d\n" (Option.get min);
+  let cov = CovMin.read Sys.argv.(1) in
+  let min = CovMin.score target_path cov in
 
-  CD.CoverageMin.cover_target target_path cov |> Printf.printf "%b\n";
+  Format.printf "%a\n" CovMin.pp_metric min;
+  CovMin.cover_target target_path cov |> Printf.printf "%b\n";
 
   ()

@@ -1,4 +1,3 @@
-open Fuzz
 open Util
 module CD = Coverage.Domain
 module SD = Seedcorpus.Domain
@@ -25,6 +24,19 @@ let initialize () =
 
   ()
 
+let handle_cov_tgt_path (module Cov : CD.COVERAGE) =
+  let module Optimizer = Oracle.Optimizer (Cov) in
+  if !Config.cov_tgt_path <> "" then (
+    let res =
+      Optimizer.run
+        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
+        !Config.cov_tgt_path
+    in
+    (match res with
+    | Optimizer.VALID cov -> F.printf "Total coverage: %d@." (Cov.cardinal cov)
+    | _ -> ());
+    exit 0)
+
 let main () =
   Printexc.record_backtrace true;
   ALlvm.set_opaque_pointers llctx true;
@@ -48,22 +60,9 @@ let main () =
   | "avg" ->
       let module CovAvg = CD.Make_coverage (CD.DistanceSetAvg) in
       let module SeedPool = SD.NaiveSeedPool (CovAvg) in
-      let module Optimizer = Oracle.Optimizer (CovAvg) in
-      (* measure coverage *)
-      if !Config.cov_tgt_path <> "" then (
-        let res =
-          Optimizer.run
-            ~passes:
-              [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-            !Config.cov_tgt_path
-        in
-        (match res with
-        | Optimizer.VALID cov ->
-            F.printf "Total coverage: %d@." (CovAvg.cardinal cov)
-        | _ -> ());
-        exit 0);
+      handle_cov_tgt_path (module CovAvg);
 
-      let module Campaign = Fuzz.Fuzzer.Campaign (CovAvg) in
+      let module Campaign = Fuzz.Fuzzer.Make_campaign (CovAvg) in
       (* fuzzing *)
       let seed_pool = SeedPool.make llctx llset in
       F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
@@ -84,24 +83,11 @@ let main () =
         (Campaign.SeedPool.Cov.cardinal coverage);
       F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
   | "min" ->
-      let module CovAvg = CD.Make_coverage (CD.DistanceSetMin) in
-      let module SeedPool = SD.NaiveSeedPool (CovAvg) in
-      let module Optimizer = Oracle.Optimizer (CovAvg) in
-      (* measure coverage *)
-      if !Config.cov_tgt_path <> "" then (
-        let res =
-          Optimizer.run
-            ~passes:
-              [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-            !Config.cov_tgt_path
-        in
-        (match res with
-        | Optimizer.VALID cov ->
-            F.printf "Total coverage: %d@." (CovAvg.cardinal cov)
-        | _ -> ());
-        exit 0);
+      let module CovMin = CD.Make_coverage (CD.DistanceSetMin) in
+      let module SeedPool = SD.NaiveSeedPool (CovMin) in
+      handle_cov_tgt_path (module CovMin);
 
-      let module Campaign = Fuzz.Fuzzer.Campaign (CovAvg) in
+      let module Campaign = Fuzz.Fuzzer.Make_campaign (CovMin) in
       (* fuzzing *)
       let seed_pool = SeedPool.make llctx llset in
       F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);

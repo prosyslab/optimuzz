@@ -16,7 +16,7 @@ module Progress (Cov : CD.COVERAGE) = struct
       (Cov.cardinal progress.cov_sofar)
 end
 
-module Campaign (Cov : CD.COVERAGE) = struct
+module Make_campaign (Cov : CD.COVERAGE) = struct
   module SeedPool = SD.NaiveSeedPool (Cov)
   module Mutator = Mutator.Make_mutator (SeedPool)
   module Optimizer = Oracle.Optimizer (SeedPool.Cov)
@@ -45,6 +45,17 @@ module Campaign (Cov : CD.COVERAGE) = struct
       AUtil.clean filename_full;
       AUtil.clean optimized_ir_filename;
       (optimization_res, validation_res)
+
+  let check_correctness filename filename_opt llm =
+    if !Config.no_tv then Oracle.Validator.Correct
+    else
+      let res = Oracle.Validator.run filename filename_opt in
+      if res = Oracle.Validator.Incorrect then
+        ALlvm.save_ll !Config.crash_dir filename_opt llm;
+
+      AUtil.clean filename;
+      AUtil.clean filename_opt;
+      res
 
   let record_timestamp cov =
     (* timestamp *)
