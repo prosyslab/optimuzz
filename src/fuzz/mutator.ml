@@ -128,7 +128,7 @@ let randget_operand loc ty =
 (** [create_rand_instr llctx preferred_opd loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc]. *)
-let rec create_rand_instr llctx preferred_opd loc =
+let create_rand_instr llctx preferred_opd loc =
   let preds = get_instrs_before ~wide:false loc in
   let preds =
     preds @ (loc |> instr_parent |> block_parent |> params |> Array.to_list)
@@ -153,17 +153,18 @@ let rec create_rand_instr llctx preferred_opd loc =
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
       |> Option.some
-  | CAST when is_integer -> (
-      try
-        let dest_ty =
-          match opcode with
-          | Trunc -> TypeBW.random_narrower_llint llctx operand_ty
-          | ZExt | SExt -> TypeBW.random_wider_llint llctx operand_ty
-          | _ -> failwith "NEVER OCCUR"
-        in
+  | CAST when is_integer ->
+      let pred =
+        let operand_bw = integer_bitwidth operand_ty in
+        fun ty ->
+          (if opcode = Trunc then ( < ) else ( > ))
+            (integer_bitwidth ty) operand_bw
+      in
+      let candidates = List.filter pred !Config.interesting_integer_types in
+      if candidates = [] then None
+      else
+        let dest_ty = AUtil.choose_random candidates in
         create_cast llctx loc opcode operand dest_ty |> Option.some
-      with TypeBW.Unsupported_Type ->
-        create_rand_instr llctx preferred_opd loc)
   | CMP when is_integer ->
       create_cmp llctx loc
         (AUtil.choose_random OpCls.cmp_kind)
