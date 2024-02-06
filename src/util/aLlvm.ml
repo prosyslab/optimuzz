@@ -334,36 +334,6 @@ let set_opd_and_ret instr i opd =
 
 exception Out_of_integer_domain
 
-module TypeBW = struct
-  exception Unsupported_Type
-
-  type t = lltype
-  type bwt = int (* bitwidth *)
-
-  (* support integer type only *)
-  let is_llint ty = classify_type ty = TypeKind.Integer
-  let assert_llint ty = if not (is_llint ty) then raise Out_of_integer_domain
-
-  (* bitwidth related functions *)
-  let rand_bw () = AUtil.rand 1 64
-  let llint_of_bw = integer_type
-  let bw_of_llint = integer_bitwidth
-
-  let random_wider_llint llctx ty =
-    let bw = bw_of_llint ty in
-    if bw >= 64 then raise Unsupported_Type
-    else
-      let bw_wide = AUtil.rand (bw + 1) 64 in
-      llint_of_bw llctx bw_wide
-
-  let random_narrower_llint llctx ty =
-    let bw = bw_of_llint ty in
-    if bw <= 1 then raise Unsupported_Type
-    else
-      let bw_narrow = AUtil.rand 1 (bw - 1) in
-      llint_of_bw llctx bw_narrow
-end
-
 module OpcodeClass = struct
   exception Improper_class
 
