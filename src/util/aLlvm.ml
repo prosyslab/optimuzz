@@ -178,6 +178,35 @@ let is_llvm_intrinsic instr =
     is_llvm_function callee_expr
   else false
 
+(* mutation options *)
+let interesting_integers =
+  ref [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
+
+let interesting_integer_types = ref []
+let interesting_vector_types = ref []
+let interesting_types = ref []
+
+let set_intereseting_types llctx =
+  interesting_integer_types :=
+    [
+      integer_type llctx 1;
+      integer_type llctx 8;
+      integer_type llctx 10;
+      integer_type llctx 32;
+      integer_type llctx 34;
+      integer_type llctx 64;
+    ];
+  interesting_vector_types :=
+    [
+      vector_type (i1_type llctx) 1;
+      vector_type (i1_type llctx) 4;
+      vector_type (i8_type llctx) 1;
+      vector_type (i8_type llctx) 4;
+      vector_type (i32_type llctx) 1;
+      vector_type (i32_type llctx) 4;
+    ];
+  interesting_types := !interesting_integer_types @ !interesting_vector_types
+
 (** [save_ll target_dir output filename llmodule] *)
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in

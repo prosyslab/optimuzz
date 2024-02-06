@@ -31,6 +31,7 @@ let num_mutation = ref 10
 let num_mutant = ref 1
 let no_tv = ref false
 let metric = ref "avg"
+let logging = ref false
 
 (* mutation options *)
 let interesting_integers =
@@ -90,6 +91,7 @@ let opts =
     ("-metric", Arg.Set_string metric, "Metric to give a score to a coverage");
     (* logging options *)
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
+    ("-logging", Arg.Set logging, "Turn on logging");
     ( "-dry-run",
       Arg.Set dry_run,
       "Do not run fuzzing. (for testing configuration)" );

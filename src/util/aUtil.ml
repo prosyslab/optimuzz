@@ -5,6 +5,8 @@ let timestamp = "timestamp.txt"
 let start_time = ref 0
 let recent_time = ref 0
 let timestamp_fp = open_out timestamp
+let log_path = "fuzzing.log"
+let log_formatter = log_path |> open_out |> Format.formatter_of_out_channel
 
 let get_current_time () =
   let tm = Unix.gettimeofday () |> Unix.localtime in
@@ -59,3 +61,5 @@ let readlines filename =
 
 let clean filename =
   cmd [ "rm"; filename; "> /dev/null"; "2> /dev/null" ] |> ignore
+
+let log fstr = Format.fprintf log_formatter fstr

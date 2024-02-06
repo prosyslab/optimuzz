@@ -378,7 +378,7 @@ let rec mutate_inner_bb llctx mode llm score =
   let instr_tgt = AUtil.choose_random all_instrs in
   (* depending on mode, available mutations differ *)
   let mutation = choose_mutation mode score in
-  Format.eprintf "mutation: %a\n" pp_mutation mutation;
+  if !Config.logging then AUtil.log "[mutation] %a\n" pp_mutation mutation;
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx None instr_tgt

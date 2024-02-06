@@ -93,11 +93,8 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
               in
-              record_timestamp progress.cov_sofar;
               (Some new_seed, progress))
-            else (
-              record_timestamp progress.cov_sofar;
-              mutate_seed llctx target_path llset seed progress (times - 1)))
+            else mutate_seed llctx target_path llset seed progress (times - 1))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
@@ -119,7 +116,8 @@ let rec run pool llctx llset progress =
   F.printf "\r%a@?" Progress.pp progress;
 
   let new_seeds = List.filter_map Fun.id new_seeds in
-  List.iter (F.eprintf "%a\n" SeedPool.pp_seed) new_seeds;
+  if !Config.logging then
+    List.iter (AUtil.log "%a\n" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
     |> SeedPool.push_seq (new_seeds |> List.to_seq)

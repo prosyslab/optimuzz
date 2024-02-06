@@ -15,7 +15,7 @@ module Validator = struct
           [| !Config.alive_tv_bin; src; optimized |]
       in
       let text = In_channel.input_all tv_process in
-      (*F.eprintf "%s@." text;*)
+      (*AUtil.log "%s@." text;*)
       let status = Unix.close_process_in tv_process in
       match status with
       | Unix.WEXITED 0 -> (
@@ -28,7 +28,7 @@ module Validator = struct
             |> List.of_seq
             |> List.rev
           in
-          List.iter prerr_endline lines;
+          (* List.iter prerr_endline lines; *)
           let eq_line line x =
             line
             |> String.trim
@@ -40,27 +40,32 @@ module Validator = struct
           match lines with
           | correct :: incorrect :: failed :: _errors ->
               if eq_line correct 1 then (
-                F.eprintf "Validator: %s refines %s@."
-                  (Filename.basename optimized)
-                  (Filename.basename src);
+                if !Config.logging then
+                  AUtil.log "[Validator] %s refines %s@."
+                    (Filename.basename optimized)
+                    (Filename.basename src);
                 Correct)
               else if eq_line incorrect 1 then (
-                F.eprintf "Validator: %s does not refine %s@."
-                  (Filename.basename optimized)
-                  (Filename.basename src);
+                if !Config.logging then
+                  AUtil.log "[Validator] %s does not refine %s@."
+                    (Filename.basename optimized)
+                    (Filename.basename src);
                 Incorrect)
               else if eq_line failed 1 then (
-                F.eprintf "Validator failed to validate %s and %s@."
-                  (Filename.basename src)
-                  (Filename.basename optimized);
+                if !Config.logging then
+                  AUtil.log "[Validator] failed to validate %s and %s@."
+                    (Filename.basename src)
+                    (Filename.basename optimized);
                 Failed)
               else (
-                F.eprintf "Validator exited with errors@.";
+                if !Config.logging then
+                  AUtil.log "[Validator] exited with errors@.";
                 Errors)
           | _ -> failwith "unexpected alive-tv output")
       | _ -> Errors
     else (
-      F.eprintf "Validator: %s or %s are not found@." src optimized;
+      if !Config.logging then
+        AUtil.log "[Validator] %s or %s are not found@." src optimized;
       Errors)
 end
 
@@ -75,7 +80,7 @@ module Optimizer = struct
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
-    F.eprintf "Optimizer: %s -> %s@." filename output;
+    if !Config.logging then AUtil.log "[opt] %s -> %s@." filename output;
     AUtil.clean !Config.cov_file;
     let exit_state =
       AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
@@ -85,7 +90,7 @@ module Optimizer = struct
       if exit_state = 0 then VALID cov else CRASH
     with Sys_error _ ->
       (* cov.cov is not generated : the file did not trigger [passes] *)
-      prerr_endline "Optimizer: cov.cov is not generated";
+      (* prerr_endline "Optimizer: cov.cov is not generated"; *)
       INVALID
 
   let run_for_llm ~passes llset llm =

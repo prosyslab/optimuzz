@@ -5,7 +5,8 @@ type seed_t = { llm : Llvm.llmodule; covers : bool; score : float }
 type t = seed_t Queue.t
 
 let pp_seed fmt seed =
-  Format.fprintf fmt "score: %.3f, covers: %b@." seed.score seed.covers
+  Format.fprintf fmt "[new_seed] score: %.3f, covers: %b@." seed.score
+    seed.covers
 
 let push s pool =
   Queue.push s pool;
@@ -177,7 +178,8 @@ let make llctx llset =
                        | Some x -> x
                      in
                      let seed = { llm; covers; score = score_int } in
-                     Format.eprintf "seed: %s, %a@." file pp_seed seed;
+                     if !Config.logging then
+                       AUtil.log "[seed] %s, %a@." file pp_seed seed;
                      if covers then (pool_first |> push seed, pool_later)
                      else (pool_first, pool_later |> push seed)))
          (Queue.create (), Queue.create ())
