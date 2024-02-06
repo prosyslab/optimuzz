@@ -30,23 +30,11 @@ module Make_campaign (Cov : CD.COVERAGE) = struct
     let filename_full = Filename.concat !Config.out_dir filename in
     let optimized_ir_filename = AUtil.name_opted_ver filename_full in
 
-    let optimization_res =
-      Optimizer.run ~passes:[ "instcombine" ] ~output:optimized_ir_filename
-        filename_full
-    in
+    Optimizer.run ~passes:[ "instcombine" ] ~output:optimized_ir_filename
+      filename_full
 
-    if !Config.no_tv then (optimization_res, Oracle.Validator.Correct)
-    else
-      let validation_res =
-        Oracle.Validator.run filename_full optimized_ir_filename
-      in
-      if validation_res = Oracle.Validator.Incorrect then
-        ALlvm.save_ll !Config.crash_dir filename llm;
-      AUtil.clean filename_full;
-      AUtil.clean optimized_ir_filename;
-      (optimization_res, validation_res)
-
-  let check_correctness filename filename_opt llm =
+  let check_correctness filename llm =
+    let filename_opt = AUtil.name_opted_ver filename in
     if !Config.no_tv then Oracle.Validator.Correct
     else
       let res = Oracle.Validator.run filename filename_opt in
@@ -81,9 +69,8 @@ module Make_campaign (Cov : CD.COVERAGE) = struct
           (None, progress)
       | Some filename -> (
           (* TODO: not using run result, only caring coverage *)
-          let optim_res, _valid_res =
-            measure_optimizer_coverage filename mutant
-          in
+          let optim_res = measure_optimizer_coverage filename mutant in
+          let _ = check_correctness filename mutant in
           match optim_res with
           | INVALID | CRASH ->
               mutate_seed llctx target_path llset (llm, conf) progress times
