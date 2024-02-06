@@ -21,8 +21,7 @@ module type SEED_POOL = sig
   (* configuration functions *)
   val make_conf : bool -> Cov.DistSet.result -> conf
   val evaluate : conf -> Cov.DistSet.result
-  val worth_exploit : conf -> bool
-  val is_better : conf -> conf -> bool
+  val worth_exploit : ?old:conf -> conf -> bool
 
   (* pretty-printing *)
   val pp_seed : Format.formatter -> seed -> unit
@@ -149,8 +148,11 @@ module NaiveSeedPool (Cov : CD.COVERAGE) : SEED_POOL = struct
   let pop pool = (Queue.pop pool, pool)
   let cardinal = Queue.length
   let evaluate conf = conf.score
-  let worth_exploit conf = conf.covers
-  let is_better new_conf old_conf = new_conf.score < old_conf.score
+
+  let worth_exploit ?old conf =
+    match old with
+    | Some old_conf -> conf.covers || conf.score < old_conf.score
+    | _ -> conf.covers
 
   let make llctx llset =
     let dir = !Config.seed_dir in

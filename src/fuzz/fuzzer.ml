@@ -95,11 +95,8 @@ module Make_campaign (Cov : CD.COVERAGE) = struct
                      ~some:Fun.id
               in
               let new_conf = SeedPool.make_conf covered mutant_score in
-              let new_seed : SeedPool.seed = (mutant, new_conf) in
-              if
-                SeedPool.worth_exploit new_conf
-                || SeedPool.is_better new_conf conf
-              then (
+              let new_seed = (mutant, new_conf) in
+              if SeedPool.worth_exploit ~old:conf new_conf then (
                 ALlvm.save_ll !Config.corpus_dir filename mutant;
                 let progress =
                   progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
