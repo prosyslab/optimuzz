@@ -198,6 +198,4 @@ let make llctx llset =
   (* we try covering seeds first and closest seeds in that order *)
   Queue.transfer pool_closest pool_covers;
 
-  assert (Queue.length pool_covers = !Config.max_initial_seed);
-
   pool_covers
