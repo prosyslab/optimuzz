@@ -129,11 +129,7 @@ let make llctx llset =
 
   let can_optimize file =
     let path = Filename.concat dir file in
-    match
-      Oracle.Optimizer.run
-        ~passes:[ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ]
-        path
-    with
+    match Oracle.Optimizer.run ~passes:[ "instcombine" ] path with
     | CRASH | INVALID ->
         AUtil.name_opted_ver path |> AUtil.clean;
         false
