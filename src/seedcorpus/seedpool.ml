@@ -149,12 +149,14 @@ let make llctx llset =
     | _ -> failwith "invalid metric"
   in
 
-  let pool_first, pool_later =
+  (* pool_covers contains seeds which cover the target *)
+  (* other_seeds contains seeds which do not *)
+  let pool_covers, other_seeds =
     seed_files
     |> List.fold_left
-         (fun (pool_first, pool_later) file ->
+         (fun (pool_first, other_seeds) file ->
            let path = Filename.concat dir file in
-           if can_optimize file |> not then (pool_first, pool_later)
+           if can_optimize file |> not then (pool_first, other_seeds)
            else
              let llm =
                ALlvm.MemoryBuffer.of_file path
@@ -162,13 +164,13 @@ let make llctx llset =
                |> clean_llm llctx true
              in
              match llm with
-             | None -> (pool_first, pool_later)
+             | None -> (pool_first, other_seeds)
              | Some llm -> (
                  match
                    Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llset
                      llm
                  with
-                 | CRASH | INVALID -> (pool_first, pool_later)
+                 | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID cov ->
                      let covers = CD.Coverage.cover_target target_path cov in
                      let score = score_func target_path cov in
@@ -180,10 +182,26 @@ let make llctx llset =
                      let seed = { llm; covers; score = score_int } in
                      if !Config.logging then
                        AUtil.log "[seed] %s, %a@." file pp_seed seed;
-                     if covers then (pool_first |> push seed, pool_later)
-                     else (pool_first, pool_later |> push seed)))
-         (Queue.create (), Queue.create ())
+                     if covers then (pool_first |> push seed, other_seeds)
+                     else (pool_first, seed :: other_seeds)))
+         (Queue.create (), [])
   in
 
-  Queue.transfer pool_later pool_first;
-  pool_first
+  (* pool_closest contains seeds which are closest to the target *)
+  let pool_closest =
+    other_seeds
+    |> List.sort (fun a b -> compare a.score b.score)
+    |> List.fold_left
+         (fun (cnt, pool) seed ->
+           if cnt >= !Config.max_initial_seed then (cnt, pool)
+           else (cnt + 1, push seed pool))
+         (0, Queue.create ())
+    |> snd
+  in
+
+  (* we try covering seeds first and closest seeds in that order *)
+  Queue.transfer pool_closest pool_covers;
+
+  assert (Queue.length pool_covers = !Config.max_initial_seed);
+
+  pool_covers
