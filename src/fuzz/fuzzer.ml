@@ -30,7 +30,10 @@ let measure_optimizer_coverage filename llm =
       filename_full
   in
 
-  if !Config.no_tv then (optimization_res, Validator.Correct)
+  if !Config.no_tv then (
+    AUtil.clean filename_full;
+    AUtil.clean optimized_ir_filename;
+    (optimization_res, Validator.Correct))
   else
     let validation_res = Validator.run filename_full optimized_ir_filename in
     if validation_res = Validator.Incorrect then
@@ -89,7 +92,14 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
               { llm = mutant; covers = covered; score = mutant_score }
             in
             if new_seed.covers || new_seed.score < seed.score then (
-              ALlvm.save_ll !Config.corpus_dir filename mutant;
+              let corpus_name =
+                match String.split_on_char '.' filename with
+                | time_hash :: _ll ->
+                    Format.sprintf "%s-score:%f-covers:%b.ll" time_hash
+                      new_seed.score new_seed.covers
+                | _ -> invalid_arg "Invalid filename"
+              in
+              ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
               in
