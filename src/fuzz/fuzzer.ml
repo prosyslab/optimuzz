@@ -25,19 +25,21 @@ let measure_optimizer_coverage filename llm =
   let filename_full = Filename.concat !Config.out_dir filename in
   let optimized_ir_filename = AUtil.name_opted_ver filename_full in
 
-  let optimization_res =
-    Optimizer.run ~passes:optimizer_passes ~output:optimized_ir_filename
-      filename_full
-  in
+  Optimizer.run ~passes:optimizer_passes ~output:optimized_ir_filename
+    filename_full
 
-  if !Config.no_tv then (optimization_res, Validator.Correct)
+let check_correctness filename llm =
+  let open Oracle in
+  if !Config.no_tv then Validator.Correct
   else
-    let validation_res = Validator.run filename_full optimized_ir_filename in
-    if validation_res = Validator.Incorrect then
+    let filename_full = Filename.concat !Config.out_dir filename in
+    let optimized_ir_filename = AUtil.name_opted_ver filename_full in
+    let res = Validator.run filename_full optimized_ir_filename in
+    if res = Validator.Incorrect then
       ALlvm.save_ll !Config.crash_dir filename llm;
     AUtil.clean filename_full;
     AUtil.clean optimized_ir_filename;
-    (optimization_res, validation_res)
+    res
 
 let record_timestamp cov =
   (* timestamp *)
@@ -71,13 +73,12 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
         (None, progress)
     | Some filename -> (
         (* TODO: not using run result, only caring coverage *)
-        let optim_res, _valid_res =
-          measure_optimizer_coverage filename mutant
-        in
+        let optim_res = measure_optimizer_coverage filename mutant in
         match optim_res with
         | INVALID | CRASH ->
             mutate_seed llctx target_path llset seed progress times
         | VALID cov_mutant ->
+            check_correctness filename mutant |> ignore;
             let new_seed : SeedPool.seed_t =
               let covered = CD.Coverage.cover_target target_path cov_mutant in
               let mutant_score =
