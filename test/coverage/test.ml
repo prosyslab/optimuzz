@@ -7,13 +7,13 @@ let _ =
   let cov = CovAvg.read Sys.argv.(1) in
   let avg = CovAvg.score target_path cov in
 
-  Format.printf "%a\n" CovAvg.pp_metric avg;
-  CovAvg.cover_target target_path cov |> Printf.printf "%b\n";
+  Format.printf "%a@." CovAvg.pp_metric avg;
+  CovAvg.cover_target target_path cov |> Format.printf "%b@.";
 
   let cov = CovMin.read Sys.argv.(1) in
   let min = CovMin.score target_path cov in
 
-  Format.printf "%a\n" CovMin.pp_metric min;
-  CovMin.cover_target target_path cov |> Printf.printf "%b\n";
+  Format.printf "%a@." CovMin.pp_metric min;
+  CovMin.cover_target target_path cov |> Format.printf "%b@.";
 
   ()
