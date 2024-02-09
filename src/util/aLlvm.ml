@@ -136,15 +136,27 @@ let opcode_of_string = function
 let fold_left_all_instr f a m =
   if is_declaration m then a else fold_left_blocks (fold_left_instrs f) a m
 
+let filter_all_instr pred func =
+  fold_left_all_instr
+    (fun accu instr -> if pred instr then instr :: accu else accu)
+    [] func
+
+let any_all_instr pred func =
+  fold_left_all_instr (fun b instr -> b || pred instr) false func
+
+let for_all_instr pred func =
+  fold_left_all_instr (fun b instr -> b && pred instr) true func
+
 (** [iter_all_instr f m] applies function f to each of instructions in function m*)
 let iter_all_instr f m =
   if is_declaration m then () else iter_blocks (iter_instrs f) m
 
 (** [get_return_instr f] returns ret instruction from [f]. *)
-let get_return_instr f =
-  List.find
-    (fun instr -> instr_opcode instr = Opcode.Ret)
-    (fold_left_all_instr (fun l g -> g :: l) [] f)
+let get_return_instr func =
+  let rets =
+    func |> filter_all_instr (fun instr -> instr_opcode instr = Opcode.Ret)
+  in
+  match rets with [] -> None | ret :: _ -> Some ret
 
 let is_variable instr =
   match instr_opcode instr with Invalid | Store -> false | _ -> true

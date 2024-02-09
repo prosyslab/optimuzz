@@ -19,19 +19,15 @@ let push_seq s p =
   Queue.add_seq p s;
   p
 
-let check_exist_ret f =
-  ALlvm.fold_left_all_instr
-    (fun res instr ->
-      if res then res
-      else match ALlvm.instr_opcode instr with Ret -> true | _ -> false)
-    false f
+let check_exist_ret func =
+  let is_ret instr = ALlvm.instr_opcode instr = Ret in
+  ALlvm.any_all_instr is_ret func
 
-let collect_instruction_types f =
-  ALlvm.fold_left_all_instr
-    (fun types instr_old ->
-      let ty = ALlvm.type_of instr_old in
-      match ALlvm.classify_type ty with Void -> types | _ -> ty :: types)
-    [] f
+let collect_instruction_types func =
+  func
+  |> ALlvm.filter_all_instr (fun instr ->
+         ALlvm.type_of instr |> ALlvm.classify_type <> Void)
+  |> List.fold_left (fun accu instr -> ALlvm.type_of instr :: accu) []
 
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
