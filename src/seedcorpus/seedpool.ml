@@ -39,6 +39,7 @@ let subst_ret llctx instr wide =
   ALlvm.reset_var_names f_old;
 
   let types = collect_instruction_types f_old in
+  (* add dummpy parameters *)
   let extra_param =
     match types with
     | [] -> [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |]
@@ -47,11 +48,13 @@ let subst_ret llctx instr wide =
         [| ty; ty |]
   in
 
+  (* make param map to copy function. *)
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param
   in
 
+  (* target: new instruction will returned.*)
   let target = ALlvm.get_instr_before ~wide instr in
   match target with
   | Some i ->
@@ -69,12 +72,16 @@ let subst_ret llctx instr wide =
              else
                param_new
                |> ALlvm.set_value_name (ALlvm.value_name params_old.(i)));
+               (* copy function with new return value (target).*)
       ALlvm.copy_function_with_new_retval llctx f_old f_new new_ret_ty;
       true
   | None -> true
 
+(* If the functions return a constant, copy the functions to return another instruction and delete the original function. *)
 let rec clean_llm llctx wide llm =
+  (* make llm clone*)
   let llm_clone = Llvm_transform_utils.clone_module llm in
+  (* search functions return constant*)
   let deleted_functions =
     ALlvm.fold_left_functions
       (fun acc f ->
@@ -93,12 +100,14 @@ let rec clean_llm llctx wide llm =
                         match ALlvm.classify_value (ALlvm.operand instr 0) with
                         | ALlvm.ValueKind.ConstantInt | ConstantPointerNull
                         | ConstantFP | NullValue | Function ->
+                            (* if function returns constant then substitute return instruction. *)
                             subst_ret llctx instr wide
                         | _ -> (
                             let ret_ty =
                               ALlvm.operand instr 0 |> ALlvm.type_of
                             in
                             match ALlvm.classify_type ret_ty with
+                            (* if function is void type then substitute return instruction. *)
                             | ALlvm.TypeKind.Void -> subst_ret llctx instr wide
                             | _ -> false))
                   | _ -> false)
