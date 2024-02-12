@@ -1,0 +1,4 @@
+(executable
+ (name check_corpus)
+ (modules check_corpus)
+ (libraries oracle util domainslib))
