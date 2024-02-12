@@ -56,6 +56,10 @@ let report_worker reporter (queue : int C.t) () =
   in
   iter () |> ignore
 
+let grep re filename =
+  let content = AUtil.readlines filename in
+  List.exists (fun line -> Str.string_match re line 0) content
+
 let _ =
   let open Domainslib in
   Arg.parse speclist
@@ -67,26 +71,19 @@ let _ =
   let llfiles =
     match !re with
     | None -> collect_module_files dir
-    | Some re ->
-        let finder filename =
-          let content = AUtil.readlines filename in
-          List.exists (fun line -> Str.string_match re line 0) content
-        in
-        collect_module_files ~predicate:finder dir
+    | Some re -> collect_module_files ~predicate:(grep re) dir
   in
 
-  Format.printf "Found %d modules@." (Array.length llfiles);
+  let num_files = Array.length llfiles in
+  Format.printf "Found %d modules@." num_files;
 
   let pool = Task.setup_pool ~num_domains:!ntasks () in
 
   let report_queue = C.make_unbounded () in
-  Progress.with_reporter
-    (bar ~total:(Array.length llfiles))
-    (fun reporter ->
+  Progress.with_reporter (bar ~total:num_files) (fun reporter ->
       let report_domain = Domain.spawn (report_worker reporter report_queue) in
 
-      Task.parallel_for pool ~start:0 ~finish:(Array.length llfiles)
-        ~body:(fun i ->
+      Task.parallel_for pool ~start:0 ~finish:num_files ~body:(fun i ->
           let llfile = llfiles.(i) in
           let verify = check_transformation llfile in
           C.send report_queue 1;
@@ -94,4 +91,6 @@ let _ =
             Format.printf "alive-tv reports wrong transformation: %s@." llfile);
 
       Domain.join report_domain);
+
+  Task.teardown_pool pool;
   ()
