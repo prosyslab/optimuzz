@@ -85,7 +85,7 @@ let _ =
     (fun reporter ->
       let report_domain = Domain.spawn (report_worker reporter report_queue) in
 
-      Task.parallel_for pool ~start:0 ~finish:num_files ~body:(fun i ->
+      Task.parallel_for pool ~start:0 ~finish:(num_files - 1) ~body:(fun i ->
           let llfile = llfiles.(i) in
           let verify = check_transformation llfile in
           C.send report_queue 1L;
