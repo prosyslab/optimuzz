@@ -5,7 +5,7 @@ let print_score = function
   | Some x -> Printf.printf "%f\n" x
 
 let _ =
-  let target_path = CD.Path.parse "A:B:C:D" in
+  let target_path = CD.Path.parse "A:B:C:D" |> Option.get in
   let cov = CD.Coverage.read Sys.argv.(1) in
   CD.Coverage.avg_score target_path cov |> print_score;
   CD.Coverage.min_score target_path cov |> print_score;
