@@ -29,8 +29,9 @@ setup.log
 # Mac
 .DS_Store
 
-# executable
+# executables
 llfuzz
+check_corpus
 
 # llvm files
 *.bc
