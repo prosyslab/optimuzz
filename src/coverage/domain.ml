@@ -3,7 +3,7 @@ module Path : sig
   type t
 
   val compare : t -> t -> int
-  val parse : string -> t
+  val parse : string -> t option
   val length : t -> int
   val distance : t -> t -> int
   val distances : t -> t -> (t * int) list
@@ -20,8 +20,8 @@ end = struct
   let parse s =
     let chunks = String.split_on_char ':' s |> List.filter (( <> ) "") in
     match chunks with
-    | file :: func :: ids -> file :: func :: ids
-    | _ -> failwith ("ill-formed path" ^ s)
+    | file :: func :: ids -> file :: func :: ids |> Option.some
+    | _ -> None
 
   (** file and func also count as a length *)
   let length = List.length
@@ -90,9 +90,10 @@ end = struct
     let ic = open_in file in
     let rec aux accu =
       match input_line ic with
-      | line ->
-          let path = Path.parse line in
-          add path accu |> aux
+      | line -> (
+          match Path.parse line with
+          | Some path -> add path accu |> aux
+          | None -> aux accu)
       | exception End_of_file -> accu
     in
     let cov = aux empty in

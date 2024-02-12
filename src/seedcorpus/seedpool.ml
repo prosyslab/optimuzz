@@ -128,7 +128,7 @@ let rec clean_llm llctx wide llm =
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
 let make llctx llset =
   let dir = !Config.seed_dir in
-  let target_path = CD.Path.parse !Config.cov_directed in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   assert (Sys.file_exists dir && Sys.is_directory dir);
 
   let seed_files =
