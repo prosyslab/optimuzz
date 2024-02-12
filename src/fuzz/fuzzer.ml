@@ -120,7 +120,7 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx llset progress =
   let seed, pool_popped = SeedPool.pop pool in
-  let target_path = CD.Path.parse !Config.cov_directed in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   let mutator = mutate_seed llctx target_path llset in
 
   (* try generating interesting mutants *)
