@@ -20,10 +20,12 @@ let check_transformation llfile =
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (
-      (* coverage is not required *)
-      match Validator.run llfile llfile_opt with
-      | Correct | Failed | Errors -> true
-      | Incorrect -> false)
+      try
+        (* coverage is not required *)
+        match Validator.run llfile llfile_opt with
+        | Correct | Failed | Errors -> true
+        | Incorrect -> false
+      with Unix.Unix_error _ -> true)
 
 let time f x =
   let t = Sys.time () in
@@ -48,13 +50,15 @@ let bar ~total =
 
 module C = Domainslib.Chan
 
-let report_worker reporter (queue : int64 C.t) () =
-  let rec iter () =
-    let _ = C.recv queue in
-    reporter 1L;
-    iter ()
+let report_worker reporter times (chan : int64 C.t) () =
+  let rec iter t =
+    if t = 0 then ()
+    else
+      let _ = C.recv chan in
+      reporter 1L;
+      iter (t - 1)
   in
-  iter () |> ignore
+  iter times |> ignore
 
 let grep re filename =
   let content = AUtil.readlines filename in
@@ -79,20 +83,25 @@ let _ =
 
   let pool = Task.setup_pool ~num_domains:!ntasks () in
 
-  let report_queue = C.make_unbounded () in
+  let report_chan = C.make_unbounded () in
+
   Progress.with_reporter
     (Progress.counter (Int64.of_int num_files))
     (fun reporter ->
-      let report_domain = Domain.spawn (report_worker reporter report_queue) in
+      Task.run pool (fun () ->
+          let counter =
+            Task.async pool (report_worker reporter num_files report_chan)
+          in
+          Task.parallel_for pool ~start:0 ~finish:(num_files - 1)
+            ~body:(fun i ->
+              let llfile = llfiles.(i) in
+              let verify = check_transformation llfile in
+              C.send report_chan 1L;
+              if not verify then
+                Format.printf "alive-tv reports wrong transformation: %s@."
+                  llfile);
 
-      Task.parallel_for pool ~start:0 ~finish:(num_files - 1) ~body:(fun i ->
-          let llfile = llfiles.(i) in
-          let verify = check_transformation llfile in
-          C.send report_queue 1L;
-          if not verify then
-            Format.printf "alive-tv reports wrong transformation: %s@." llfile);
-
-      Domain.join report_domain);
+          Task.await pool counter));
 
   Task.teardown_pool pool;
   ()
