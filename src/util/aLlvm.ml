@@ -332,8 +332,6 @@ let set_opd_and_ret instr i opd =
   set_operand instr i opd;
   instr
 
-exception Out_of_integer_domain
-
 module OpcodeClass = struct
   exception Improper_class
 
@@ -381,9 +379,6 @@ module OpcodeClass = struct
     | Trunc | ZExt | SExt -> CAST
     | ICmp -> CMP
     | PHI -> PHI
-    | FAdd | FSub | FMul | FDiv | FRem | FPToUI | FPToSI | UIToFP | SIToFP
-    | FPTrunc | FPExt | FCmp ->
-        raise Out_of_integer_domain
     | _ -> OTHER
 
   let oplist_of = function
