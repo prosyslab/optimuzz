@@ -1038,22 +1038,28 @@ let redef_fn llctx f typemap =
     function [f]. This is specially useful when we have to assure all values
     have own names. *)
 let reset_var_names f =
-  let name i = "val" ^ string_of_int i in
-  let start =
-    Array.fold_left
-      (fun accu param ->
-        set_value_name (name accu) param;
-        accu + 1)
-      0 (params f)
+  let aux () =
+    let name i = "val" ^ string_of_int i in
+    let start =
+      Array.fold_left
+        (fun accu param ->
+          set_value_name (name accu) param;
+          accu + 1)
+        0 (params f)
+    in
+    fold_left_all_instr
+      (fun accu i ->
+        if i |> type_of |> classify_type <> Void then (
+          set_value_name (name accu) i;
+          accu + 1)
+        else accu)
+      start f
+    |> ignore
   in
-  fold_left_all_instr
-    (fun accu i ->
-      if i |> type_of |> classify_type <> Void then (
-        set_value_name (name accu) i;
-        accu + 1)
-      else accu)
-    start f
-  |> ignore
+
+  (* had better call this twice for prettier names;
+     once is enough, so if this makes performance issue, erase one *)
+  () |> aux |> aux
 
 let copy_instr_with_new_retval llctx llb instr_old link_instr link_block
     f_new_type =
