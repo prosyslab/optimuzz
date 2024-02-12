@@ -46,16 +46,16 @@ let speclist =
 
 let bar ~total =
   let open Progress.Line in
-  list [ bar total; count_to total ]
+  list [ elapsed (); bar total; count_to total; percentage_of total ]
 
 module C = Domainslib.Chan
 
-let report_worker reporter times (chan : int64 C.t) () =
+let report_worker reporter times (chan : unit C.t) () =
   let rec iter t =
     if t = 0 then ()
     else
       let _ = C.recv chan in
-      reporter 1L;
+      reporter 1;
       iter (t - 1)
   in
   iter times |> ignore
@@ -85,9 +85,7 @@ let _ =
 
   let report_chan = C.make_unbounded () in
 
-  Progress.with_reporter
-    (Progress.counter (Int64.of_int num_files))
-    (fun reporter ->
+  Progress.with_reporter (bar ~total:num_files) (fun reporter ->
       Task.run pool (fun () ->
           let counter =
             Task.async pool (report_worker reporter num_files report_chan)
@@ -96,7 +94,7 @@ let _ =
             ~body:(fun i ->
               let llfile = llfiles.(i) in
               let verify = check_transformation llfile in
-              C.send report_chan 1L;
+              C.send report_chan ();
               if not verify then
                 Format.printf "alive-tv reports wrong transformation: %s@."
                   llfile);
