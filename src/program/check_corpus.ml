@@ -48,10 +48,10 @@ let bar ~total =
 
 module C = Domainslib.Chan
 
-let report_worker reporter (queue : int C.t) () =
+let report_worker reporter (queue : int64 C.t) () =
   let rec iter () =
     let _ = C.recv queue in
-    reporter 1;
+    reporter 1L;
     iter ()
   in
   iter () |> ignore
@@ -80,13 +80,15 @@ let _ =
   let pool = Task.setup_pool ~num_domains:!ntasks () in
 
   let report_queue = C.make_unbounded () in
-  Progress.with_reporter (bar ~total:num_files) (fun reporter ->
+  Progress.with_reporter
+    (Progress.counter (Int64.of_int num_files))
+    (fun reporter ->
       let report_domain = Domain.spawn (report_worker reporter report_queue) in
 
       Task.parallel_for pool ~start:0 ~finish:num_files ~body:(fun i ->
           let llfile = llfiles.(i) in
           let verify = check_transformation llfile in
-          C.send report_queue 1;
+          C.send report_queue 1L;
           if not verify then
             Format.printf "alive-tv reports wrong transformation: %s@." llfile);
 
