@@ -16,6 +16,11 @@ module Progress = struct
       (CD.Coverage.cardinal progress.cov_sofar)
 end
 
+type res_t =
+  | INVALID
+  | INTERESTING of (SeedPool.seed_t option * Progress.t)
+  | NOT_INTERESTING
+
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
@@ -50,6 +55,44 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
+let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
+  let score_func =
+    match !Config.metric with
+    | "avg" -> CD.Coverage.avg_score
+    | "min" -> CD.Coverage.min_score
+    | _ -> invalid_arg "Invalid metric"
+  in
+  (* TODO: not using run result, only caring coverage *)
+  let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
+  match optim_res with
+  | INVALID | CRASH -> INVALID
+  | VALID cov_mutant ->
+      let new_seed : SeedPool.seed_t =
+        let covered = CD.Coverage.cover_target target_path cov_mutant in
+        let mutant_score =
+          score_func target_path cov_mutant
+          |> Option.fold
+               ~none:(!Config.max_distance |> float_of_int)
+               ~some:Fun.id
+        in
+        { llm = mutant; covers = covered; score = mutant_score }
+      in
+      if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
+      then (
+        let corpus_name =
+          match String.split_on_char '.' filename with
+          | time_hash :: _ll ->
+              Format.sprintf "%s-score:%f-covers:%b.ll" time_hash new_seed.score
+                new_seed.covers
+          | _ -> invalid_arg "Invalid filename"
+        in
+        ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
+        let progress =
+          progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
+        in
+        INTERESTING (Some new_seed, progress))
+      else NOT_INTERESTING
+
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     times : SeedPool.seed_t option * Progress.t =
@@ -62,49 +105,16 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     (None, progress))
   else
     let mutant = Mutator.run llctx seed in
-    let score_func =
-      match !Config.metric with
-      | "avg" -> CD.Coverage.avg_score
-      | "min" -> CD.Coverage.min_score
-      | _ -> invalid_arg "Invalid metric"
-    in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
     | None ->
         (* duplicated seed *)
         (None, progress)
     | Some filename -> (
-        (* TODO: not using run result, only caring coverage *)
-        let optim_res, _valid_res =
-          measure_optimizer_coverage filename mutant
-        in
-        match optim_res with
-        | INVALID | CRASH ->
-            mutate_seed llctx target_path llset seed progress times
-        | VALID cov_mutant ->
-            let new_seed : SeedPool.seed_t =
-              let covered = CD.Coverage.cover_target target_path cov_mutant in
-              let mutant_score =
-                score_func target_path cov_mutant
-                |> Option.fold
-                     ~none:(!Config.max_distance |> float_of_int)
-                     ~some:Fun.id
-              in
-              { llm = mutant; covers = covered; score = mutant_score }
-            in
-            if new_seed.covers || new_seed.score < seed.score then (
-              let corpus_name =
-                match String.split_on_char '.' filename with
-                | time_hash :: _ll ->
-                    Format.sprintf "%s-score:%f-covers:%b.ll" time_hash
-                      new_seed.score new_seed.covers
-                | _ -> invalid_arg "Invalid filename"
-              in
-              ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
-              let progress =
-                progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
-              in
-              (Some new_seed, progress))
-            else mutate_seed llctx target_path llset seed progress (times - 1))
+        match check_mutant filename mutant target_path seed progress with
+        | INVALID -> mutate_seed llctx target_path llset seed progress times
+        | INTERESTING res -> res
+        | NOT_INTERESTING ->
+            mutate_seed llctx target_path llset seed progress (times - 1))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
