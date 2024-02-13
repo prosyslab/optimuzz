@@ -3,7 +3,7 @@ module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 
 type mode_t = EXPAND | FOCUS
-type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE
+type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 
 let pp_mutation fmt m =
   match m with
@@ -12,13 +12,19 @@ let pp_mutation fmt m =
   | OPERAND -> Format.fprintf fmt "OPERAND"
   | FLAG -> Format.fprintf fmt "FLAG"
   | TYPE -> Format.fprintf fmt "TYPE"
+  | CUT -> Format.fprintf fmt "CUT"
 
 (* choose mutation *)
 let choose_mutation mode score =
   match mode with
   | EXPAND ->
       let mutations =
-        [| CREATE; CREATE; OPCODE; OPCODE; OPERAND; OPERAND; FLAG; FLAG; TYPE |]
+        [
+          (CREATE, 2); (OPCODE, 2); (OPERAND, 2); (FLAG, 2); (TYPE, 1); (CUT, 1);
+        ]
+        |> List.map (fun (m, p) -> List.init p (Fun.const m))
+        |> List.flatten
+        |> Array.of_list
       in
       (* FIXME: highly skewed to CREATE if score is very big *)
       let r = Random.int (score + Array.length mutations) in
@@ -367,6 +373,8 @@ let change_type llctx instr =
       delete_function f_new;
       None)
 
+let cut_below llctx instr_tgt = None
+
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
@@ -385,6 +393,7 @@ let rec mutate_inner_bb llctx mode llm score =
     | OPERAND -> subst_rand_opd llctx None instr_tgt
     | FLAG -> modify_flag llctx instr_tgt
     | TYPE -> change_type llctx instr_tgt
+    | CUT -> cut_below llctx instr_tgt
   in
   match mutation_result with
   | Some _ -> llm
