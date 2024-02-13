@@ -64,3 +64,4 @@ cov.cov
 memo/
 
 llfuzz-out
+*.tar
