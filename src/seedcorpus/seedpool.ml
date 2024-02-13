@@ -196,7 +196,5 @@ let make llctx llset =
     |> snd
   in
 
-  (* we try covering seeds first and closest seeds in that order *)
-  Queue.transfer pool_closest pool_covers;
-
-  pool_covers
+  (* if we have covering seeds, we use covering seeds only. *)
+  if Queue.is_empty pool_covers then pool_closest else pool_covers
