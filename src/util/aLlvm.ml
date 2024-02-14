@@ -381,6 +381,9 @@ module OpcodeClass = struct
     | PHI -> PHI
     | _ -> OTHER
 
+  let opcls_of instr = instr |> instr_opcode |> classify
+  let is_of instr cls = opcls_of instr = cls
+
   let oplist_of = function
     | TER -> ter_list
     | BINARY -> binary_list

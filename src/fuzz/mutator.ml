@@ -217,7 +217,7 @@ let rec subst_rand_opd llctx preferred_opd instr =
   | Some preferred_opd -> (
       let preferred_ty = type_of preferred_opd in
       let check_ty llv = type_of llv = preferred_ty in
-      match instr |> instr_opcode |> OpCls.classify with
+      match OpCls.opcls_of instr with
       | (BINARY | CAST | CMP) when num_operands > 0 -> (
           match num_operands with
           | 1 ->
@@ -289,14 +289,7 @@ let modify_flag _ instr =
    subst_rand_opd llctx (aux len first_opd) instr *)
 
 let is_there_hard_op f =
-  fold_left_all_instr
-    (fun accu i ->
-      accu
-      ||
-      match i |> instr_opcode |> OpCls.classify with
-      | OTHER -> true
-      | _ -> false)
-    false f
+  fold_left_all_instr (fun accu i -> accu || OpCls.is_of i OTHER) false f
 
 let is_mistargeting llv =
   match llv |> type_of |> classify_type with
