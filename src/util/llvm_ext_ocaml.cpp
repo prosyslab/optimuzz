@@ -9,6 +9,7 @@
 #include "llvm-c/Support.h"
 
 #include "llvm/Config/llvm-config.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -52,100 +53,99 @@ extern "C"
   /* bool -> llvalue -> unit */
   value llvm_set_nuw(value flag, value instr)
   {
+    CAMLparam2(flag, instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    cast<Instruction>(value)->setHasNoUnsignedWrap(Bool_val(flag));
-    return Val_unit;
+    Value *v = unwrap<Value>(value_ref);
+    cast<Instruction>(v)->setHasNoUnsignedWrap(Bool_val(flag));
+    CAMLreturn(Val_unit);
   }
 
   /* bool -> llvalue -> unit */
   value llvm_set_nsw(value flag, value instr)
   {
+    CAMLparam2(flag, instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    cast<Instruction>(value)->setHasNoSignedWrap(Bool_val(flag));
-    return Val_unit;
+    Value *v = unwrap<Value>(value_ref);
+    cast<Instruction>(v)->setHasNoSignedWrap(Bool_val(flag));
+    CAMLreturn(Val_unit);
   }
 
   /* bool -> llvalue -> unit */
   value llvm_set_exact(value flag, value instr)
   {
+    CAMLparam2(flag, instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    cast<Instruction>(value)->setIsExact(Bool_val(flag));
-    return Val_unit;
+    Value *v = unwrap<Value>(value_ref);
+    cast<Instruction>(v)->setIsExact(Bool_val(flag));
+    CAMLreturn(Val_unit);
   }
 
   /* llvalue -> bool */
   value llvm_is_nuw(value instr)
   {
+    CAMLparam1(instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    bool ret = cast<Instruction>(value)->hasNoUnsignedWrap();
-    return Val_bool(ret);
+    Value *v = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(v)->hasNoUnsignedWrap();
+    CAMLreturn(Val_bool(ret));
   }
 
   /* llvalue -> bool */
   value llvm_is_nsw(value instr)
   {
+    CAMLparam1(instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    bool ret = cast<Instruction>(value)->hasNoSignedWrap();
-    return Val_bool(ret);
+    Value *v = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(v)->hasNoSignedWrap();
+    CAMLreturn(Val_bool(ret));
   }
 
   /* llvalue -> bool */
   value llvm_is_exact(value instr)
   {
+    CAMLparam1(instr);
     LLVMValueRef value_ref = Value_val(instr);
-    Value* value = unwrap<Value>(value_ref);
-    bool ret = cast<Instruction>(value)->isExact();
-    return Val_bool(ret);
+    Value *v = unwrap<Value>(value_ref);
+    bool ret = cast<Instruction>(v)->isExact();
+    CAMLreturn(Val_bool(ret));
   }
 
   value llvm_set_opaque_pointers(value Ctx, value Enable)
   {
+    CAMLparam2(Ctx, Enable);
     LLVMContextRef Ct = (LLVMContextRef)from_val(Ctx);
     LLVMContext *C = unwrap(Ct);
     C->setOpaquePointers(Bool_val(Enable));
-    return Val_unit;
+    CAMLreturn(Val_unit);
   }
 
   value llvm_get_alloca_type(value v)
   {
-    LLVMValueRef instr = (LLVMValueRef)from_val(v);
+    CAMLparam1(v);
+    LLVMValueRef instr = Value_val(v);
     if (const auto *foo = dyn_cast<AllocaInst>(unwrap(instr)))
     {
-      return to_val(foo->getAllocatedType());
+      CAMLreturn(to_val(foo->getAllocatedType()));
     }
     else if (const auto *CE = unwrap<ConstantExpr>(instr))
     {
       AllocaInst *foo = (AllocaInst *)CE->getAsInstruction();
-      return to_val(foo->getAllocatedType());
+      CAMLreturn(to_val(foo->getAllocatedType()));
     }
     assert(false);
   }
 
   value wrap_llvm_verify_module(value M)
   {
-    try
-    {
+    CAMLparam1(M);
+    try {
       char *Message;
       int Result =
           LLVMVerifyModule(Module_val(M), LLVMReturnStatusAction, &Message);
 
-      if (0 == Result)
-      {
-        return Val_bool(true);
-      }
-      else
-      {
-        return Val_bool(false);
-      }
-    }
-    catch (std::exception &e)
-    {
-      return Val_bool(false);
+      CAMLreturn(Val_bool(0 == Result));
+    } catch (std::exception &e) {
+      CAMLreturn(Val_bool(false));
     }
   }
 }
