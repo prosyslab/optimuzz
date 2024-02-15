@@ -373,7 +373,87 @@ let change_type llctx instr =
       delete_function f_new;
       None)
 
-let cut_below llctx instr_tgt = None
+let delete_empty_blocks func =
+  let open Util in
+  ALlvm.fold_left_blocks
+    (fun accu blk ->
+      match ALlvm.instr_begin blk with
+      | ALlvm.At_end _ -> blk :: accu
+      | ALlvm.Before _ -> accu)
+    [] func
+  |> List.iter ALlvm.delete_block
+
+let func_terminators func =
+  let open Util in
+  ALlvm.fold_left_blocks
+    (fun accu blk ->
+      match ALlvm.block_terminator blk with
+      | Some term -> term :: accu
+      | None -> accu)
+    [] func
+
+let cut_below llctx instr =
+  let open Util in
+  let f_old = ALlvm.get_function instr in
+
+  let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
+
+  match instrs with
+  | [] -> None
+  | [ _x ] -> None
+  | [ _x; _y ] -> None
+  | _ -> (
+      (* target: new instruction will returned.*)
+      let target = ALlvm.get_instr_before ~wide:true instr in
+      match target with
+      | Some tgt when ALlvm.is_assignment (ALlvm.instr_opcode tgt) ->
+          let rec succ_instrs accu curr =
+            match ALlvm.instr_succ curr with
+            | ALlvm.At_end _ -> accu
+            | ALlvm.Before next -> succ_instrs (next :: accu) next
+          in
+
+          let rec succ_blocks accu curr =
+            match ALlvm.block_succ curr with
+            | ALlvm.At_end _ -> accu
+            | ALlvm.Before next -> succ_blocks (next :: accu) next
+          in
+
+          (* delete all succeeding instructions and blocks*)
+          succ_instrs [] tgt |> List.iter ALlvm.delete_instruction;
+          succ_blocks [] (ALlvm.instr_parent tgt)
+          |> List.iter ALlvm.delete_block;
+
+          (* delete all remaining terminating instructions *)
+          func_terminators f_old |> List.iter ALlvm.delete_instruction;
+          delete_empty_blocks f_old;
+
+          (* add ret which returns tgt *)
+          ALlvm.builder_at_end llctx (ALlvm.instr_parent tgt)
+          |> ALlvm.build_ret tgt
+          |> ignore;
+
+          (* move instructions in other blocks to the entry block *)
+          let entry = ALlvm.entry_block f_old in
+          let other_blocks =
+            ALlvm.fold_left_blocks
+              (fun accu blk -> if blk = entry then accu else blk :: accu)
+              [] f_old
+          in
+          List.iter (ALlvm.transfer_instructions entry) other_blocks;
+
+          (* transferring could leave some blocks empty *)
+          (* delete empty blocks *)
+          delete_empty_blocks f_old;
+
+          let new_ret_ty = ALlvm.type_of tgt in
+          let f_new = ALlvm.clone_function f_old new_ret_ty in
+
+          ALlvm.delete_function f_old;
+
+          (* Debug *)
+          ALlvm.get_return_instr f_new
+      | _ -> None)
 
 (* ACTUAL MUTATION FUNCTIONS *)
 (* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)

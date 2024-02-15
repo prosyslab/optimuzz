@@ -6,6 +6,16 @@ external set_opaque_pointers : llcontext -> bool -> unit
 external verify_module : llmodule -> bool = "wrap_llvm_verify_module"
 external get_allocated_type : llvalue -> lltype = "llvm_get_alloca_type"
 
+external clone_function : llvalue -> lltype -> llvalue
+  = "llvm_transforms_utils_clone_function"
+(** [clone_function func ret_ty] returns
+    a copy of [func] of return type [ret_ty] and add it to [func]'s module *)
+
+external transfer_instructions : llbasicblock -> llbasicblock -> unit
+  = "llvm_bb_transfer_instructions"
+(** [transfer_instructions src dst] moves all instructions
+    from [src] to the end of [dst] *)
+
 let string_of_opcode = function
   | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
@@ -218,6 +228,10 @@ let set_intereseting_types llctx =
       vector_type (i32_type llctx) 4;
     ];
   interesting_types := !interesting_integer_types @ !interesting_vector_types
+
+let read_ll llctx filepath =
+  let buf = Llvm.MemoryBuffer.of_file filepath in
+  Llvm_irreader.parse_ir llctx buf
 
 (** [save_ll target_dir output filename llmodule] *)
 let save_ll dir filename llm =

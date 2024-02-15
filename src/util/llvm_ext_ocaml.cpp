@@ -20,6 +20,7 @@
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/ReplaceConstant.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 
 #include "caml/alloc.h"
 #include "caml/mlvalues.h"
@@ -47,6 +48,7 @@ void *from_val(value v)
 
 #define Value_val(v) ((LLVMValueRef)from_val(v))
 #define Module_val(v) ((LLVMModuleRef)from_val(v))
+#define Type_val(v) ((LLVMTypeRef)from_val(v))
 
 extern "C"
 {
@@ -147,5 +149,44 @@ extern "C"
     } catch (std::exception &e) {
       CAMLreturn(Val_bool(false));
     }
+  }
+
+  // Reference:
+  // https://github.com/llvm/llvm-project/blob/fe20a759fcd20e1755ea1b34c5e6447a787925dc/llvm/lib/Transforms/Utils/CloneFunction.cpp#L320
+  value llvm_transforms_utils_clone_function(value F, value RetTy) {
+    CAMLparam2(F, RetTy);
+    Function *OldFunc = unwrap<Function>(Value_val(F));
+    Type *RT = unwrap<Type>(Type_val(RetTy));
+
+    std::vector<Type *> ArgTypes = OldFunc->getFunctionType()->params();
+    bool IsVarArg = OldFunc->getFunctionType()->isVarArg();
+    FunctionType *NewFTy = FunctionType::get(RT, ArgTypes, IsVarArg);
+
+    Module *M = OldFunc->getParent();
+    Function *NewFunc =
+        Function::Create(NewFTy, OldFunc->getLinkage(), OldFunc->getName(), M);
+
+    ValueToValueMapTy VMap;
+    Function::arg_iterator DestI = NewFunc->arg_begin();
+    for (const Argument &I : OldFunc->args()) {
+      DestI->setName(I.getName());
+      VMap[&I] = &*DestI++;
+    }
+
+    SmallVector<ReturnInst *, 8> Returns;
+    CloneFunctionInto(NewFunc, OldFunc, VMap,
+                      CloneFunctionChangeType::LocalChangesOnly, Returns, "",
+                      nullptr);
+    CAMLreturn(to_val(NewFunc));
+  }
+
+  value llvm_bb_transfer_instructions(value ToBB, value FromBB) {
+    CAMLparam2(ToBB, FromBB);
+    BasicBlock *Dest = unwrap<BasicBlock>(Value_val(ToBB));
+    BasicBlock *Src = unwrap<BasicBlock>(Value_val(FromBB));
+
+    Dest->splice(Dest->end(), Src);
+
+    CAMLreturn(Val_unit);
   }
 }
