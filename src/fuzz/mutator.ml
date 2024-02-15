@@ -20,7 +20,7 @@ let choose_mutation mode score =
   | EXPAND ->
       let mutations =
         [
-          (CREATE, 2); (OPCODE, 2); (OPERAND, 2); (FLAG, 2); (TYPE, 1); (CUT, 1);
+          (CREATE, 3); (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1);
         ]
         |> List.map (fun (m, p) -> List.init p (Fun.const m))
         |> List.flatten
