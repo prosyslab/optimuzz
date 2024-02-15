@@ -35,6 +35,7 @@ llfuzz
 # llvm files
 *.bc
 *.ll
+!*.test.ll
 !*.expected.ll
 
 # pattern files

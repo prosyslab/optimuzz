@@ -7,6 +7,7 @@ EXE=llfuzz
 all: fmt
 	$(DUNE) build src/main.exe
 	$(DUNE) build test/coverage/test.exe
+	$(DUNE) build test/mutator/test.exe
 	$(LN) _build/default/src/main.exe $(EXE)
 
 test: all
