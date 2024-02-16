@@ -1,5 +1,6 @@
 open Oracle
 open Util
+open Domainslib
 
 let collect_module_files ?predicate dir =
   let predicate = match predicate with Some f -> f | None -> fun _ -> true in
@@ -27,11 +28,6 @@ let check_transformation llfile =
         | Incorrect -> false
       with Unix.Unix_error _ -> true)
 
-let time f x =
-  let t = Sys.time () in
-  let y = f x in
-  (y, Sys.time () -. t)
-
 let args = ref []
 let ntasks = ref 12
 let re = ref None
@@ -48,24 +44,21 @@ let bar ~total =
   let open Progress.Line in
   list [ elapsed (); bar total; count_to total; percentage_of total ]
 
-module C = Domainslib.Chan
-
-let report_worker reporter times (chan : unit C.t) () =
+let report_worker reporter times (chan : unit Chan.t) () =
   let rec iter t =
     if t = 0 then ()
     else
-      let _ = C.recv chan in
+      let _ = Chan.recv chan in
       reporter 1;
       iter (t - 1)
   in
-  iter times |> ignore
+  iter times
 
 let grep re filename =
   let content = AUtil.readlines filename in
   List.exists (fun line -> Str.string_match re line 0) content
 
 let _ =
-  let open Domainslib in
   Arg.parse speclist
     (fun arg -> args := arg :: !args)
     "usage: check-corpus <dir> [options]";
@@ -83,7 +76,7 @@ let _ =
 
   let pool = Task.setup_pool ~num_domains:!ntasks () in
 
-  let report_chan = C.make_unbounded () in
+  let report_chan = Chan.make_unbounded () in
 
   Progress.with_reporter (bar ~total:num_files) (fun reporter ->
       Task.run pool (fun () ->
@@ -94,7 +87,7 @@ let _ =
             ~body:(fun i ->
               let llfile = llfiles.(i) in
               let verify = check_transformation llfile in
-              C.send report_chan ();
+              Chan.send report_chan ();
               if not verify then
                 Format.printf "alive-tv reports wrong transformation: %s@."
                   llfile);
