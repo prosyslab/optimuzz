@@ -8,7 +8,6 @@ module Validator = struct
   type res_t = Correct | Incorrect | Failed | Errors
 
   let run src optimized =
-    assert (optimized = AUtil.name_opted_ver src);
     if Sys.file_exists src && Sys.file_exists optimized then
       let tv_process =
         Unix.open_process_args_in !Config.alive_tv_bin

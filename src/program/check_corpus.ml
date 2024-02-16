@@ -70,6 +70,11 @@ let _ =
     (fun arg -> args := arg :: !args)
     "usage: check-corpus <dir> [options]";
 
+  (try Sys.mkdir "tmp" 0o777
+   with Sys_error _ ->
+     Sys.command "rm -rf tmp" |> ignore;
+     Sys.mkdir "tmp" 0o777);
+
   let corpus_dir = !args |> List.hd in
   let crash_dir = Filename.dirname corpus_dir ^ Filename.dir_sep ^ "crash" in
 
