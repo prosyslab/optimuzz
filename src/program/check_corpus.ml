@@ -17,7 +17,12 @@ let collect_module_files ?predicate dir =
 (** [check_transformation llfile] returns
  *  if optimized module of [llfile] refines the module of [llfile]*)
 let check_transformation llfile =
-  let llfile_opt = Filename.chop_suffix llfile "ll" ^ "opt.ll" in
+  let llfile_opt =
+    let basename = Filename.basename llfile in
+    let filename_opt = Filename.chop_suffix basename "ll" ^ "opt.ll" in
+    "tmp" ^ Filename.dir_sep ^ filename_opt
+  in
+
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (
@@ -58,17 +63,20 @@ let grep re filename =
   let content = AUtil.readlines filename in
   List.exists (fun line -> Str.string_match re line 0) content
 
+let mv src dir = Sys.rename src (dir ^ Filename.dir_sep ^ Filename.basename src)
+
 let _ =
   Arg.parse speclist
     (fun arg -> args := arg :: !args)
     "usage: check-corpus <dir> [options]";
 
-  let dir = !args |> List.hd in
+  let corpus_dir = !args |> List.hd in
+  let crash_dir = Filename.dirname corpus_dir ^ Filename.dir_sep ^ "crash" in
 
   let llfiles =
     match !re with
-    | None -> collect_module_files dir
-    | Some re -> collect_module_files ~predicate:(grep re) dir
+    | None -> collect_module_files corpus_dir
+    | Some re -> collect_module_files ~predicate:(grep re) corpus_dir
   in
 
   let num_files = Array.length llfiles in
@@ -88,9 +96,9 @@ let _ =
               let llfile = llfiles.(i) in
               let verify = check_transformation llfile in
               Chan.send report_chan ();
-              if not verify then
-                Format.printf "alive-tv reports wrong transformation: %s@."
-                  llfile);
+              if not verify then (
+                Format.printf "incorrect transformation: %s@." llfile;
+                mv llfile crash_dir));
 
           Task.await pool counter));
 
