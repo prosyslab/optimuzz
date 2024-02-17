@@ -3,6 +3,7 @@ module CD = Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
+module L = Logger
 
 module Progress = struct
   type t = { cov_sofar : CD.Coverage.t; gen_count : int }
@@ -144,9 +145,7 @@ let rec run pool llctx llset progress =
   F.printf "\r%a@?" Progress.pp progress;
 
   let new_seeds = List.filter_map Fun.id new_seeds in
-  if !Config.logging then
-    List.iter (AUtil.log "%a\n" SeedPool.pp_seed) new_seeds;
-
+  List.iter (L.info "%a\n" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
     |> SeedPool.push_list new_seeds

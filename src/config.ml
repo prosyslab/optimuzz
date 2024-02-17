@@ -1,4 +1,5 @@
 open Util.ALlvm
+module L = Logger
 
 (* llfuzz directory which includes src/, README.md, etc. Automatically set. *)
 let project_home = ref ""
@@ -31,7 +32,7 @@ let num_mutation = ref 10
 let num_mutant = ref 1
 let no_tv = ref false
 let metric = ref "avg"
-let logging = ref false
+let log_level = ref "error"
 
 (* mutation options *)
 let interesting_integers =
@@ -92,7 +93,7 @@ let opts =
     ("-metric", Arg.Set_string metric, "Metric to give a score to a coverage");
     (* logging options *)
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
-    ("-logging", Arg.Set logging, "Turn on logging");
+    ("-log-level", Arg.Set_string log_level, "Set log level. Defaults to info. ");
     ( "-dry-run",
       Arg.Set dry_run,
       "Do not run fuzzing. (for testing configuration)" );
@@ -194,6 +195,14 @@ let initialize llctx () =
 
   if !cov_directed = "" then
     failwith "Coverage target is not set. Please set -direct option.";
+
+  L.from_file (Filename.concat !out_dir "fuzz.log");
+  (match !log_level with
+  | "debug" -> L.set_level L.DEBUG
+  | "info" -> L.set_level L.INFO
+  | "warn" -> L.set_level L.WARN
+  | "error" -> L.set_level L.ERROR
+  | _ -> failwith "Invalid log level");
 
   set_interesting_types llctx;
 

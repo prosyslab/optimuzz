@@ -1,6 +1,7 @@
 open Util
 module CD = Coverage.Domain
 module F = Format
+module L = Logger
 
 (** [Validation] runs translation validation program (alive-tv).
     We use this program as an oracle to detect a miscompilation. *)
@@ -39,32 +40,27 @@ module Validator = struct
           match lines with
           | correct :: incorrect :: failed :: _errors ->
               if eq_line correct 1 then (
-                if !Config.logging then
-                  AUtil.log "[Validator] %s refines %s@."
-                    (Filename.basename optimized)
-                    (Filename.basename src);
+                L.info "Validator: %s refines %s"
+                  (Filename.basename optimized)
+                  (Filename.basename src);
                 Correct)
               else if eq_line incorrect 1 then (
-                if !Config.logging then
-                  AUtil.log "[Validator] %s does not refine %s@."
-                    (Filename.basename optimized)
-                    (Filename.basename src);
+                L.info "Validator: %s does not refine %s"
+                  (Filename.basename optimized)
+                  (Filename.basename src);
                 Incorrect)
               else if eq_line failed 1 then (
-                if !Config.logging then
-                  AUtil.log "[Validator] failed to validate %s and %s@."
-                    (Filename.basename src)
-                    (Filename.basename optimized);
+                L.info "Validator: failed to validate %s and %s"
+                  (Filename.basename src)
+                  (Filename.basename optimized);
                 Failed)
               else (
-                if !Config.logging then
-                  AUtil.log "[Validator] exited with errors@.";
+                L.warn "Validator: exited with errors";
                 Errors)
           | _ -> failwith "unexpected alive-tv output")
       | _ -> Errors
     else (
-      if !Config.logging then
-        AUtil.log "[Validator] %s or %s are not found@." src optimized;
+      L.warn "Validator: %s or %s are not found" src optimized;
       Errors)
 end
 
@@ -79,7 +75,7 @@ module Optimizer = struct
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
-    if !Config.logging then AUtil.log "[opt] %s -> %s@." filename output;
+    L.info "opt: %s -> %s" filename output;
     AUtil.clean !Config.cov_file;
     let exit_state =
       AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]

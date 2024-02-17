@@ -1,6 +1,7 @@
 open Fuzz
 open Util
 module F = Format
+module L = Logger
 module SeedPool = Seedcorpus.Seedpool
 module CD = Coverage.Domain
 
@@ -65,7 +66,6 @@ let measure_coverage_only ~passes () =
 
 let main () =
   let open Oracle in
-  Printexc.record_backtrace true;
   ALlvm.set_opaque_pointers llctx true;
   initialize ();
 
