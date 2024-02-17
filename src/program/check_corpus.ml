@@ -1,6 +1,7 @@
 open Oracle
 open Util
 open Domainslib
+module L = Logger
 
 let collect_module_files ?predicate dir =
   let predicate = match predicate with Some f -> f | None -> fun _ -> true in
@@ -68,15 +69,20 @@ let mv src dir = Sys.rename src (dir ^ Filename.dir_sep ^ Filename.basename src)
 let _ =
   Arg.parse speclist
     (fun arg -> args := arg :: !args)
-    "usage: check-corpus <dir> [options]";
+    "usage: check-corpus <out-dir> [options]";
 
   (try Sys.mkdir "tmp" 0o777
    with Sys_error _ ->
      Sys.command "rm -rf tmp" |> ignore;
      Sys.mkdir "tmp" 0o777);
 
-  let corpus_dir = !args |> List.hd in
-  let crash_dir = Filename.dirname corpus_dir ^ Filename.dir_sep ^ "crash" in
+  let out_dir = !args |> List.hd in
+  let corpus_dir = Filename.concat out_dir "corpus" in
+  let crash_dir = Filename.concat out_dir "crash" in
+
+  let log_file = Filename.concat out_dir "check-corpus.log" in
+  L.from_file log_file;
+  L.set_level L.ERROR;
 
   let llfiles =
     match !re with
@@ -85,7 +91,6 @@ let _ =
   in
 
   let num_files = Array.length llfiles in
-  Format.printf "Found %d modules@." num_files;
 
   let pool = Task.setup_pool ~num_domains:!ntasks () in
 
@@ -101,11 +106,10 @@ let _ =
               let llfile = llfiles.(i) in
               let verify = check_transformation llfile in
               Chan.send report_chan ();
-              if not verify then (
-                Format.printf "incorrect transformation: %s@." llfile;
-                mv llfile crash_dir));
+              if not verify then mv llfile crash_dir);
 
           Task.await pool counter));
 
   Task.teardown_pool pool;
+  L.finalize ();
   ()
