@@ -1,5 +1,6 @@
 open Util
 module CD = Coverage.Domain
+module L = Logger
 
 type seed_t = {
   priority : int;
@@ -192,8 +193,7 @@ let make llctx llset =
                          score = score_int;
                        }
                      in
-                     if !Config.logging then
-                       AUtil.log "[seed] %s, %a@." file pp_seed seed;
+                     L.info "seed: %s, %a@." file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)
                      else (pool_first, seed :: other_seeds)))
          ([], [])

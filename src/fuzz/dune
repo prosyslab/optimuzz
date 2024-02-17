@@ -8,4 +8,5 @@
   util
   coverage
   seedcorpus
-  oracle))
+  oracle
+  logger))

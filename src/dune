@@ -1,7 +1,7 @@
 (library
  (name config)
  (modules config)
- (libraries util))
+ (libraries util logger))
 
 (executable
  (name main)
@@ -17,4 +17,5 @@
   seedcorpus
   fuzz
   pattern
-  util))
+  util
+  logger))

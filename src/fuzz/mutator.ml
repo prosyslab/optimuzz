@@ -1,6 +1,7 @@
 open Util.ALlvm
 module AUtil = Util.AUtil
 module OpCls = OpcodeClass
+module L = Logger
 
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
@@ -465,7 +466,7 @@ let rec mutate_inner_bb llctx mode llm score =
   let instr_tgt = AUtil.choose_random all_instrs in
   (* depending on mode, available mutations differ *)
   let mutation = choose_mutation mode score in
-  if !Config.logging then AUtil.log "[mutation] %a\n" pp_mutation mutation;
+  L.info "mutation: %a" pp_mutation mutation;
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx None instr_tgt
