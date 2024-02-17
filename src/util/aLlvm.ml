@@ -1287,7 +1287,7 @@ module LLModuleSet = struct
     type t = llmodule
 
     let equal a b = string_of_llmodule a = string_of_llmodule b
-    let hash = Hashtbl.hash
+    let hash llm = string_of_llmodule llm |> Hashtbl.hash
   end)
 
   let get_new_name set llm =
