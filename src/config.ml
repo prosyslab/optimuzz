@@ -215,6 +215,16 @@ let initialize llctx () =
   | "error" -> L.set_level L.ERROR
   | _ -> failwith "Invalid log level");
 
+  opts
+  |> List.iter (fun (name, spec, _) ->
+         match spec with
+         | Arg.Set b -> L.info "%s: %b\n" name !b
+         | Arg.Set_string s -> L.info "%s: %s\n" name !s
+         | Arg.Set_int i -> L.info "%s: %d\n" name !i
+         | _ -> failwith "not implemented");
+
+  L.flush ();
+
   set_interesting_types llctx;
 
   if !dry_run then (
