@@ -1,5 +1,6 @@
 open Util.ALlvm
 module L = Logger
+module F = Format
 
 (* llfuzz directory which includes src/, README.md, etc. Automatically set. *)
 let project_home = ref ""
@@ -192,6 +193,16 @@ let initialize llctx () =
   out_dir := Filename.concat !project_home !out_dir;
   crash_dir := Filename.concat !out_dir !crash_dir;
   corpus_dir := Filename.concat !out_dir !corpus_dir;
+
+  (* make directories first *)
+  (try Sys.mkdir !out_dir 0o755
+   with Sys_error msg ->
+     F.eprintf "%s@." msg;
+     F.eprintf "It seems like the output directory already exists.@.";
+     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
+     exit 0);
+  (try Sys.mkdir !crash_dir 0o755 with _ -> ());
+  (try Sys.mkdir !corpus_dir 0o755 with _ -> ());
 
   if !cov_directed = "" then
     failwith "Coverage target is not set. Please set -direct option.";
