@@ -9,17 +9,6 @@ let llctx = ALlvm.create_context ()
 
 let initialize () =
   Config.initialize llctx ();
-
-  (* make directories first *)
-  (try Sys.mkdir !Config.out_dir 0o755
-   with Sys_error msg ->
-     F.eprintf "%s@." msg;
-     F.eprintf "It seems like the output directory already exists.@.";
-     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
-     exit 0);
-  (try Sys.mkdir !Config.crash_dir 0o755 with _ -> ());
-  (try Sys.mkdir !Config.corpus_dir 0o755 with _ -> ());
-
   Random.init !Config.random_seed
 
 let do_pattern_only llset () =
@@ -81,6 +70,7 @@ let main () =
   (* fuzzing *)
   let seed_pool = SeedPool.make llctx llset in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
+  L.info "initial seeds: %d" (SeedPool.cardinal seed_pool);
 
   if SeedPool.cardinal seed_pool = 0 then (
     F.printf "no seed loaded@.";
@@ -89,8 +79,12 @@ let main () =
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
+  L.info "fuzzing campaign starts@.";
   let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
   let end_time = AUtil.now () in
+  L.info "fuzzing campaign ends@.";
+  L.info "total coverage: %d lines" (CD.Coverage.cardinal coverage);
+  L.info "time spent: %ds" (end_time - !AUtil.start_time);
 
   F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
