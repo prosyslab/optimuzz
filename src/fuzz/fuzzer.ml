@@ -139,9 +139,7 @@ let rec run pool llctx llset progress =
   if !Config.logging then
     List.iter (AUtil.log "%a\n" SeedPool.pp_seed) new_seeds;
   let new_pool =
-    pool_popped
-    |> SeedPool.push_seq (new_seeds |> List.to_seq)
-    |> SeedPool.push seed
+    pool_popped |> SeedPool.push_list new_seeds |> SeedPool.push seed
   in
 
   (* repeat until the time budget or seed pool exhausts *)

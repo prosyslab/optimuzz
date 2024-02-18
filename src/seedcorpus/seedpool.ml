@@ -2,22 +2,19 @@ open Util
 module CD = Coverage.Domain
 
 type seed_t = { llm : Llvm.llmodule; covers : bool; score : float }
-type t = seed_t Queue.t
+type t = seed_t AUtil.PrioQueue.queue
 
 let pp_seed fmt seed =
   Format.fprintf fmt "[new_seed] score: %.3f, covers: %b@." seed.score
     seed.covers
 
-let push s pool =
-  Queue.push s pool;
-  pool
+let get_prio seed =
+  if seed.covers then 0 else seed.score |> Float.mul 10.0 |> Float.to_int
 
-let pop pool = (Queue.pop pool, pool)
-let cardinal = Queue.length
-
-let push_seq s p =
-  Queue.add_seq p s;
-  p
+let push s pool = AUtil.PrioQueue.insert pool (get_prio s) s
+let pop pool = AUtil.PrioQueue.extract pool
+let cardinal = AUtil.PrioQueue.length
+let push_list l (p : t) = List.fold_left (fun pool seed -> push seed pool) p l
 
 let check_exist_ret func =
   let is_ret instr = ALlvm.instr_opcode instr = Ret in
@@ -184,22 +181,23 @@ let make llctx llset =
                      let seed = { llm; covers; score = score_int } in
                      if !Config.logging then
                        AUtil.log "[seed] %s, %a@." file pp_seed seed;
-                     if covers then (pool_first |> push seed, other_seeds)
+                     if covers then (seed :: pool_first, other_seeds)
                      else (pool_first, seed :: other_seeds)))
-         (Queue.create (), [])
-  in
-
-  (* pool_closest contains seeds which are closest to the target *)
-  let pool_closest =
-    other_seeds
-    |> List.sort (fun a b -> compare a.score b.score)
-    |> List.fold_left
-         (fun (cnt, pool) seed ->
-           if cnt >= !Config.max_initial_seed then (cnt, pool)
-           else (cnt + 1, push seed pool))
-         (0, Queue.create ())
-    |> snd
+         ([], [])
   in
 
   (* if we have covering seeds, we use covering seeds only. *)
-  if Queue.is_empty pool_covers then pool_closest else pool_covers
+  if pool_covers = [] then
+    (* pool_closest contains seeds which are closest to the target *)
+    let pool_closest =
+      other_seeds
+      |> List.sort (fun a b -> compare a.score b.score)
+      |> List.fold_left
+           (fun (cnt, pool) seed ->
+             if cnt >= !Config.max_initial_seed then (cnt, pool)
+             else (cnt + 1, push seed pool))
+           (0, AUtil.PrioQueue.empty)
+      |> snd
+    in
+    pool_closest
+  else push_list pool_covers AUtil.PrioQueue.empty
