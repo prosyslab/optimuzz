@@ -673,9 +673,7 @@ let cut_below llctx instr =
   let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
 
   match instrs with
-  | [] -> None
-  | [ _x ] -> None
-  | [ _x; _y ] -> None
+  | [] | [ _ ] | [ _; _ ] -> None
   | _ -> (
       (* target: new instruction will returned.*)
       let target = ALlvm.get_instr_before ~wide:true instr in

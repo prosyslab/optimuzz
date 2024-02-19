@@ -73,7 +73,8 @@ let subst_ret llctx instr wide =
                param_new
                |> ALlvm.set_value_name (ALlvm.value_name params_old.(i)));
       (* copy function with new return value (target).*)
-      ALlvm.copy_function_with_new_retval llctx f_old f_new new_ret_ty;
+      ALlvm.ChangeRetVal.copy_function_with_new_retval llctx f_old f_new
+        new_ret_ty;
       true
   | None -> true
 
