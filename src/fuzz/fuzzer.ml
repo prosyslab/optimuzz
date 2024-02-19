@@ -112,7 +112,10 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
     | Some filename -> (
         match check_mutant filename mutant target_path seed progress with
         | INVALID -> mutate_seed llctx target_path llset seed progress times
-        | INTERESTING res -> res
+        | INTERESTING (Some seed, progress) ->
+            ALlvm.LLModuleSet.add llset seed.llm ();
+            (Some seed, progress)
+        | INTERESTING _ -> failwith "unreachable"
         | NOT_INTERESTING ->
             mutate_seed llctx target_path llset seed progress (times - 1))
 

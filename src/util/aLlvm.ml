@@ -1294,6 +1294,6 @@ module LLModuleSet = struct
     match find_opt set llm with
     | Some _ -> None
     | None ->
-        let h = Hashtbl.hash llm |> string_of_int in
-        AUtil.get_current_time () ^ "_" ^ h ^ ".ll" |> Option.some
+        let h = Hashtbl.hash (string_of_llmodule llm) |> string_of_int in
+        Format.sprintf "%s_%s.ll" (AUtil.get_current_time ()) h |> Option.some
 end
