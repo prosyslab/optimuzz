@@ -75,7 +75,12 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
                ~none:(!Config.max_distance |> float_of_int)
                ~some:Fun.id
         in
-        { llm = mutant; covers = covered; score = mutant_score }
+        {
+          priority = SeedPool.get_prio covered mutant_score;
+          llm = mutant;
+          covers = covered;
+          score = mutant_score;
+        }
       in
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
       then (
@@ -141,8 +146,11 @@ let rec run pool llctx llset progress =
   let new_seeds = List.filter_map Fun.id new_seeds in
   if !Config.logging then
     List.iter (AUtil.log "%a\n" SeedPool.pp_seed) new_seeds;
+
   let new_pool =
-    pool_popped |> SeedPool.push_list new_seeds |> SeedPool.push seed
+    pool_popped
+    |> SeedPool.push_list new_seeds
+    |> SeedPool.push { seed with priority = seed.priority + 1 }
   in
 
   (* repeat until the time budget or seed pool exhausts *)

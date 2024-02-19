@@ -1,17 +1,23 @@
 open Util
 module CD = Coverage.Domain
 
-type seed_t = { llm : Llvm.llmodule; covers : bool; score : float }
+type seed_t = {
+  priority : int;
+  llm : Llvm.llmodule;
+  covers : bool;
+  score : float;
+}
+
 type t = seed_t AUtil.PrioQueue.queue
 
 let pp_seed fmt seed =
   Format.fprintf fmt "[new_seed] score: %.3f, covers: %b@." seed.score
     seed.covers
 
-let get_prio seed =
-  if seed.covers then 0 else seed.score |> Float.mul 10.0 |> Float.to_int
+let get_prio covers score =
+  if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
 
-let push s pool = AUtil.PrioQueue.insert pool (get_prio s) s
+let push s pool = AUtil.PrioQueue.insert pool s.priority s
 let pop pool = AUtil.PrioQueue.extract pool
 let cardinal = AUtil.PrioQueue.length
 let push_list l (p : t) = List.fold_left (fun pool seed -> push seed pool) p l
@@ -178,7 +184,14 @@ let make llctx llset =
                        | None -> !Config.max_distance |> float_of_int
                        | Some x -> x
                      in
-                     let seed = { llm; covers; score = score_int } in
+                     let seed =
+                       {
+                         priority = get_prio covers score_int;
+                         llm;
+                         covers;
+                         score = score_int;
+                       }
+                     in
                      if !Config.logging then
                        AUtil.log "[seed] %s, %a@." file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)
