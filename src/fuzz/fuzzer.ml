@@ -83,6 +83,7 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
           score = mutant_score;
         }
       in
+      L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
       then (
         let corpus_name =
@@ -133,6 +134,12 @@ let rec run pool llctx llset progress =
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   let mutator = mutate_seed llctx target_path llset in
 
+  pool
+  |> SeedPool.iter (fun seed ->
+         L.debug "prio: %d, seed: %a" seed.priority SeedPool.pp_seed seed);
+  L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
+  L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
+
   (* try generating interesting mutants *)
   (* each seed gets mutated upto n times *)
   let rec iter times (seeds, progress) =
@@ -146,7 +153,7 @@ let rec run pool llctx llset progress =
   F.printf "\r%a@?" Progress.pp progress;
 
   let new_seeds = List.filter_map Fun.id new_seeds in
-  List.iter (L.info "%a\n" SeedPool.pp_seed) new_seeds;
+  List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
     |> SeedPool.push_list new_seeds

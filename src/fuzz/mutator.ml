@@ -760,6 +760,8 @@ let rec mutate_inner_bb llctx mode llm score =
   (* depending on mode, available mutations differ *)
   let mutation = choose_mutation mode score in
   L.info "mutation: %a" pp_mutation mutation;
+  L.debug "target: %s" (string_of_llvalue instr_tgt);
+  L.debug "module: %s" (string_of_llmodule llm);
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx None instr_tgt
@@ -770,7 +772,9 @@ let rec mutate_inner_bb llctx mode llm score =
     | CUT -> cut_below llctx instr_tgt
   in
   match mutation_result with
-  | Some _ -> llm
+  | Some _ ->
+      L.debug "mutant: %s" (string_of_llmodule llm);
+      llm
   | None -> mutate_inner_bb llctx mode llm score
 
 (* CFG-related mutation *)

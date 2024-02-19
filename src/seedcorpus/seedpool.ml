@@ -12,8 +12,7 @@ type seed_t = {
 type t = seed_t AUtil.PrioQueue.queue
 
 let pp_seed fmt seed =
-  Format.fprintf fmt "[new_seed] score: %.3f, covers: %b@." seed.score
-    seed.covers
+  Format.fprintf fmt "score: %.3f, covers: %b" seed.score seed.covers
 
 let get_prio covers score =
   if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
@@ -204,8 +203,8 @@ let make llctx llset =
          ([], [])
   in
 
-  (* if we have covering seeds, we use covering seeds only. *)
-  if pool_covers = [] then
+  if pool_covers = [] then (
+    L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
     let _pool_cnt, pool_closest =
       other_seeds
@@ -216,5 +215,8 @@ let make llctx llset =
              else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
-    pool_closest
-  else push_list pool_covers AUtil.PrioQueue.empty
+    pool_closest)
+  else (
+    (* if we have covering seeds, we use covering seeds only. *)
+    L.info "Covering seeds found. Using them only.";
+    push_list pool_covers AUtil.PrioQueue.empty)

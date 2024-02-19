@@ -75,7 +75,9 @@ module Optimizer = struct
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
-    L.info "opt: %s -> %s" filename output;
+    L.info "opt: %s -> %s"
+      (Filename.basename filename)
+      (Filename.basename output);
     AUtil.clean !Config.cov_file;
     let exit_state =
       AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
