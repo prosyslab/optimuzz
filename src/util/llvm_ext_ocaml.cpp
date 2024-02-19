@@ -1,33 +1,20 @@
 #include <assert.h>
-#include <stdlib.h>
-#include <string.h>
-#include "llvm_ext_ocaml.h"
 
 #include "llvm-c/Analysis.h"
-#include "llvm-c/Core.h"
-#include "llvm-c/DebugInfo.h"
-#include "llvm-c/Support.h"
 
-#include "llvm/Config/llvm-config.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/ReplaceConstant.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
-#include "caml/alloc.h"
 #include "caml/mlvalues.h"
 #include "caml/memory.h"
-#include "caml/fail.h"
-#include "caml/callback.h"
-// #include "llvm_ocaml.h"
 
 using namespace llvm;
 
@@ -149,6 +136,28 @@ extern "C"
     } catch (std::exception &e) {
       CAMLreturn(Val_bool(false));
     }
+  }
+
+  value llvm_clean_module_data(value M) {
+    CAMLparam1(M);
+    Module *Mod = unwrap(Module_val(M));
+
+    if (!Mod->getModuleIdentifier().empty())
+      Mod->setModuleIdentifier("");
+
+    if (!Mod->getSourceFileName().empty())
+      Mod->setSourceFileName("");
+
+    if (!Mod->getDataLayoutStr().empty())
+      Mod->setDataLayout("");
+
+    if (!Mod->getTargetTriple().empty())
+      Mod->setTargetTriple("");
+
+    if (!Mod->getModuleInlineAsm().empty())
+      Mod->setModuleInlineAsm("");
+
+    CAMLreturn(Val_unit);
   }
 
   // Reference:
