@@ -167,6 +167,9 @@ let make llctx llset =
              let llm =
                ALlvm.MemoryBuffer.of_file path
                |> Llvm_irreader.parse_ir llctx
+               |> (fun llm ->
+                    ALlvm.clean_module_data llm;
+                    llm)
                |> clean_llm llctx true
              in
              match llm with
