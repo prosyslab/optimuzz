@@ -16,6 +16,9 @@ external transfer_instructions : llbasicblock -> llbasicblock -> unit
 (** [transfer_instructions src dst] moves all instructions
     from [src] to the end of [dst] *)
 
+external clean_module_data : llmodule -> unit = "llvm_clean_module_data"
+(** [clean_module_data m] removes all metadata from [m] *)
+
 let string_of_opcode = function
   | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
