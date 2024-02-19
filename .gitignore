@@ -67,3 +67,4 @@ memo/
 
 llfuzz-out
 *.tar
+compile_flags.txt
