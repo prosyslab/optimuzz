@@ -12,8 +12,7 @@ type seed_t = {
 type t = seed_t AUtil.PrioQueue.queue
 
 let pp_seed fmt seed =
-  Format.fprintf fmt "[new_seed] score: %.3f, covers: %b@." seed.score
-    seed.covers
+  Format.fprintf fmt "score: %.3f, covers: %b" seed.score seed.covers
 
 let get_prio covers score =
   if covers then 0 else score |> Float.mul 10.0 |> Float.to_int

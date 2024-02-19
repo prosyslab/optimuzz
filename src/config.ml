@@ -218,9 +218,9 @@ let initialize llctx () =
   opts
   |> List.iter (fun (name, spec, _) ->
          match spec with
-         | Arg.Set b -> L.info "%s: %b\n" name !b
-         | Arg.Set_string s -> L.info "%s: %s\n" name !s
-         | Arg.Set_int i -> L.info "%s: %d\n" name !i
+         | Arg.Set b -> L.info "%s: %b" name !b
+         | Arg.Set_string s -> L.info "%s: %s" name !s
+         | Arg.Set_int i -> L.info "%s: %d" name !i
          | _ -> failwith "not implemented");
 
   L.flush ();
