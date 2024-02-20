@@ -658,6 +658,8 @@ let change_type llctx instr =
       if ty_old = ty then loop () else ty
     in
     let ty_new = loop () in
+    Logger.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
+      (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
