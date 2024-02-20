@@ -103,4 +103,13 @@ module PrioQueue = struct
   let extract = function
     | Empty -> raise Queue_is_empty
     | Node (_, elt, _, _) as queue -> (elt, remove_top queue)
+
+  (** [iter f queue] applies [f] to all elements of [queue].
+      Pre-order traversal. *)
+  let rec iter f = function
+    | Empty -> ()
+    | Node (_, elt, left, right) ->
+        f elt;
+        iter f left;
+        iter f right
 end

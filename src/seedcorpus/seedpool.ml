@@ -22,6 +22,7 @@ let push s pool = AUtil.PrioQueue.insert pool s.priority s
 let pop pool = AUtil.PrioQueue.extract pool
 let cardinal = AUtil.PrioQueue.length
 let push_list l (p : t) = List.fold_left (fun pool seed -> push seed pool) p l
+let iter = AUtil.PrioQueue.iter
 
 let check_exist_ret func =
   let is_ret instr = ALlvm.instr_opcode instr = Ret in
@@ -206,7 +207,7 @@ let make llctx llset =
   (* if we have covering seeds, we use covering seeds only. *)
   if pool_covers = [] then
     (* pool_closest contains seeds which are closest to the target *)
-    let pool_closest =
+    let _pool_cnt, pool_closest =
       other_seeds
       |> List.sort (fun a b -> compare a.score b.score)
       |> List.fold_left
@@ -214,7 +215,6 @@ let make llctx llset =
              if cnt >= !Config.max_initial_seed then (cnt, pool)
              else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
-      |> snd
     in
     pool_closest
   else push_list pool_covers AUtil.PrioQueue.empty

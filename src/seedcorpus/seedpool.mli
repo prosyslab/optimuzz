@@ -17,3 +17,4 @@ val pop : t -> seed_t * t
 val push : seed_t -> t -> t
 val push_list : seed_t List.t -> t -> t
 val cardinal : t -> int
+val iter : (seed_t -> unit) -> t -> unit
