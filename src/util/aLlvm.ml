@@ -594,7 +594,7 @@ module LLVMap = Map.Make (struct
   type t = llvalue
 
   (* same llvalues sometimes map to other key *)
-  let compare llv0 llv1 = compare (value_name llv0) (value_name llv1)
+  let compare = compare
 end)
 
 module LLBMap = Map.Make (struct
