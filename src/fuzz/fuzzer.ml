@@ -123,7 +123,8 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
             (Some seed, progress)
         | INTERESTING _ -> failwith "unreachable"
         | NOT_INTERESTING ->
-            mutate_seed llctx target_path llset seed progress (times - 1))
+            mutate_seed llctx target_path llset { seed with llm = mutant }
+              progress (times - 1))
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
