@@ -389,44 +389,44 @@ let copy_blocks llctx f_old f_new =
 
 let migrate_const llv_old ty_new =
   assert (is_constant llv_old);
-  match (llv_old |> type_of |> classify_type, classify_type ty_new) with
-  | Pointer, _ -> const_null ty_new
-  | Integer, Integer ->
-      if is_poison llv_old then poison ty_new
-      else if is_undef llv_old then undef ty_new
-      else
+  if is_poison llv_old then poison ty_new
+  else if is_undef llv_old then undef ty_new
+  else
+    match (llv_old |> type_of |> classify_type, classify_type ty_new) with
+    | Pointer, _ -> const_null ty_new
+    | Integer, Integer ->
         const_int ty_new
           (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
-  | Integer, Vector ->
-      let el_ty = element_type ty_new in
-      let vec_size = vector_size ty_new in
-      let llv_arr =
-        Array.make vec_size
-          (const_int el_ty
-             (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
-      in
-      const_vector llv_arr
-  | Vector, Integer ->
-      const_int ty_new
-        (aggregate_element llv_old 0
-        |> Option.get
-        |> int64_of_const
-        |> Option.get
-        |> Int64.to_int)
-  | Vector, Vector ->
-      let el_ty = element_type ty_new in
-      let vec_size = vector_size ty_new in
-      let llv_arr =
-        Array.make vec_size
-          (const_int el_ty
-             (aggregate_element llv_old 0
-             |> Option.get
-             |> int64_of_const
-             |> Option.get
-             |> Int64.to_int))
-      in
-      const_vector llv_arr
-  | _ -> failwith "Unsupported type migration"
+    | Integer, Vector ->
+        let el_ty = element_type ty_new in
+        let vec_size = vector_size ty_new in
+        let llv_arr =
+          Array.make vec_size
+            (const_int el_ty
+               (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
+        in
+        const_vector llv_arr
+    | Vector, Integer ->
+        const_int ty_new
+          (aggregate_element llv_old 0
+          |> Option.get
+          |> int64_of_const
+          |> Option.get
+          |> Int64.to_int)
+    | Vector, Vector ->
+        let el_ty = element_type ty_new in
+        let vec_size = vector_size ty_new in
+        let llv_arr =
+          Array.make vec_size
+            (const_int el_ty
+               (aggregate_element llv_old 0
+               |> Option.get
+               |> int64_of_const
+               |> Option.get
+               |> Int64.to_int))
+        in
+        const_vector llv_arr
+    | _ -> failwith "Unsupported type migration"
 
 let migrate_self llv link_v =
   if is_constant llv then migrate_const llv (type_of llv)
@@ -498,7 +498,18 @@ let migrate_mem builder instr_old typemap link_v =
 let migrate_cast builder instr_old typemap link_v =
   let opd = operand instr_old 0 in
   let dest_ty = get_ty instr_old typemap in
-  let opd = migrate_self opd link_v in
+  let opd =
+    match (opd |> type_of |> classify_type, dest_ty |> classify_type) with
+    | Integer, Integer | Vector, Vector -> migrate_self opd link_v
+    | Integer, Vector ->
+        let vec_size = vector_size dest_ty in
+        let ty_new = vector_type (type_of opd) vec_size in
+        migrate_to_other_ty opd ty_new link_v
+    | Vector, Integer ->
+        let ty_new = opd |> type_of |> element_type in
+        migrate_to_other_ty opd ty_new link_v
+    | _, _ -> failwith "un supported types"
+  in
 
   (* decide whether we have to use extension or truncation *)
   let is_trunc =
