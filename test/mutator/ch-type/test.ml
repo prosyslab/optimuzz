@@ -12,10 +12,16 @@ let main () =
 
   Config.set_interesting_types llctx;
 
-  ALlvm.dump_value tgt;
-  ALlvm.dump_module llm;
+  Logger.from_file "debug.log";
+  Logger.set_level Logger.DEBUG;
+
+  Logger.debug ~to_console:true "tgt: %s" (ALlvm.string_of_llvalue tgt);
+  Logger.debug ~to_console:true "before:\n%s" (ALlvm.string_of_llmodule llm);
   Fuzz.Mutator.change_type llctx tgt |> ignore;
-  ALlvm.dump_module llm;
+  Logger.debug ~to_console:true "after:\n%s" (ALlvm.string_of_llmodule llm);
+
+  Logger.flush ();
+  Logger.finalize ();
   ()
 
 let _ = main ()
