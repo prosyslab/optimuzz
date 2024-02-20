@@ -481,10 +481,7 @@ let migrate_mem builder instr_old typemap link_v =
 let migrate_cast builder instr_old typemap link_v =
   let opd = operand instr_old 0 in
   let dest_ty = get_ty instr_old typemap in
-  let opd =
-    if is_constant opd then migrate_const opd typemap
-    else LLVMap.find opd link_v
-  in
+  let opd = migrate_self opd typemap link_v in
 
   (* decide whether we have to use extension or truncation *)
   let is_trunc =
@@ -506,13 +503,9 @@ let migrate_cmp builder instr_old typemap link_v =
   let build_cmp o0 o1 =
     OpCls.build_cmp (icmp_predicate instr_old |> Option.get) o0 o1 builder
   in
-  if is_constant opd0 then
-    let opd1' = LLVMap.find opd1 link_v in
-    build_cmp (migrate_const opd0 typemap) opd1'
-  else if is_constant opd1 then
-    let opd0' = LLVMap.find opd0 link_v in
-    build_cmp opd0' (migrate_const opd1 typemap)
-  else build_cmp (LLVMap.find opd0 link_v) (LLVMap.find opd1 link_v)
+  build_cmp
+    (migrate_self opd0 typemap link_v)
+    (migrate_self opd1 typemap link_v)
 
 let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
