@@ -396,7 +396,6 @@ let func_terminators func =
 let cut_below llctx instr =
   let open Util in
   let f_old = ALlvm.get_function instr in
-
   let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
 
   match instrs with
@@ -429,11 +428,6 @@ let cut_below llctx instr =
           func_terminators f_old |> List.iter ALlvm.delete_instruction;
           delete_empty_blocks f_old;
 
-          (* add ret which returns tgt *)
-          ALlvm.builder_at_end llctx (ALlvm.instr_parent tgt)
-          |> ALlvm.build_ret tgt
-          |> ignore;
-
           (* move instructions in other blocks to the entry block *)
           let entry = ALlvm.entry_block f_old in
           let other_blocks =
@@ -442,6 +436,11 @@ let cut_below llctx instr =
               [] f_old
           in
           List.iter (ALlvm.transfer_instructions entry) other_blocks;
+
+          (* add ret which returns tgt *)
+          ALlvm.builder_at_end llctx (ALlvm.instr_parent tgt)
+          |> ALlvm.build_ret tgt
+          |> ignore;
 
           (* transferring could leave some blocks empty *)
           (* delete empty blocks *)
