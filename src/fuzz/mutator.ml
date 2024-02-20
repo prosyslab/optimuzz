@@ -347,9 +347,7 @@ and collect_ty_changing_llvs llv ty_new accu =
   match accu with
   | None -> None
   | Some accu_inner when LLVMap.mem llv accu_inner -> accu
-  | Some accu when is_constant llv ->
-      let accu = LLVMap.add llv ty_new accu in
-      Some accu
+  | Some _ when is_constant llv -> accu
   | Some accu -> (
       let accu = LLVMap.add llv ty_new accu in
       match classify_value llv with
@@ -389,13 +387,8 @@ let copy_blocks llctx f_old f_new =
   in
   loop entry_new 1
 
-let migrate_const llv_old typemap =
+let migrate_const llv_old ty_new =
   assert (is_constant llv_old);
-  let ty_new =
-    match LLVMap.find_opt llv_old typemap with
-    | Some ty_new -> ty_new
-    | None -> type_of llv_old
-  in
   match (llv_old |> type_of |> classify_type, classify_type ty_new) with
   | Pointer, _ -> const_null ty_new
   | Integer, Integer ->
@@ -435,21 +428,24 @@ let migrate_const llv_old typemap =
       const_vector llv_arr
   | _ -> failwith "Unsupported type migration"
 
-let migrate_self llv typemap link_v =
-  if is_constant llv then migrate_const llv typemap else LLVMap.find llv link_v
+let migrate_self llv link_v =
+  if is_constant llv then migrate_const llv (type_of llv)
+  else LLVMap.find llv link_v
 
-let migrate_ter builder instr_old typemap link_v link_b =
+let migrate_to_other_ty llv ty link_v =
+  if is_constant llv then migrate_const llv ty else LLVMap.find llv link_v
+
+let migrate_ter builder instr_old link_v link_b =
   match instr_opcode instr_old with
   | Ret ->
       if num_operands instr_old = 0 then build_ret_void builder
-      else build_ret (migrate_self (operand instr_old 0) typemap link_v) builder
+      else build_ret (migrate_self (operand instr_old 0) link_v) builder
   | Br -> (
       let find_block = Fun.flip LLBMap.find link_b in
       match get_branch instr_old with
       | Some (`Conditional (cond, tb, fb)) ->
-          build_cond_br
-            (migrate_self cond typemap link_v)
-            (find_block tb) (find_block fb) builder
+          build_cond_br (migrate_self cond link_v) (find_block tb)
+            (find_block fb) builder
       | Some (`Unconditional dest) -> build_br (find_block dest) builder
       | None -> failwith "Not supporting other kind of branches")
   | _ -> failwith "NEVER OCCUR"
@@ -459,8 +455,31 @@ let migrate_binary builder instr_old typemap link_v =
   let opd1 = operand instr_old 1 in
   let opc = instr_opcode instr_old in
 
-  let opd0 = migrate_self opd0 typemap link_v in
-  let opd1 = migrate_self opd1 typemap link_v in
+  let opd0, opd1 =
+    match (is_constant opd0, is_constant opd1) with
+    | true, true -> (
+        match LLVMap.find_opt instr_old typemap with
+        | Some ty_new ->
+            let opd0 = migrate_to_other_ty opd0 ty_new link_v in
+            let opd1 = migrate_to_other_ty opd1 ty_new link_v in
+            (opd0, opd1)
+        | None ->
+            let opd0 = migrate_self opd0 link_v in
+            let opd1 = migrate_self opd1 link_v in
+            (opd0, opd1))
+    | true, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd0 = migrate_to_other_ty opd0 (type_of opd1) link_v in
+        (opd0, opd1)
+    | false, true ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
+        (opd0, opd1)
+    | false, false ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_self opd1 link_v in
+        (opd0, opd1)
+  in
   OpCls.build_binary opc opd0 opd1 builder
 
 let migrate_mem builder instr_old typemap link_v =
@@ -468,20 +487,18 @@ let migrate_mem builder instr_old typemap link_v =
   | Alloca -> build_alloca (get_allocated_type instr_old) "" builder
   | Load ->
       let opd = operand instr_old 0 in
-      build_load (get_ty instr_old typemap)
-        (migrate_self opd typemap link_v)
-        "" builder
+      build_load (get_ty instr_old typemap) (migrate_self opd link_v) "" builder
   | Store ->
       build_store
-        (migrate_self (operand instr_old 0) typemap link_v)
-        (migrate_self (operand instr_old 1) typemap link_v)
+        (migrate_self (operand instr_old 0) link_v)
+        (migrate_self (operand instr_old 1) link_v)
         builder
   | _ -> failwith "NEVER OCCUR"
 
 let migrate_cast builder instr_old typemap link_v =
   let opd = operand instr_old 0 in
   let dest_ty = get_ty instr_old typemap in
-  let opd = migrate_self opd typemap link_v in
+  let opd = migrate_self opd link_v in
 
   (* decide whether we have to use extension or truncation *)
   let is_trunc =
@@ -497,15 +514,13 @@ let migrate_cast builder instr_old typemap link_v =
   (* FIXME: for now, using ZExt only *)
   (if is_trunc then build_trunc else build_zext) opd dest_ty "" builder
 
-let migrate_cmp builder instr_old typemap link_v =
+let migrate_cmp builder instr_old link_v =
   let opd0 = operand instr_old 0 in
   let opd1 = operand instr_old 1 in
   let build_cmp o0 o1 =
     OpCls.build_cmp (icmp_predicate instr_old |> Option.get) o0 o1 builder
   in
-  build_cmp
-    (migrate_self opd0 typemap link_v)
-    (migrate_self opd1 typemap link_v)
+  build_cmp (migrate_self opd0 link_v) (migrate_self opd1 link_v)
 
 let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
@@ -514,11 +529,11 @@ let migrate_phi builder instr_old typemap =
 let migrate_instr builder instr_old typemap link_v link_b =
   let instr_new =
     match OpCls.opcls_of instr_old with
-    | TER -> migrate_ter builder instr_old typemap link_v link_b
+    | TER -> migrate_ter builder instr_old link_v link_b
     | BINARY -> migrate_binary builder instr_old typemap link_v
     | MEM -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
-    | CMP -> migrate_cmp builder instr_old typemap link_v
+    | CMP -> migrate_cmp builder instr_old link_v
     | PHI -> migrate_phi builder instr_old typemap
     | OTHER -> failwith "Unsupported instruction"
   in
