@@ -5,6 +5,7 @@ module L = Logger
 
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
+type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
 
 let pp_mutation fmt m =
   match m with
@@ -50,14 +51,15 @@ let create_cast llctx loc opcode o ty =
 let create_cmp llctx loc icmp o0 o1 =
   (OpCls.build_cmp icmp) o0 o1 (builder_before llctx loc)
 
-(** [exchange_binary llctx instr] exchanges the two operands of the binary
+(** [binary_exchange_operands llctx instr] exchanges the two operands of the binary
     instruction [instr], without any extra keywords.
     Returns the new instruction. *)
-let exchange_binary llctx instr =
-  let nth_opd i = operand instr i in
-  let new_instr =
-    create_binary llctx instr (instr_opcode instr) (nth_opd 1) (nth_opd 0)
-  in
+let binary_exchange_operands llctx instr =
+  assert (OpCls.classify (instr_opcode instr) = BINARY);
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let loc = instr in
+  let new_instr = create_binary llctx loc (instr_opcode instr) right left in
   replace_and_ret instr new_instr
 
 (* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
@@ -65,8 +67,9 @@ let exchange_binary llctx instr =
    without any extra keywords. Returns the new instruction. *)
 
 let subst_binary llctx instr opcode =
-  let nth_opd = operand instr in
-  let new_instr = create_binary llctx instr opcode (nth_opd 0) (nth_opd 1) in
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let new_instr = create_binary llctx instr opcode left right in
   replace_and_ret instr new_instr |> Option.some
 
 let subst_cast llctx instr =
@@ -85,9 +88,10 @@ let subst_cast llctx instr =
   | Trunc -> None
   | _ -> raise OpCls.Improper_class
 
-let subst_cmp llctx instr icmp =
-  let nth_opd = operand instr in
-  let new_instr = create_cmp llctx instr icmp (nth_opd 0) (nth_opd 1) in
+let subst_cmp llctx instr cond_code =
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let new_instr = create_cmp llctx instr cond_code left right in
   replace_and_ret instr new_instr
 
 (* HIGH-LEVEL MUTATION HELPERS *)
@@ -130,9 +134,7 @@ let randget_operand loc ty =
     with lists of available arguments declared prior to [loc]. *)
 let create_rand_instr llctx preferred_opd loc =
   let preds = get_instrs_before ~wide:false loc in
-  let preds =
-    preds @ (loc |> instr_parent |> block_parent |> params |> Array.to_list)
-  in
+  let preds = preds @ (get_function loc |> params |> Array.to_list) in
 
   let operand =
     match preferred_opd with
@@ -153,31 +155,33 @@ let create_rand_instr llctx preferred_opd loc =
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
       |> Option.some
-  | CAST when is_integer ->
-      let pred =
-        let operand_bw = integer_bitwidth operand_ty in
-        fun ty ->
-          (if opcode = Trunc then ( < ) else ( > ))
-            (integer_bitwidth ty) operand_bw
+  | CAST when is_integer -> (
+      let pred ty =
+        match opcode with
+        | Trunc -> integer_bitwidth ty < integer_bitwidth operand_ty
+        | SExt | ZExt | _ -> integer_bitwidth ty > integer_bitwidth operand_ty
       in
-      let candidates = List.filter pred !Config.interesting_integer_types in
-      if candidates = [] then None
-      else
-        let dest_ty = AUtil.choose_random candidates in
-        create_cast llctx loc opcode operand dest_ty |> Option.some
+      let candid_tys = List.filter pred !Config.interesting_integer_types in
+      match candid_tys with
+      | [] -> None
+      | tys ->
+          AUtil.choose_random tys
+          |> create_cast llctx loc opcode operand
+          |> Option.some)
   | CMP when is_integer ->
-      create_cmp llctx loc
-        (AUtil.choose_random OpCls.cmp_kind)
-        operand
-        (randget_operand loc operand_ty |> Option.get)
+      let rand_cond = AUtil.choose_random OpCls.cmp_kind in
+      randget_operand loc operand_ty
+      |> Option.get
+      |> create_cmp llctx loc rand_cond operand
       |> Option.some
-  | MEM ->
-      if opcode = Load && classify_type operand_ty = Pointer then
-        Some
-          (build_load
-             (AUtil.choose_random !Config.interesting_integer_types)
-             operand "" (builder_before llctx loc))
-      else None
+  | MEM -> (
+      match (opcode, classify_type operand_ty) with
+      | Load, Pointer ->
+          (* creates load only if the chosen operand is a pointer *)
+          let rand_ty = AUtil.choose_random !Config.interesting_integer_types in
+          let b = builder_before llctx loc in
+          Some (build_load rand_ty operand "" b)
+      | _ -> None)
   | _ -> None
 
 (** [subst_rand_instr llctx instr] substitutes
@@ -186,23 +190,22 @@ let create_rand_instr llctx preferred_opd loc =
 let subst_rand_instr llctx instr =
   let old_opcode = instr_opcode instr in
   match OpCls.classify old_opcode with
-  | BINARY ->
-      if is_noncommutative_binary instr then
-        if AUtil.rand_bool () then exchange_binary llctx instr |> Option.some
-        else
-          let new_opcode = OpCls.random_opcode_except old_opcode in
-          subst_binary llctx instr new_opcode
+  | BINARY when is_noncommutative_binary instr ->
+      if Random.bool () then binary_exchange_operands llctx instr |> Option.some
       else
         let new_opcode = OpCls.random_opcode_except old_opcode in
         subst_binary llctx instr new_opcode
+  | BINARY ->
+      let new_opcode = OpCls.random_opcode_except old_opcode in
+      subst_binary llctx instr new_opcode
   | CAST -> subst_cast llctx instr
   | CMP ->
-      let old_cmp = instr |> icmp_predicate |> Option.get in
-      let rec aux () =
+      let old_cmp = icmp_predicate instr |> Option.get in
+      let rec rand_cond_code () =
         let cmp = OpCls.random_cmp () in
-        if cmp = old_cmp then aux () else subst_cmp llctx instr cmp
+        if cmp = old_cmp then rand_cond_code () else cmp
       in
-      aux () |> Option.some
+      rand_cond_code () |> subst_cmp llctx instr |> Option.some
   | _ -> None
 
 (** [subst_rand_opd llctx preferred_opd instr] substitutes
@@ -210,7 +213,6 @@ let subst_rand_instr llctx instr =
     into another available random one. *)
 let rec subst_rand_opd llctx preferred_opd instr =
   let num_operands = num_operands instr in
-  let opd_i = operand instr in
   let use_other_opd () = subst_rand_opd llctx None instr in
 
   match preferred_opd with
@@ -219,15 +221,15 @@ let rec subst_rand_opd llctx preferred_opd instr =
       let check_ty llv = type_of llv = preferred_ty in
       match OpCls.opcls_of instr with
       | (BINARY | CAST | CMP) when num_operands > 0 -> (
+          let left = operand instr 0 in
+          let right = operand instr 1 in
           match num_operands with
           | 1 ->
-              let operand_old = opd_i 0 in
-              if check_ty operand_old then
-                Some (set_opd_and_ret instr 0 preferred_opd)
+              if check_ty left then Some (set_opd_and_ret instr 0 preferred_opd)
               else use_other_opd ()
           | 2 -> (
               (* try best to use the preferred operand *)
-              match (check_ty (opd_i 0), check_ty (opd_i 1)) with
+              match (check_ty left, check_ty right) with
               | false, false -> use_other_opd ()
               | false, true -> Some (set_opd_and_ret instr 1 preferred_opd)
               | true, false -> Some (set_opd_and_ret instr 0 preferred_opd)
@@ -240,7 +242,7 @@ let rec subst_rand_opd llctx preferred_opd instr =
   | None ->
       if num_operands > 0 then
         let i = Random.int num_operands in
-        let operand_old = opd_i i in
+        let operand_old = operand instr i in
         randget_operand instr (type_of operand_old)
         |> Option.map (set_opd_and_ret instr i)
       else None
@@ -253,13 +255,14 @@ let modify_flag _ instr =
   let opcode = instr_opcode instr in
   match OpCls.classify opcode with
   | BINARY ->
-      (* there is no instruction that can have both exact and nuw/nsw *)
+      (* there is no instruction that has both exact and nuw/nsw *)
       if can_overflow opcode then (
         (* can have both nuw and nsw *)
-        let nuw_old = is_nuw instr in
-        let nsw_old = is_nsw instr in
+        (* flip flags but ensure that one of the flags change *)
+        (* For example, if both nuw and nsw are already set,
+           turn off at least one of them *)
         let cases =
-          match (nuw_old, nsw_old) with
+          match (is_nuw instr, is_nsw instr) with
           | false, false -> [ (false, true); (true, false); (true, true) ]
           | false, true -> [ (false, false); (true, false); (true, true) ]
           | true, false -> [ (false, false); (false, true); (true, true) ]
