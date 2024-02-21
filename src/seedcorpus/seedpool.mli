@@ -11,6 +11,7 @@ type seed_t = {
 type t = seed_t AUtil.PrioQueue.queue
 
 val pp_seed : Format.formatter -> seed_t -> unit
+val name_seed : ?parent:seed_t -> seed_t -> string
 val make : ALlvm.llcontext -> unit ALlvm.LLModuleSet.t -> t
 val get_prio : bool -> float -> int
 val pop : t -> seed_t * t

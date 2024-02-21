@@ -72,6 +72,12 @@ let main () =
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
   L.info "initial seeds: %d" (SeedPool.cardinal seed_pool);
 
+  seed_pool
+  |> SeedPool.iter (fun seed ->
+         let filename = SeedPool.name_seed seed in
+         F.eprintf "%s@." filename;
+         ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+
   if SeedPool.cardinal seed_pool = 0 then (
     F.printf "no seed loaded@.";
     exit 0);

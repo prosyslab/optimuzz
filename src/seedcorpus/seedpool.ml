@@ -14,6 +14,17 @@ type t = seed_t AUtil.PrioQueue.queue
 let pp_seed fmt seed =
   Format.fprintf fmt "score: %.3f, covers: %b" seed.score seed.covers
 
+let name_seed ?(parent : seed_t option) (seed : seed_t) =
+  let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
+  match parent with
+  | None ->
+      Format.sprintf "id:%010d,score:%f,covers:%b.ll" hash seed.score
+        seed.covers
+  | Some { llm = src; _ } ->
+      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" hash
+        (ALlvm.string_of_llmodule src |> Hashtbl.hash)
+        seed.score seed.covers
+
 let get_prio covers score =
   if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
 
