@@ -28,7 +28,6 @@ module Validator = struct
             |> List.of_seq
             |> List.rev
           in
-          (* List.iter prerr_endline lines; *)
           let eq_line line x =
             line
             |> String.trim
