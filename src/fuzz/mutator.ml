@@ -7,6 +7,8 @@ type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
 
+let ( let* ) = Option.bind
+
 let pp_mutation fmt m =
   match m with
   | CREATE -> Format.fprintf fmt "CREATE"
@@ -60,7 +62,8 @@ let binary_exchange_operands llctx instr =
   let right = operand instr 1 in
   let loc = instr in
   let new_instr = create_binary llctx loc (instr_opcode instr) right left in
-  replace_and_ret instr new_instr
+  replace_hard instr new_instr;
+  new_instr
 
 (* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
    into another possible instruction, with the same operands,
@@ -70,7 +73,8 @@ let subst_binary llctx instr opcode =
   let left = operand instr 0 in
   let right = operand instr 1 in
   let new_instr = create_binary llctx instr opcode left right in
-  replace_and_ret instr new_instr |> Option.some
+  replace_hard instr new_instr;
+  new_instr
 
 let subst_cast llctx instr =
   (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None) *)
@@ -79,12 +83,14 @@ let subst_cast llctx instr =
       let new_instr =
         create_cast llctx instr Opcode.SExt (operand instr 0) (type_of instr)
       in
-      replace_and_ret instr new_instr |> Option.some
+      replace_hard instr new_instr;
+      Some new_instr
   | SExt ->
       let new_instr =
         create_cast llctx instr Opcode.ZExt (operand instr 0) (type_of instr)
       in
-      replace_and_ret instr new_instr |> Option.some
+      replace_hard instr new_instr;
+      Some new_instr
   | Trunc -> None
   | _ -> raise OpCls.Improper_class
 
@@ -92,7 +98,8 @@ let subst_cmp llctx instr cond_code =
   let left = operand instr 0 in
   let right = operand instr 1 in
   let new_instr = create_cmp llctx instr cond_code left right in
-  replace_and_ret instr new_instr
+  replace_hard instr new_instr;
+  new_instr
 
 (* HIGH-LEVEL MUTATION HELPERS *)
 
@@ -132,19 +139,19 @@ let randget_operand loc ty =
 (** [create_rand_instr llctx preferred_opd loc] creates
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc]. *)
-let create_rand_instr llctx preferred_opd loc =
+let create_rand_instr llctx llm =
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let loc = AUtil.choose_random all_instrs in
   let preds = get_instrs_before ~wide:false loc in
   let preds = preds @ (get_function loc |> params |> Array.to_list) in
 
   let operand =
-    match preferred_opd with
-    | Some pref_opd -> pref_opd
-    | None ->
-        if preds <> [] then AUtil.choose_random preds
-        else
-          randget_operand loc
-            (AUtil.choose_random !Config.interesting_integer_types)
-          |> Option.get
+    if preds <> [] then AUtil.choose_random preds
+    else
+      randget_operand loc
+        (AUtil.choose_random !Config.interesting_integer_types)
+      |> Option.get
   in
   Logger.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
@@ -157,7 +164,8 @@ let create_rand_instr llctx preferred_opd loc =
       Logger.debug "create binary";
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
-      |> Option.some
+      |> ignore;
+      Some llm
   | CAST when is_integer -> (
       Logger.debug "create cast";
       let pred ty =
@@ -171,14 +179,16 @@ let create_rand_instr llctx preferred_opd loc =
       | tys ->
           AUtil.choose_random tys
           |> create_cast llctx loc opcode operand
-          |> Option.some)
+          |> ignore;
+          Some llm)
   | CMP when is_integer ->
       Logger.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
       randget_operand loc operand_ty
       |> Option.get
       |> create_cmp llctx loc rand_cond operand
-      |> Option.some
+      |> ignore;
+      Some llm
   | MEM -> (
       Logger.debug "create mem";
       match (opcode, classify_type operand_ty) with
@@ -186,40 +196,52 @@ let create_rand_instr llctx preferred_opd loc =
           (* creates load only if the chosen operand is a pointer *)
           let rand_ty = AUtil.choose_random !Config.interesting_integer_types in
           let b = builder_before llctx loc in
-          Some (build_load rand_ty operand "" b)
+          build_load rand_ty operand "" b |> ignore;
+          Some llm
       | _ -> None)
   | _ -> None
 
-(** [subst_rand_instr llctx instr] substitutes
-    the instruction [instr] into another random instruction in its class,
+(** [subst_rand_instr llctx llm] substitutes a random instruction
+    into another random instruction of the same class,
     with the same operands. *)
-let subst_rand_instr llctx instr =
+let subst_rand_instr llctx llm =
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr = AUtil.choose_random all_instrs in
   let old_opcode = instr_opcode instr in
   match OpCls.classify old_opcode with
   | BINARY when is_noncommutative_binary instr ->
-      if Random.bool () then binary_exchange_operands llctx instr |> Option.some
+      if Random.bool () then (
+        binary_exchange_operands llctx instr |> ignore;
+        Some llm)
       else
         let new_opcode = OpCls.random_opcode_except old_opcode in
-        subst_binary llctx instr new_opcode
+        subst_binary llctx instr new_opcode |> ignore;
+        Some llm
   | BINARY ->
       let new_opcode = OpCls.random_opcode_except old_opcode in
-      subst_binary llctx instr new_opcode
-  | CAST -> subst_cast llctx instr
+      subst_binary llctx instr new_opcode |> ignore;
+      Some llm
+  | CAST ->
+      subst_cast llctx instr |> ignore;
+      Some llm
   | CMP ->
       let old_cmp = icmp_predicate instr |> Option.get in
       let rec rand_cond_code () =
         let cmp = OpCls.random_cmp () in
         if cmp = old_cmp then rand_cond_code () else cmp
       in
-      rand_cond_code () |> subst_cmp llctx instr |> Option.some
+      rand_cond_code () |> subst_cmp llctx instr |> ignore;
+      Some llm
   | _ -> None
 
-(** [subst_rand_opd llctx preferred_opd instr] substitutes
-    a random operand of instruction [instr]
-    into another available random one. *)
-let rec subst_rand_opd llctx preferred_opd instr =
+(** [subst_rand_opd llctx llm] substitutes
+    a random operand of a random instruction into another available random one. *)
+let rec subst_rand_opd ?preferred_opd llctx llm =
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr = AUtil.choose_random all_instrs in
   let num_operands = num_operands instr in
-  let use_other_opd () = subst_rand_opd llctx None instr in
 
   match preferred_opd with
   | Some preferred_opd -> (
@@ -231,33 +253,46 @@ let rec subst_rand_opd llctx preferred_opd instr =
           let right = operand instr 1 in
           match num_operands with
           | 1 ->
-              if check_ty left then Some (set_opd_and_ret instr 0 preferred_opd)
-              else use_other_opd ()
+              if check_ty left then (
+                set_operand instr 0 preferred_opd;
+                Some llm)
+              else subst_rand_opd llctx llm
           | 2 -> (
               (* try best to use the preferred operand *)
               match (check_ty left, check_ty right) with
-              | false, false -> use_other_opd ()
-              | false, true -> Some (set_opd_and_ret instr 1 preferred_opd)
-              | true, false -> Some (set_opd_and_ret instr 0 preferred_opd)
+              | false, false -> subst_rand_opd llctx llm
+              | false, true ->
+                  set_operand instr 1 preferred_opd;
+                  Some llm
+              | true, false ->
+                  set_operand instr 0 preferred_opd;
+                  Some llm
               | true, true ->
                   (* both are ok; replace random one into the preferred one *)
                   let i = Random.int 2 in
-                  Some (set_opd_and_ret instr i preferred_opd))
+                  set_operand instr i preferred_opd;
+                  Some llm)
           | _ -> None)
       | _ -> None)
   | None ->
       if num_operands > 0 then
         let i = Random.int num_operands in
         let operand_old = operand instr i in
-        randget_operand instr (type_of operand_old)
-        |> Option.map (set_opd_and_ret instr i)
+        let* rand_opd = randget_operand instr (type_of operand_old) in
+        let _ = set_operand instr i rand_opd in
+        Some llm
       else None
+
+(** [is_nuw instr] returns true if the instruction [instr] has the flag "nuw". *)
 
 (** [modify_flag llctx instr] tries to grant or retrieve
     a random flag to the instruction [instr].
     Returns [instr], with or without change. *)
-let modify_flag _ instr =
+let modify_flag _llctx llm =
   let open Flag in
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr = AUtil.choose_random all_instrs in
   let opcode = instr_opcode instr in
   match OpCls.classify opcode with
   | BINARY ->
@@ -277,10 +312,10 @@ let modify_flag _ instr =
         let nuw_new, nsw_new = AUtil.choose_random cases in
         set_nuw nuw_new instr;
         set_nsw nsw_new instr;
-        Some instr)
+        Some llm)
       else if can_be_exact opcode then (
         set_exact (not (is_exact instr)) instr;
-        Some instr)
+        Some llm)
       else None
   | _ -> None
 
@@ -649,7 +684,10 @@ let verify_and_clean f_old f_new =
 (** [change_type llctx ty_new instr] changes type of [instr] randomly.
     All the other associated values are recursively changed.
     Returns [Some(instr)] if success, or [None] else. *)
-let change_type llctx instr =
+let change_type llctx llm =
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr = AUtil.choose_random all_instrs in
   (* llv is instruction now *)
   let f = get_function instr in
   (* CONSIDER IMPOSSIBLE CASES *)
@@ -677,7 +715,8 @@ let change_type llctx instr =
     | None -> None
     | Some typemap ->
         let f_new = redef_fn llctx f typemap in
-        verify_and_clean f f_new
+        verify_and_clean f f_new |> ignore;
+        Some llm
 
 let delete_empty_blocks func =
   let open Util in
@@ -698,16 +737,20 @@ let func_terminators func =
       | None -> accu)
     [] func
 
-let cut_below llctx instr =
+let cut_below llctx llm =
   let open Util in
-  let f_old = ALlvm.get_function instr in
+  let f = choose_function llm in
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let instr_tgt = AUtil.choose_random all_instrs in
+
+  let f_old = ALlvm.get_function instr_tgt in
   let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
 
   match instrs with
   | [] | [ _ ] | [ _; _ ] -> None
   | _ -> (
       (* target: new instruction will returned.*)
-      let target = ALlvm.get_instr_before ~wide:true instr in
+      let target = ALlvm.get_instr_before ~wide:true instr_tgt in
       match target with
       | Some tgt when ALlvm.is_assignment (ALlvm.instr_opcode tgt) ->
           let rec succ_instrs accu curr =
@@ -750,12 +793,12 @@ let cut_below llctx instr =
           delete_empty_blocks f_old;
 
           let new_ret_ty = ALlvm.type_of tgt in
-          let f_new = ALlvm.clone_function f_old new_ret_ty in
-
+          let _f_new = ALlvm.clone_function f_old new_ret_ty in
           ALlvm.delete_function f_old;
 
-          (* Debug *)
-          ALlvm.get_return_instr f_new
+          L.debug "mutant: %s" (ALlvm.string_of_llmodule llm);
+
+          Some llm
       | _ -> None)
 
 (* ACTUAL MUTATION FUNCTIONS *)
@@ -763,95 +806,27 @@ let cut_below llctx instr =
 
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
-  let f = choose_function llm in
-  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr_tgt = AUtil.choose_random all_instrs in
-  (* depending on mode, available mutations differ *)
+  let llm = Llvm_transform_utils.clone_module llm in
   let mutation = choose_mutation mode score in
+
   L.info "mutation: %a" pp_mutation mutation;
-  L.debug "target: %s" (string_of_llvalue instr_tgt);
-  L.debug "module: %s" (string_of_llmodule llm);
   let mutation_result =
     match mutation with
-    | CREATE -> create_rand_instr llctx None instr_tgt
-    | OPCODE -> subst_rand_instr llctx instr_tgt
-    | OPERAND -> subst_rand_opd llctx None instr_tgt
-    | FLAG -> modify_flag llctx instr_tgt
-    | TYPE -> change_type llctx instr_tgt
-    | CUT -> cut_below llctx instr_tgt
+    | CREATE -> create_rand_instr llctx llm
+    | OPCODE -> subst_rand_instr llctx llm
+    | OPERAND -> subst_rand_opd llctx llm
+    | FLAG -> modify_flag llctx llm
+    | TYPE -> change_type llctx llm
+    | CUT -> cut_below llctx llm
   in
   match mutation_result with
-  | Some _ ->
+  | Some llm ->
       L.debug "mutant: %s" (string_of_llmodule llm);
       llm
   | None -> mutate_inner_bb llctx mode llm score
 
-(* CFG-related mutation *)
-(* let mutate_CFG = Fun.id *)
-
-(* let subst_ret llctx instr =
-     let f_old = instr |> get_function in
-     reset_var_names f_old;
-     let params_old = params f_old in
-     let param_tys = Array.map type_of params_old in
-     let old_ret_ty = instr |> type_of in
-     let target = get_instr_before ~wide:true instr in
-     match target with
-     | Some i ->
-         let new_ret_ty = type_of i in
-         if old_ret_ty = new_ret_ty then (
-           let _ = build_ret i (builder_before llctx instr) in
-           delete_instruction instr;
-           true)
-         else
-           let f_new =
-             define_function ""
-               (function_type new_ret_ty param_tys)
-               (global_parent f_old)
-           in
-           params f_new
-           |> Array.iteri (fun i param_new ->
-                  set_value_name (value_name params_old.(i)) param_new);
-           copy_function_with_new_retval llctx f_old f_new new_ret_ty;
-           true
-     | None -> true
-
-   let check_retval llctx llm =
-     let deleted_functions =
-       fold_left_functions
-         (fun acc f ->
-           let res =
-             fold_left_all_instr
-               (fun res instr ->
-                 if res then res
-                 else
-                   match instr_opcode instr with
-                   | Call -> if is_llvm_intrinsic instr then res else true
-                   | Ret -> (
-                       match classify_value (operand instr 0) with
-                       | ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
-                       | NullValue | Function ->
-                           subst_ret llctx instr
-                       | _ -> (
-                           let ret_ty = operand instr 0 |> type_of in
-                           match classify_type ret_ty with
-                           | TypeKind.Void -> subst_ret llctx instr
-                           | _ -> false))
-                   | _ -> false)
-               false f
-           in
-           if res then f :: acc else acc)
-         [] llm
-     in
-     List.iter (fun f -> delete_function f) (List.rev deleted_functions);
-     try
-       let _ = choose_function llm in
-       Some llm
-     with _ -> None *)
-
 (* TODO: add fuzzing configuration *)
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
   let mode = if seed.covers then FOCUS else EXPAND in
-  let llm_clone = Llvm_transform_utils.clone_module seed.llm in
-  mutate_inner_bb llctx mode llm_clone (int_of_float seed.score)
+  mutate_inner_bb llctx mode seed.llm (int_of_float seed.score)
 (* |> mutate_CFG |> check_retval llctx *)
