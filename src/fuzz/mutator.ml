@@ -146,16 +146,20 @@ let create_rand_instr llctx preferred_opd loc =
             (AUtil.choose_random !Config.interesting_integer_types)
           |> Option.get
   in
+  Logger.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
   let is_integer = classify_type operand_ty = Integer in
 
   let opcode = OpCls.random_opcode () in
+  Logger.debug "opcode: %s" (string_of_opcode opcode);
   match OpCls.classify opcode with
   | BINARY when is_integer ->
+      Logger.debug "create binary";
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
       |> Option.some
   | CAST when is_integer -> (
+      Logger.debug "create cast";
       let pred ty =
         match opcode with
         | Trunc -> integer_bitwidth ty < integer_bitwidth operand_ty
@@ -169,12 +173,14 @@ let create_rand_instr llctx preferred_opd loc =
           |> create_cast llctx loc opcode operand
           |> Option.some)
   | CMP when is_integer ->
+      Logger.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
       randget_operand loc operand_ty
       |> Option.get
       |> create_cmp llctx loc rand_cond operand
       |> Option.some
   | MEM -> (
+      Logger.debug "create mem";
       match (opcode, classify_type operand_ty) with
       | Load, Pointer ->
           (* creates load only if the chosen operand is a pointer *)
