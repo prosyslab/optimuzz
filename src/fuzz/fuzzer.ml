@@ -56,6 +56,17 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
+let name_seed ?(parent : SeedPool.seed_t option) (seed : SeedPool.seed_t) =
+  let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
+  match parent with
+  | None ->
+      Format.sprintf "id:%010d,score:%f,covers:%b.ll" hash seed.score
+        seed.covers
+  | Some { llm = src; _ } ->
+      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" hash
+        (ALlvm.string_of_llmodule src |> Hashtbl.hash)
+        seed.score seed.covers
+
 let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
   let score_func =
     match !Config.metric with
@@ -86,13 +97,7 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
       L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
       then (
-        let corpus_name =
-          match String.split_on_char '.' filename with
-          | time_hash :: _ll ->
-              Format.sprintf "%s-score:%f-covers:%b.ll" time_hash new_seed.score
-                new_seed.covers
-          | _ -> invalid_arg "Invalid filename"
-        in
+        let corpus_name = name_seed ~parent:seed new_seed in
         ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
         let progress =
           progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
