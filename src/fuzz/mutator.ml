@@ -233,52 +233,21 @@ let subst_rand_instr llctx llm =
 
 (** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
     another available one, randomly. *)
-let rec subst_rand_opd ?preferred_opd llctx llm =
+let subst_rand_opd _llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
   let num_operands = num_operands instr in
 
-  match preferred_opd with
-  | Some preferred_opd -> (
-      let preferred_ty = type_of preferred_opd in
-      let check_ty llv = type_of llv = preferred_ty in
-      match OpCls.opcls_of instr with
-      | (BINARY | CAST | CMP) when num_operands > 0 -> (
-          let left = operand instr 0 in
-          let right = operand instr 1 in
-          match num_operands with
-          | 1 ->
-              if check_ty left then (
-                set_operand instr 0 preferred_opd;
-                Some llm)
-              else subst_rand_opd llctx llm
-          | 2 -> (
-              (* try best to use the preferred operand *)
-              match (check_ty left, check_ty right) with
-              | false, false -> subst_rand_opd llctx llm
-              | false, true ->
-                  set_operand instr 1 preferred_opd;
-                  Some llm
-              | true, false ->
-                  set_operand instr 0 preferred_opd;
-                  Some llm
-              | true, true ->
-                  (* both are ok; replace random one into the preferred one *)
-                  let i = Random.int 2 in
-                  set_operand instr i preferred_opd;
-                  Some llm)
-          | _ -> None)
-      | _ -> None)
-  | None ->
-      if num_operands > 0 then
-        let i = Random.int num_operands in
-        let operand_old = operand instr i in
-        let* rand_opd = randget_operand instr (type_of operand_old) in
-        let _ = set_operand instr i rand_opd in
-        Some llm
-      else None
+  match OpCls.opcls_of instr with
+  | (BINARY | MEM | CAST | CMP) when num_operands > 0 ->
+      let i = Random.int num_operands in
+      let operand_old = operand instr i in
+      let* rand_opd = randget_operand instr (type_of operand_old) in
+      let _ = set_operand instr i rand_opd in
+      Some llm
+  | _ -> None
 
 (** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
@@ -312,19 +281,6 @@ let modify_flag _llctx llm =
         Some llm)
       else None
   | _ -> None
-
-(** [make_chain llctx len instr initial_opd] make chained mutation;
-    For example, if the original llvm was ... -> instr -> i1 -> ...,
-    calling this will make: ... -> (chain of length [len]) -> instr -> i1,
-    where an operand of instr will be replaced of the last mutation of chain.
-    Returns operand-substitued [instr]. *)
-(* let make_chain llctx len first_opd instr =
-   assert (len >= 2);
-   let create pref = create_rand_instr llctx pref instr in
-   let rec aux i accu =
-     if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
-   in
-   subst_rand_opd llctx (aux len first_opd) instr *)
 
 (* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
