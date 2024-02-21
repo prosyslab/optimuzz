@@ -140,6 +140,7 @@ let randget_operand loc ty =
     a random instruction before instruction [loc],
     with lists of available arguments declared prior to [loc]. *)
 let create_rand_instr llctx llm =
+  let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let loc = AUtil.choose_random all_instrs in
@@ -205,6 +206,7 @@ let create_rand_instr llctx llm =
     into another random instruction of the same class,
     with the same operands. *)
 let subst_rand_instr llctx llm =
+  let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
@@ -238,6 +240,7 @@ let subst_rand_instr llctx llm =
 (** [subst_rand_opd llctx llm] substitutes
     a random operand of a random instruction into another available random one. *)
 let rec subst_rand_opd ?preferred_opd llctx llm =
+  let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
@@ -290,6 +293,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
     Returns [instr], with or without change. *)
 let modify_flag _llctx llm =
   let open Flag in
+  let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
@@ -686,6 +690,7 @@ let verify_and_clean f_old f_new =
     Returns [Some(instr)] if success, or [None] else. *)
 let change_type llctx llm =
   let f = choose_function llm in
+  let llm = Llvm_transform_utils.clone_module llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
   (* llv is instruction now *)
@@ -739,6 +744,7 @@ let func_terminators func =
 
 let cut_below llctx llm =
   let open Util in
+  let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr_tgt = AUtil.choose_random all_instrs in
@@ -802,13 +808,10 @@ let cut_below llctx llm =
       | _ -> None)
 
 (* ACTUAL MUTATION FUNCTIONS *)
-(* CAUTION: THESE FUNCTIONS DIRECTLY MODIFIES GIVEN LLVM MODULE. *)
 
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
-  let llm = Llvm_transform_utils.clone_module llm in
   let mutation = choose_mutation mode score in
-
   L.info "mutation: %a" pp_mutation mutation;
   let mutation_result =
     match mutation with
