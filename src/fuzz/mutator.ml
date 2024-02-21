@@ -249,38 +249,54 @@ let subst_rand_opd _llctx llm =
       Some llm
   | _ -> None
 
+let edit_overflow instr =
+  let open Flag in
+  assert (instr |> instr_opcode |> can_overflow);
+  let cases =
+    match (is_nuw instr, is_nsw instr) with
+    | false, false -> [ (false, true); (true, false); (true, true) ]
+    | false, true -> [ (false, false); (true, false); (true, true) ]
+    | true, false -> [ (false, false); (false, true); (true, true) ]
+    | true, true -> [ (false, false); (false, true); (true, false) ]
+  in
+  let nuw_new, nsw_new = AUtil.choose_random cases in
+  set_nuw nuw_new instr;
+  set_nsw nsw_new instr
+
+let edit_be_exact instr =
+  let open Flag in
+  assert (instr |> instr_opcode |> can_be_exact);
+  set_exact (not (is_exact instr)) instr
+
 (** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
   let open Flag in
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr = AUtil.choose_random all_instrs in
-  let opcode = instr_opcode instr in
-  match OpCls.classify opcode with
-  | BINARY ->
-      (* there is no instruction that has both exact and nuw/nsw *)
-      if can_overflow opcode then (
-        (* can have both nuw and nsw *)
-        (* flip flags but ensure that one of the flags change *)
-        (* For example, if both nuw and nsw are already set,
-           turn off at least one of them *)
-        let cases =
-          match (is_nuw instr, is_nsw instr) with
-          | false, false -> [ (false, true); (true, false); (true, true) ]
-          | false, true -> [ (false, false); (true, false); (true, true) ]
-          | true, false -> [ (false, false); (false, true); (true, true) ]
-          | true, true -> [ (false, false); (false, true); (true, false) ]
-        in
-        let nuw_new, nsw_new = AUtil.choose_random cases in
-        set_nuw nuw_new instr;
-        set_nsw nsw_new instr;
-        Some llm)
-      else if can_be_exact opcode then (
-        set_exact (not (is_exact instr)) instr;
-        Some llm)
-      else None
-  | _ -> None
+  let can_overflow i = i |> instr_opcode |> can_overflow in
+  let can_be_exact i = i |> instr_opcode |> can_be_exact in
+  let instrs_overflow = List.filter can_overflow all_instrs in
+  let instrs_be_exact = List.filter can_be_exact all_instrs in
+
+  let ret = Some llm in
+  match (instrs_overflow, instrs_be_exact) with
+  | [], [] -> None
+  | _, [] ->
+      instrs_overflow |> AUtil.choose_random |> edit_overflow;
+      ret
+  | [], _ ->
+      instrs_be_exact |> AUtil.choose_random |> edit_be_exact;
+      ret
+  | _ ->
+      let i =
+        instrs_overflow
+        |> List.rev_append instrs_be_exact
+        |> AUtil.choose_random
+      in
+      (* no opcode can be both *)
+      if can_overflow i then edit_overflow i else edit_be_exact i;
+      ret
 
 (* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
