@@ -320,18 +320,6 @@ let replace_hard before after =
   replace_all_uses_with before after;
   delete_instruction before
 
-(** [replace_and_ret instr_old instr_new] replaces all uses of [instr_old]
-    to [instr_new] and returns [instr_new]. *)
-let replace_and_ret instr_old instr_new =
-  replace_hard instr_old instr_new;
-  instr_new
-
-(** [set_opd_and_ret instr i opd] sets [i]-th operand of [instr] to [opd]
-    and returns [instr]. *)
-let set_opd_and_ret instr i opd =
-  set_operand instr i opd;
-  instr
-
 module OpcodeClass = struct
   exception Improper_class
 
