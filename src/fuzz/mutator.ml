@@ -38,8 +38,6 @@ let choose_mutation mode score =
       let r = Random.int (Array.length mutations) in
       mutations.(r)
 
-(* CFG PRESERVING MUTATION HELPERS *)
-
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
    right before instruction [loc], without any extra keywords.
    Returns the new instruction. *)
@@ -101,8 +99,6 @@ let subst_cmp llctx instr cond_code =
   replace_hard instr new_instr;
   new_instr
 
-(* HIGH-LEVEL MUTATION HELPERS *)
-
 (** [randget_operand llctx loc ty] gets, or generates
     a llvalue as an operand, of type [ty], valid at [loc], if possible.
     NOTE: if [ty] is an integer type, this will always return [Some(_)]. *)
@@ -136,9 +132,7 @@ let randget_operand loc ty =
   in
   if candidates <> [] then Some (AUtil.choose_random candidates) else None
 
-(** [create_rand_instr llctx preferred_opd loc] creates
-    a random instruction before instruction [loc],
-    with lists of available arguments declared prior to [loc]. *)
+(** [create_rand_instr llctx llm] creates a random instruction. *)
 let create_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
@@ -154,21 +148,21 @@ let create_rand_instr llctx llm =
         (AUtil.choose_random !Config.interesting_integer_types)
       |> Option.get
   in
-  Logger.debug "operand: %s" (string_of_llvalue operand);
+  L.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
   let is_integer = classify_type operand_ty = Integer in
 
   let opcode = OpCls.random_opcode () in
-  Logger.debug "opcode: %s" (string_of_opcode opcode);
+  L.debug "opcode: %s" (string_of_opcode opcode);
   match OpCls.classify opcode with
   | BINARY when is_integer ->
-      Logger.debug "create binary";
+      L.debug "create binary";
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
       |> ignore;
       Some llm
   | CAST when is_integer -> (
-      Logger.debug "create cast";
+      L.debug "create cast";
       let pred ty =
         match opcode with
         | Trunc -> integer_bitwidth ty < integer_bitwidth operand_ty
@@ -183,7 +177,7 @@ let create_rand_instr llctx llm =
           |> ignore;
           Some llm)
   | CMP when is_integer ->
-      Logger.debug "create cmp";
+      L.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
       randget_operand loc operand_ty
       |> Option.get
@@ -191,7 +185,7 @@ let create_rand_instr llctx llm =
       |> ignore;
       Some llm
   | MEM -> (
-      Logger.debug "create mem";
+      L.debug "create mem";
       match (opcode, classify_type operand_ty) with
       | Load, Pointer ->
           (* creates load only if the chosen operand is a pointer *)
@@ -202,9 +196,9 @@ let create_rand_instr llctx llm =
       | _ -> None)
   | _ -> None
 
-(** [subst_rand_instr llctx llm] substitutes a random instruction
-    into another random instruction of the same class,
-    with the same operands. *)
+(** [subst_rand_instr llctx llm] substitutes a random instruction into another
+    random instruction of the same [OpCls.t], with the same operands.
+    Note: flags are not preserved. *)
 let subst_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
@@ -237,8 +231,8 @@ let subst_rand_instr llctx llm =
       Some llm
   | _ -> None
 
-(** [subst_rand_opd llctx llm] substitutes
-    a random operand of a random instruction into another available random one. *)
+(** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
+    another available one, randomly. *)
 let rec subst_rand_opd ?preferred_opd llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
@@ -286,11 +280,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
         Some llm
       else None
 
-(** [is_nuw instr] returns true if the instruction [instr] has the flag "nuw". *)
-
-(** [modify_flag llctx instr] tries to grant or retrieve
-    a random flag to the instruction [instr].
-    Returns [instr], with or without change. *)
+(** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
   let open Flag in
   let llm = Llvm_transform_utils.clone_module llm in
@@ -336,6 +326,7 @@ let modify_flag _llctx llm =
    in
    subst_rand_opd llctx (aux len first_opd) instr *)
 
+(* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
   match (llv |> type_of |> classify_type, classify_type ty_new) with
   | Integer, Integer -> accu
@@ -351,6 +342,8 @@ let rec trav_cast llv ty_new accu =
         accu
   | _ -> failwith "Unsupported typekind"
 
+(** [trav_llvs_used_by_curr curr ty_new accu] propagates type inference to
+    values USED BY [curr] (operands). *)
 and trav_llvs_used_by_curr curr ty_new accu =
   match classify_value curr with
   | Instruction opc -> (
@@ -371,6 +364,8 @@ and trav_llvs_used_by_curr curr ty_new accu =
       | _ -> failwith "NEVER OCCUR")
   | _ -> accu
 
+(** [trav_llvs_using_curr curr ty_new accu] propagates type inference to values
+    USING [curr] (users of curr). *)
 and trav_llvs_using_curr curr ty_new accu =
   fold_left_uses
     (fun accu use ->
@@ -391,6 +386,9 @@ and trav_llvs_using_curr curr ty_new accu =
       | _ -> failwith "NEVER OCCUR")
     accu curr
 
+(** [collect_ty_changing_llvs llv ty_new accu] recursively accumulates type
+    information to [accu] when [llv] changes to [ty_new].
+    The return is wrapped by [Option] to represent impossible cases. *)
 and collect_ty_changing_llvs llv ty_new accu =
   match accu with
   | None -> None
@@ -412,6 +410,8 @@ let get_ty llv_old typemap =
   | Some ty -> ty
   | None -> type_of llv_old
 
+(** [move_signature llctx f_old typemap] returns new signature of [f_old]
+    according to [typemap]. *)
 let move_signature llctx f_old typemap =
   let ret = get_return_instr f_old |> Option.get in
   let ret_ty =
@@ -421,6 +421,7 @@ let move_signature llctx f_old typemap =
   let param_tys = f_old |> params |> Array.map (Fun.flip get_ty typemap) in
   (ret_ty, param_tys)
 
+(** [copy_blocks llctx f_old f_new] copies all blocks of [f_old] to [f_new]. *)
 let copy_blocks llctx f_old f_new =
   assert (f_new |> basic_blocks |> Array.length = 1);
   let entry_new = entry_block f_new in
@@ -628,6 +629,8 @@ let migrate_block llctx b_old b_new typemap link_v link_b =
   loop (instr_begin b_old);
   link_v
 
+(** [migrate llctx f_old f_new typemap] migrates contents of [f_old] to [f_new].
+    [typemap] must be provided. *)
 let migrate llctx f_old f_new typemap =
   let blocks_old = basic_blocks f_old in
   let blocks_new = basic_blocks f_new in
@@ -663,6 +666,8 @@ let migrate llctx f_old f_new typemap =
   in
   loop link_v 0 |> ignore
 
+(** [redef_fn llctx f_old typemap] redefines and returns new version of [f_old]
+    according to [typemap]. *)
 let redef_fn llctx f_old typemap =
   let ret_ty, param_tys = move_signature llctx f_old typemap in
   let f_new =
@@ -685,9 +690,8 @@ let verify_and_clean f_old f_new =
     delete_function f_new;
     None)
 
-(** [change_type llctx ty_new instr] changes type of [instr] randomly.
-    All the other associated values are recursively changed.
-    Returns [Some(instr)] if success, or [None] else. *)
+(** [change_type llctx llm] changes type of a random instruction.
+    All the other associated values are recursively changed. *)
 let change_type llctx llm =
   let f = choose_function llm in
   let llm = Llvm_transform_utils.clone_module llm in
@@ -710,7 +714,7 @@ let change_type llctx llm =
       if ty_old = ty then loop () else ty
     in
     let ty_new = loop () in
-    Logger.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
+    L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
       (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
@@ -742,6 +746,7 @@ let func_terminators func =
       | None -> accu)
     [] func
 
+(** [cut_below llctx llm] cuts all instructions below from a random point. *)
 let cut_below llctx llm =
   let open Util in
   let llm = Llvm_transform_utils.clone_module llm in
@@ -807,8 +812,6 @@ let cut_below llctx llm =
           Some llm
       | _ -> None)
 
-(* ACTUAL MUTATION FUNCTIONS *)
-
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
@@ -828,7 +831,6 @@ let rec mutate_inner_bb llctx mode llm score =
       llm
   | None -> mutate_inner_bb llctx mode llm score
 
-(* TODO: add fuzzing configuration *)
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
   let mode = if seed.covers then FOCUS else EXPAND in
   mutate_inner_bb llctx mode seed.llm (int_of_float seed.score)
