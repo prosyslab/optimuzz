@@ -204,11 +204,14 @@ let make llctx llset =
          ([], [])
   in
 
+  let hash llm = ALlvm.string_of_llmodule llm |> Hashtbl.hash in
   (* if we have covering seeds, we use covering seeds only. *)
-  if pool_covers = [] then
+  if pool_covers = [] then (
+    L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
     let _pool_cnt, pool_closest =
       other_seeds
+      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
       |> List.sort (fun a b -> compare a.score b.score)
       |> List.fold_left
            (fun (cnt, pool) seed ->
@@ -216,5 +219,12 @@ let make llctx llset =
              else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
-    pool_closest
-  else push_list pool_covers AUtil.PrioQueue.empty
+    pool_closest)
+  else (
+    (* if we have covering seeds, we use covering seeds only. *)
+    L.info "Covering seeds found. Using them only.";
+    let pool_covers =
+      pool_covers
+      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
+    in
+    push_list pool_covers AUtil.PrioQueue.empty)
