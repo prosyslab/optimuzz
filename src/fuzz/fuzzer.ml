@@ -112,8 +112,8 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov
               in
-              (* FIXME: duplicate seeds are getting saved to corpus. Why? *)
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+              (* FIXME: some seeds are not saved... *)
               ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
               let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
               (new_seed, progress, new_set) |> Either.right
@@ -131,24 +131,23 @@ let rec run pool llctx llset progress =
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   let mutator = mutate_seed llctx target_path in
 
-  (* try generating interesting mutants *)
-  (* each seed gets mutated upto n times *)
-  let rec iter times (seeds, progress, llset) =
-    if times = 0 then (seeds, progress, llset)
+  (* try generating interesting mutants.
+     each seed can have up to [n] descendant *)
+  let rec children n (seeds, progress, llset) =
+    if n = 0 then (seeds, progress, llset)
     else
       match mutator llset seed progress !Config.num_mutation with
       | Either.Right (new_seed, new_progress, llset) ->
-          iter (times - 1) (new_seed :: seeds, new_progress, llset)
-      | Either.Left llset -> iter (times - 1) (seeds, progress, llset)
+          children (n - 1) (new_seed :: seeds, new_progress, llset)
+      | Either.Left llset -> children (n - 1) (seeds, progress, llset)
   in
 
   let new_seeds, progress, llset =
-    iter !Config.num_mutant ([], progress, llset)
+    children !Config.num_mutant ([], progress, llset)
   in
 
-  F.printf "\r%a\t%010d\t%d\t%d@?" Progress.pp progress
-    (ALlvm.hash_llm seed.llm) (List.length new_seeds)
-    (ALlvm.LLModuleSet.cardinal llset);
+  F.printf "\r%a\t%010d\t%d@?" Progress.pp progress (ALlvm.hash_llm seed.llm)
+    (List.length new_seeds);
 
   List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
   let new_pool =

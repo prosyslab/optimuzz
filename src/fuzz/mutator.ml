@@ -18,18 +18,16 @@ let pp_mutation fmt m =
   | TYPE -> Format.fprintf fmt "TYPE"
   | CUT -> Format.fprintf fmt "CUT"
 
+let mutations =
+  [ (CREATE, 3); (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
+
 (* choose mutation *)
 let choose_mutation mode score =
   match mode with
   | EXPAND ->
-      let mutations =
-        [
-          (CREATE, 3); (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1);
-        ]
-        |> List.map (fun (m, p) -> List.init p (Fun.const m))
-        |> List.flatten
-        |> Array.of_list
-      in
       (* FIXME: highly skewed to CREATE if score is very big *)
       let r = Random.int (score + Array.length mutations) in
       if r <= score then mutations.(0) else mutations.(r - score)
