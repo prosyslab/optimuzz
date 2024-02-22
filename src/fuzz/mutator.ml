@@ -221,6 +221,13 @@ let create_rand_instr llctx llm =
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
       Some llm
+  | OTHER Select ->
+      let cond = get_rand_opd loc (i1_type llctx) in
+      build_select cond operand
+        (get_rand_opd loc operand_ty)
+        "" (builder_before llctx loc)
+      |> ignore;
+      Some llm
   | _ -> None
 
 (** [subst_rand_instr llctx llm] substitutes a random instruction into another
@@ -478,6 +485,12 @@ and trav_llvs_used_by_curr curr ty_new accu =
           List.fold_left
             (fun accu (i, _) -> collect_ty_changing_llvs i ty_new accu)
             accu (incoming curr)
+      | OTHER Select ->
+          let opd1 = operand curr 1 in
+          let opd2 = operand curr 2 in
+          accu
+          |> collect_ty_changing_llvs opd1 ty_new
+          |> collect_ty_changing_llvs opd2 ty_new
       | _ -> failwith "NEVER OCCUR")
   | _ -> accu
 
@@ -490,7 +503,7 @@ and trav_llvs_using_curr curr ty_new accu =
       match OpCls.opcls_of user with
       | TER _ | MEM _ -> (* does not affect *) accu
       | CAST -> trav_cast user ty_new accu
-      | BINARY | PHI -> collect_ty_changing_llvs user ty_new accu
+      | BINARY | PHI | OTHER Select -> collect_ty_changing_llvs user ty_new accu
       | CMP ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
@@ -722,6 +735,39 @@ let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
   build_empty_phi phi_ty "" builder
 
+let migrate_select builder instr_old typemap link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  let opd2 = operand instr_old 2 in
+
+  let opd0 = migrate_self opd0 link_v in
+  let opd1, opd2 =
+    match (is_constant opd1, is_constant opd2) with
+    | true, true -> (
+        match LLVMap.find_opt instr_old typemap with
+        | Some ty_new ->
+            let opd1 = migrate_to_other_ty opd1 ty_new link_v in
+            let opd2 = migrate_to_other_ty opd2 ty_new link_v in
+            (opd1, opd2)
+        | None ->
+            let opd1 = migrate_self opd1 link_v in
+            let opd2 = migrate_self opd2 link_v in
+            (opd1, opd2))
+    | true, false ->
+        let opd2 = migrate_self opd2 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd2) link_v in
+        (opd1, opd2)
+    | false, true ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd2 = migrate_to_other_ty opd2 (type_of opd1) link_v in
+        (opd1, opd2)
+    | false, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd2 = migrate_self opd2 link_v in
+        (opd1, opd2)
+  in
+  build_select opd0 opd1 opd2 "" builder
+
 let migrate_instr builder instr_old typemap link_v link_b =
   let instr_new =
     match OpCls.opcls_of instr_old with
@@ -731,6 +777,7 @@ let migrate_instr builder instr_old typemap link_v link_b =
     | CAST -> migrate_cast builder instr_old typemap link_v
     | CMP -> migrate_cmp builder instr_old link_v
     | PHI -> migrate_phi builder instr_old typemap
+    | OTHER Select -> migrate_select builder instr_old typemap link_v
     | _ -> failwith "Unsupported instruction"
   in
   if instr_old |> type_of |> classify_type <> Void then
