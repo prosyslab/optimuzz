@@ -76,6 +76,7 @@ let main () =
   |> SeedPool.iter (fun seed ->
          let filename = SeedPool.name_seed seed in
          F.eprintf "%s@." filename;
+         ALlvm.LLModuleSet.add llset seed.llm ();
          ALlvm.save_ll !Config.corpus_dir filename seed.llm);
 
   if SeedPool.cardinal seed_pool = 0 then (
