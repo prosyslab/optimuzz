@@ -17,11 +17,6 @@ module Progress = struct
       (CD.Coverage.cardinal progress.cov_sofar)
 end
 
-type res_t =
-  | INVALID
-  | INTERESTING of (SeedPool.seed_t option * Progress.t)
-  | NOT_INTERESTING
-
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
@@ -56,7 +51,12 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
+type res_t =
+  | Restart
+  | Not_interesting
+  | Interesting of SeedPool.seed_t * CD.Coverage.t
+
+let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
   let score_func =
     match !Config.metric with
     | "avg" -> CD.Coverage.avg_score
@@ -66,7 +66,7 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
   (* TODO: not using run result, only caring coverage *)
   let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
   match optim_res with
-  | INVALID | CRASH -> INVALID
+  | INVALID | CRASH -> Restart
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
         let covered = CD.Coverage.cover_target target_path cov_mutant in
@@ -85,39 +85,33 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
       in
       L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
-      then (
-        let corpus_name = SeedPool.name_seed ~parent:seed new_seed in
-        ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
-        let progress =
-          progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
-        in
-        INTERESTING (Some new_seed, progress))
-      else NOT_INTERESTING
+      then Interesting (new_seed, cov_mutant)
+      else Not_interesting
 
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
-    times : SeedPool.seed_t option * Progress.t =
+    times : (SeedPool.seed_t * Progress.t) option =
   assert (seed.score > 0.0);
 
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
     (* used up all allowed mutation times *)
     ALlvm.LLModuleSet.add llset seed.llm ();
-    (None, progress))
+    None)
   else
     let mutant = Mutator.run llctx seed in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
-    | None ->
-        (* duplicated seed *)
-        (None, progress)
+    | None -> (* duplicated seed *) None
     | Some filename -> (
-        match check_mutant filename mutant target_path seed progress with
-        | INVALID -> mutate_seed llctx target_path llset seed progress times
-        | INTERESTING (Some seed, progress) ->
-            ALlvm.LLModuleSet.add llset seed.llm ();
-            (Some seed, progress)
-        | INTERESTING _ -> failwith "unreachable"
-        | NOT_INTERESTING ->
+        match check_mutant filename mutant target_path seed with
+        | Interesting (new_seed, cov_mutant) ->
+            let progress =
+              progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
+            in
+            ALlvm.LLModuleSet.add llset new_seed.llm ();
+            Some (new_seed, progress)
+        | Restart -> mutate_seed llctx target_path llset seed progress times
+        | Not_interesting ->
             mutate_seed llctx target_path llset { seed with llm = mutant }
               progress (times - 1))
 
@@ -128,10 +122,12 @@ let rec run pool llctx llset progress =
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   let mutator = mutate_seed llctx target_path llset in
 
+  let seed_hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
+
   pool
   |> SeedPool.iter (fun seed ->
          L.debug "prio: %d, seed: %a" seed.priority SeedPool.pp_seed seed);
-  L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
+  L.debug "fuzz-hash: %010d\n" seed_hash;
   L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
 
   (* try generating interesting mutants *)
@@ -139,14 +135,23 @@ let rec run pool llctx llset progress =
   let rec iter times (seeds, progress) =
     if times = 0 then (seeds, progress)
     else
-      let new_seed, new_progress = mutator seed progress !Config.num_mutation in
-      iter (times - 1) (new_seed :: seeds, new_progress)
+      match mutator seed progress !Config.num_mutation with
+      | Some (new_seed, new_progress) ->
+          iter (times - 1) (new_seed :: seeds, new_progress)
+      | None -> iter (times - 1) (seeds, progress)
   in
 
   let new_seeds, progress = iter !Config.num_mutant ([], progress) in
-  F.printf "\r%a@?" Progress.pp progress;
+  F.printf "\r%a %010d@?" Progress.pp progress seed_hash;
 
-  let new_seeds = List.filter_map Fun.id new_seeds in
+  (* here we know the actual ancestor seed *)
+  List.iter
+    (fun new_seed ->
+      ALlvm.save_ll !Config.corpus_dir
+        (SeedPool.name_seed ~parent:seed new_seed)
+        seed.llm)
+    new_seeds;
+
   List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
