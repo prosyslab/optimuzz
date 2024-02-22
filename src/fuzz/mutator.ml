@@ -99,38 +99,35 @@ let subst_cmp llctx instr cond_code =
   replace_hard instr new_instr;
   new_instr
 
-(** [randget_operand llctx loc ty] gets, or generates
-    a llvalue as an operand, of type [ty], valid at [loc], if possible.
-    NOTE: if [ty] is an integer type, this will always return [Some(_)]. *)
-let randget_operand loc ty =
-  let candidates =
+(** [randget_operand loc ty] gets or generates a llvalue of type [ty],
+    valid at [loc]. *)
+let randget_operand ?(avoid_const = true) loc ty =
+  let cands_instr =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
   in
-  let candidates =
-    match classify_type ty with
-    | TypeKind.Integer ->
-        const_int ty (AUtil.choose_random !Config.interesting_integers)
-        :: candidates
-    | Vector ->
-        (* TODO: check this *)
-        let el_ty = element_type ty in
-        let vec_size = vector_size ty in
-        let llv_arr =
-          Array.make vec_size
-            (const_int el_ty (AUtil.choose_random !Config.interesting_integers))
-        in
-        const_vector llv_arr :: candidates
-    | _ -> candidates
+  let cands_param =
+    loc |> get_function |> params |> Array.to_list |> list_filter_type ty
   in
-  let candidates =
-    loc
-    |> get_function
-    |> fold_left_params
-         (fun candidates param ->
-           if type_of param = ty then param :: candidates else candidates)
-         candidates
+  let cands = List.rev_append cands_instr cands_param in
+
+  let cands =
+    if avoid_const && cands <> [] then cands
+    else
+      let cand_const =
+        let v = AUtil.choose_random !Config.interesting_integers in
+        match classify_type ty with
+        | Integer -> const_int ty v
+        | Vector ->
+            const_vector
+              (Array.make (vector_size ty) (const_int (element_type ty) v))
+        | Pointer -> const_null ty
+        | _ ->
+            failwith
+              ("Unsupported type for randget_operand: " ^ string_of_lltype ty)
+      in
+      cand_const :: cands
   in
-  if candidates <> [] then Some (AUtil.choose_random candidates) else None
+  AUtil.choose_random cands
 
 (** [create_rand_instr llctx llm] creates a random instruction. *)
 let create_rand_instr llctx llm =
@@ -146,7 +143,6 @@ let create_rand_instr llctx llm =
     else
       randget_operand loc
         (AUtil.choose_random !Config.interesting_integer_types)
-      |> Option.get
   in
   L.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
@@ -157,8 +153,7 @@ let create_rand_instr llctx llm =
   match OpCls.classify opcode with
   | BINARY when is_integer ->
       L.debug "create binary";
-      create_binary llctx loc opcode operand
-        (randget_operand loc operand_ty |> Option.get)
+      create_binary llctx loc opcode operand (randget_operand loc operand_ty)
       |> ignore;
       Some llm
   | CAST when is_integer -> (
@@ -180,7 +175,6 @@ let create_rand_instr llctx llm =
       L.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
       randget_operand loc operand_ty
-      |> Option.get
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
       Some llm
@@ -244,7 +238,7 @@ let subst_rand_opd _llctx llm =
   | (BINARY | MEM _ | CAST | CMP) when num_operands > 0 ->
       let i = Random.int num_operands in
       let operand_old = operand instr i in
-      let* rand_opd = randget_operand instr (type_of operand_old) in
+      let rand_opd = randget_operand instr (type_of operand_old) in
       let _ = set_operand instr i rand_opd in
       Some llm
   | _ -> None
