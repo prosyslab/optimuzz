@@ -896,18 +896,25 @@ module ChangeRetVal = struct
     loop link_instr_init LLBMap.empty 0
 end
 
-module LLModuleSet = struct
-  include Hashtbl.Make (struct
-    type t = llmodule
+let hash_llm llm = string_of_llmodule llm |> String.trim |> Hashtbl.hash
 
-    let equal a b = string_of_llmodule a = string_of_llmodule b
-    let hash llm = string_of_llmodule llm |> Hashtbl.hash
-  end)
+module LLModuleSet : sig
+  type t
 
-  let get_new_name set llm =
-    match find_opt set llm with
+  val add : llmodule -> t -> t
+  val mem : llmodule -> t -> bool
+  val get_new_name : llmodule -> t -> string option
+  val cardinal : t -> int
+  val empty : t
+end = struct
+  include Set.Make (Int)
+
+  let add llm set = add (hash_llm llm) set
+  let mem llm set = mem (hash_llm llm) set
+
+  let get_new_name llm set =
+    let llm_hash = hash_llm llm in
+    match find_opt llm_hash set with
     | Some _ -> None
-    | None ->
-        let h = Hashtbl.hash (string_of_llmodule llm) |> string_of_int in
-        Format.sprintf "%s_%s.ll" (AUtil.get_current_time ()) h |> Option.some
+    | None -> Format.sprintf "id:%010d.ll" llm_hash |> Option.some
 end

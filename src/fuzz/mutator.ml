@@ -813,7 +813,7 @@ let cut_below llctx llm =
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
   L.info "mutation: %a" pp_mutation mutation;
-  let mutation_result =
+  let mutant =
     match mutation with
     | CREATE -> create_rand_instr llctx llm
     | OPCODE -> subst_rand_instr llctx llm
@@ -822,11 +822,11 @@ let rec mutate_inner_bb llctx mode llm score =
     | TYPE -> change_type llctx llm
     | CUT -> cut_below llctx llm
   in
-  match mutation_result with
-  | Some llm ->
-      L.debug "mutant: %s" (string_of_llmodule llm);
-      llm
-  | None -> mutate_inner_bb llctx mode llm score
+  match mutant with
+  | Some llm' when hash_llm llm <> hash_llm llm' ->
+      L.debug "mutant: %s" (string_of_llmodule llm');
+      llm'
+  | _ -> mutate_inner_bb llctx mode llm score
 
 (* TODO: add fuzzing configuration *)
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =

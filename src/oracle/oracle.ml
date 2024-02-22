@@ -90,7 +90,7 @@ module Optimizer = struct
       INVALID
 
   let run_for_llm ~passes llset llm =
-    match ALlvm.LLModuleSet.get_new_name llset llm with
+    match ALlvm.LLModuleSet.get_new_name llm llset with
     | None -> INVALID
     | Some filename ->
         (* transform input into a file for the optimizer *)

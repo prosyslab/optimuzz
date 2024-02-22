@@ -56,7 +56,7 @@ type res_t =
   | Not_interesting
   | Interesting of SeedPool.seed_t * CD.Coverage.t
 
-let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
+let check_mutant (seed : SeedPool.seed_t) filename mutant target_path =
   let score_func =
     match !Config.metric with
     | "avg" -> CD.Coverage.avg_score
@@ -68,19 +68,17 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
   match optim_res with
   | INVALID | CRASH -> Restart
   | VALID cov -> (
+      let covers = CD.Coverage.cover_target target_path cov in
+      let score =
+        score_func target_path cov
+        |> Option.fold ~none:(!Config.max_distance |> float_of_int) ~some:Fun.id
+      in
       let child : SeedPool.seed_t =
-        let covered = CD.Coverage.cover_target target_path cov in
-        let mutant_score =
-          score_func target_path cov
-          |> Option.fold
-               ~none:(!Config.max_distance |> float_of_int)
-               ~some:Fun.id
-        in
         {
-          priority = SeedPool.get_prio covered mutant_score;
+          priority = SeedPool.get_prio covers score;
           llm = mutant;
-          covers = covered;
-          score = mutant_score;
+          covers;
+          score;
         }
       in
       L.debug "mutant score: %f, covers: %b\n" child.score child.covers;
@@ -92,68 +90,65 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
       | _ -> Not_interesting)
 
 (* each mutant is mutated [Config.num_mutation] times *)
-let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
-    times : (SeedPool.seed_t * Progress.t) option =
+let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
+    :
+    ( ALlvm.LLModuleSet.t,
+      SeedPool.seed_t * Progress.t * ALlvm.LLModuleSet.t )
+    Either.t =
   assert (seed.score > 0.0);
 
-  if times < 0 then invalid_arg "Expected nonnegative mutation times"
-  else if times = 0 then (
-    (* used up all allowed mutation times *)
-    ALlvm.LLModuleSet.add llset seed.llm ();
-    None)
-  else
-    let mutant = Mutator.run llctx seed in
-    match ALlvm.LLModuleSet.get_new_name llset mutant with
-    | None -> (* duplicated seed *) None
-    | Some filename -> (
-        match check_mutant filename mutant target_path seed with
-        | Interesting (new_seed, cov_mutant) ->
-            let progress =
-              progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
-            in
-            ALlvm.LLModuleSet.add llset new_seed.llm ();
-            Some (new_seed, progress)
-        | Restart -> mutate_seed llctx target_path llset seed progress times
-        | Not_interesting ->
-            mutate_seed llctx target_path llset { seed with llm = mutant }
-              progress (times - 1))
+  (* explore LLVM IR space by mutating src to dst *)
+  let rec traverse (src : SeedPool.seed_t) progress llset times =
+    if times = 0 then ALlvm.LLModuleSet.add src.llm llset |> Either.left
+    else
+      let dst = Mutator.run llctx src in
+      match ALlvm.LLModuleSet.get_new_name dst llset with
+      | None -> llset |> Either.left
+      | Some filename -> (
+          match check_mutant seed filename dst target_path with
+          | Interesting (new_seed, cov) ->
+              assert (new_seed.llm == dst);
+              assert (not @@ ALlvm.LLModuleSet.mem new_seed.llm llset);
+              let progress =
+                progress |> Progress.inc_gen |> Progress.add_cov cov
+              in
+              (* FIXME: duplicate seeds are getting saved to corpus. Why? *)
+              let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+              ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
+              let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
+              (new_seed, progress, new_set) |> Either.right
+          | Restart -> traverse src progress llset times
+          | Not_interesting ->
+              traverse { src with llm = dst } progress llset (times - 1))
+  in
+
+  traverse seed progress llset limit
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
 let rec run pool llctx llset progress =
   let seed, pool_popped = SeedPool.pop pool in
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  let mutator = mutate_seed llctx target_path llset in
-
-  let seed_hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
-
-  pool
-  |> SeedPool.iter (fun seed ->
-         L.debug "prio: %d, seed: %a" seed.priority SeedPool.pp_seed seed);
-  L.debug "fuzz-hash: %010d\n" seed_hash;
-  L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
+  let mutator = mutate_seed llctx target_path in
 
   (* try generating interesting mutants *)
   (* each seed gets mutated upto n times *)
-  let rec iter times (seeds, progress) =
-    if times = 0 then (seeds, progress)
+  let rec iter times (seeds, progress, llset) =
+    if times = 0 then (seeds, progress, llset)
     else
-      match mutator seed progress !Config.num_mutation with
-      | Some (new_seed, new_progress) ->
-          iter (times - 1) (new_seed :: seeds, new_progress)
-      | None -> iter (times - 1) (seeds, progress)
+      match mutator llset seed progress !Config.num_mutation with
+      | Either.Right (new_seed, new_progress, llset) ->
+          iter (times - 1) (new_seed :: seeds, new_progress, llset)
+      | Either.Left llset -> iter (times - 1) (seeds, progress, llset)
   in
 
-  let new_seeds, progress = iter !Config.num_mutant ([], progress) in
-  F.printf "\r%a %010d@?" Progress.pp progress seed_hash;
+  let new_seeds, progress, llset =
+    iter !Config.num_mutant ([], progress, llset)
+  in
 
-  (* here we know the actual ancestor seed *)
-  List.iter
-    (fun new_seed ->
-      ALlvm.save_ll !Config.corpus_dir
-        (SeedPool.name_seed ~parent:seed new_seed)
-        seed.llm)
-    new_seeds;
+  F.printf "\r%a\t%010d\t%d\t%d@?" Progress.pp progress
+    (ALlvm.hash_llm seed.llm) (List.length new_seeds)
+    (ALlvm.LLModuleSet.cardinal llset);
 
   List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
   let new_pool =

@@ -15,15 +15,15 @@ let pp_seed fmt seed =
   Format.fprintf fmt "score: %.3f, covers: %b" seed.score seed.covers
 
 let name_seed ?(parent : seed_t option) (seed : seed_t) =
-  let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
+  let self_hash = ALlvm.hash_llm seed.llm in
   match parent with
   | None ->
-      Format.sprintf "id:%010d,score:%f,covers:%b.ll" hash seed.score
+      Format.sprintf "id:%010d,score:%f,covers:%b.ll" self_hash seed.score
         seed.covers
-  | Some { llm = src; _ } ->
-      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" hash
-        (ALlvm.string_of_llmodule src |> Hashtbl.hash)
-        seed.score seed.covers
+  | Some src ->
+      let parent_hash = ALlvm.hash_llm src.llm in
+      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" self_hash
+        parent_hash seed.score seed.covers
 
 let get_prio covers score =
   if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
@@ -194,19 +194,13 @@ let make llctx llset =
                  | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID cov ->
                      let covers = CD.Coverage.cover_target target_path cov in
-                     let score = score_func target_path cov in
-                     let score_int =
-                       match score with
+                     let score =
+                       match score_func target_path cov with
                        | None -> !Config.max_distance |> float_of_int
                        | Some x -> x
                      in
                      let seed =
-                       {
-                         priority = get_prio covers score_int;
-                         llm;
-                         covers;
-                         score = score_int;
-                       }
+                       { priority = get_prio covers score; llm; covers; score }
                      in
                      L.info "seed: %s, %a@." file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)
@@ -214,27 +208,52 @@ let make llctx llset =
          ([], [])
   in
 
-  let hash llm = ALlvm.string_of_llmodule llm |> Hashtbl.hash in
   (* if we have covering seeds, we use covering seeds only. *)
   if pool_covers = [] then (
     L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
-    let _pool_cnt, pool_closest =
+    let pool_closest =
       other_seeds
-      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
+      |> List.sort_uniq (fun a b ->
+             compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
       |> List.sort (fun a b -> compare a.score b.score)
+    in
+    let new_set =
+      pool_covers
+      |> List.fold_left (fun s seed -> ALlvm.LLModuleSet.add seed.llm s) llset
+    in
+
+    let _cnt, pool_closest =
+      pool_closest
       |> List.fold_left
            (fun (cnt, pool) seed ->
              if cnt >= !Config.max_initial_seed then (cnt, pool)
              else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
-    pool_closest)
+
+    pool_closest
+    |> iter (fun seed ->
+           let filename = name_seed seed in
+           Format.eprintf "%s@." filename;
+           ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+
+    (new_set, pool_closest))
   else (
     (* if we have covering seeds, we use covering seeds only. *)
     L.info "Covering seeds found. Using them only.";
     let pool_covers =
       pool_covers
-      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
+      |> List.sort_uniq (fun a b ->
+             compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
     in
-    push_list pool_covers AUtil.PrioQueue.empty)
+    let new_set =
+      pool_covers
+      |> List.fold_left (fun s seed -> ALlvm.LLModuleSet.add seed.llm s) llset
+    in
+    pool_covers
+    |> List.iter (fun seed ->
+           let filename = name_seed seed in
+           Format.eprintf "%s@." filename;
+           ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+    (new_set, push_list pool_covers AUtil.PrioQueue.empty))
