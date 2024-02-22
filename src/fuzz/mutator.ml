@@ -146,12 +146,13 @@ let create_rand_instr llctx llm =
   in
   L.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
+  let is_not_ptr = classify_type operand_ty <> Pointer in
   let is_integer = classify_type operand_ty = Integer in
 
   let opcode = OpCls.random_opcode () in
   L.debug "opcode: %s" (string_of_opcode opcode);
   match OpCls.classify opcode with
-  | BINARY when is_integer ->
+  | BINARY when is_not_ptr ->
       L.debug "create binary";
       create_binary llctx loc opcode operand (randget_operand loc operand_ty)
       |> ignore;
@@ -171,23 +172,13 @@ let create_rand_instr llctx llm =
           |> create_cast llctx loc opcode operand
           |> ignore;
           Some llm)
-  | CMP when is_integer ->
+  | CMP when is_not_ptr ->
       L.debug "create cmp";
-      let rand_cond = AUtil.choose_random OpCls.cmp_kind in
+      let cond = AUtil.choose_random OpCls.cmp_kind in
       randget_operand loc operand_ty
-      |> create_cmp llctx loc rand_cond operand
+      |> create_cmp llctx loc cond operand
       |> ignore;
       Some llm
-  | MEM _ -> (
-      L.debug "create mem";
-      match (opcode, classify_type operand_ty) with
-      | Load, Pointer ->
-          (* creates load only if the chosen operand is a pointer *)
-          let rand_ty = AUtil.choose_random !Config.interesting_integer_types in
-          let b = builder_before llctx loc in
-          build_load rand_ty operand "" b |> ignore;
-          Some llm
-      | _ -> None)
   | _ -> None
 
 (** [subst_rand_instr llctx llm] substitutes a random instruction into another
