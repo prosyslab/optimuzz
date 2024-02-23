@@ -55,7 +55,7 @@ let create_cmp llctx loc icmp o0 o1 =
     instruction [instr], without any extra keywords.
     Returns the new instruction. *)
 let binary_exchange_operands llctx instr =
-  assert (OpCls.classify (instr_opcode instr) = BINARY);
+  assert (OpCls.opcls_of instr = BINARY);
   let left = operand instr 0 in
   let right = operand instr 1 in
   let loc = instr in
@@ -74,7 +74,8 @@ let subst_binary llctx instr opcode =
   replace_hard instr new_instr;
   new_instr
 
-let subst_cast llctx instr =
+let subst_cast_opt llctx instr =
+  assert (OpCls.opcls_of instr = CAST);
   (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None) *)
   match instr_opcode instr with
   | ZExt ->
@@ -90,12 +91,12 @@ let subst_cast llctx instr =
       replace_hard instr new_instr;
       Some new_instr
   | Trunc -> None
-  | _ -> raise OpCls.Improper_class
+  | _ -> failwith "NEVER OCCUR"
 
-let subst_cmp llctx instr cond_code =
+let subst_cmp llctx instr cond =
   let left = operand instr 0 in
   let right = operand instr 1 in
-  let new_instr = create_cmp llctx instr cond_code left right in
+  let new_instr = create_cmp llctx instr cond left right in
   replace_hard instr new_instr;
   new_instr
 
@@ -181,7 +182,7 @@ let create_rand_instr llctx llm =
           Some llm)
   | CMP when is_not_ptr ->
       L.debug "create cmp";
-      let cond = AUtil.choose_random OpCls.cmp_kind in
+      let cond = OpCls.random_icmp () in
       randget_operand loc operand_ty
       |> create_cmp llctx loc cond operand
       |> ignore;
@@ -210,23 +211,19 @@ let subst_rand_instr llctx llm =
         binary_exchange_operands llctx instr |> ignore;
         Some llm)
       else
-        let new_opcode = OpCls.random_opcode_except old_opcode in
+        let new_opcode = OpCls.random_binary_except old_opcode in
         subst_binary llctx instr new_opcode |> ignore;
         Some llm
   | BINARY ->
-      let new_opcode = OpCls.random_opcode_except old_opcode in
+      let new_opcode = OpCls.random_binary_except old_opcode in
       subst_binary llctx instr new_opcode |> ignore;
       Some llm
   | CAST ->
-      subst_cast llctx instr |> ignore;
+      subst_cast_opt llctx instr |> ignore;
       Some llm
   | CMP ->
-      let old_cmp = icmp_predicate instr |> Option.get in
-      let rec rand_cond_code () =
-        let cmp = OpCls.random_cmp () in
-        if cmp = old_cmp then rand_cond_code () else cmp
-      in
-      rand_cond_code () |> subst_cmp llctx instr |> ignore;
+      let old_cond = icmp_predicate instr |> Option.get in
+      subst_cmp llctx instr (OpCls.random_icmp_except old_cond) |> ignore;
       Some llm
   | _ -> None
 

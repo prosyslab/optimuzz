@@ -203,35 +203,6 @@ let is_llvm_intrinsic instr =
     is_llvm_function callee_expr
   else false
 
-(* mutation options *)
-let interesting_integers =
-  ref [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
-
-let interesting_integer_types = ref []
-let interesting_vector_types = ref []
-let interesting_types = ref []
-
-let set_intereseting_types llctx =
-  interesting_integer_types :=
-    [
-      integer_type llctx 1;
-      integer_type llctx 8;
-      integer_type llctx 10;
-      integer_type llctx 32;
-      integer_type llctx 34;
-      integer_type llctx 64;
-    ];
-  interesting_vector_types :=
-    [
-      vector_type (i1_type llctx) 1;
-      vector_type (i1_type llctx) 4;
-      vector_type (i8_type llctx) 1;
-      vector_type (i8_type llctx) 4;
-      vector_type (i32_type llctx) 1;
-      vector_type (i32_type llctx) 4;
-    ];
-  interesting_types := !interesting_integer_types @ !interesting_vector_types
-
 let read_ll llctx filepath =
   let buf = Llvm.MemoryBuffer.of_file filepath in
   Llvm_irreader.parse_ir llctx buf
@@ -335,11 +306,10 @@ module OpcodeClass = struct
     | OTHER of Opcode.t
     | UNSUPPORTED
 
-  (* use these lists to mark progress *)
-  let ter_list = [ Opcode.Ret; Br ]
+  let ter_arr = [| Opcode.Ret; Br |]
 
-  let binary_list =
-    [
+  let binary_arr =
+    [|
       Opcode.Add;
       Sub;
       Mul;
@@ -353,59 +323,45 @@ module OpcodeClass = struct
       And;
       Or;
       Xor;
-    ]
+    |]
 
-  let mem_list = [ Opcode.Alloca; Load; Store ]
-  let cast_list = [ Opcode.Trunc; ZExt; SExt ]
-  let cmp_list = [ Opcode.ICmp ]
-  let phi_list = [ Opcode.PHI ]
-  let other_list = [ Opcode.Select ]
+  let mem_arr = [| Opcode.Alloca; Load; Store |]
+  let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
+  let cmp_arr = [| Opcode.ICmp |]
+  let phi_arr = [| Opcode.PHI |]
+  let other_arr = [| Opcode.Select |]
 
   (* helper for cmp instruction *)
-  let cmp_kind = [ Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
+  let icmp_kind = [| Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle |]
 
-  let total_list =
-    ter_list @ binary_list @ mem_list @ cast_list @ cmp_list @ phi_list
-    @ other_list
+  let total_arr =
+    Array.concat
+      [ ter_arr; binary_arr; mem_arr; cast_arr; cmp_arr; phi_arr; other_arr ]
 
-  let classify = function
-    | (Opcode.Ret | Br) as opc -> TER opc
+  let classify opc =
+    match opc with
+    | Opcode.Ret | Br -> TER opc
     | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
     | Xor ->
         BINARY
-    | (Alloca | Load | Store) as opc -> MEM opc
+    | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt -> CAST
     | ICmp -> CMP
     | PHI -> PHI
-    | Select as opc -> OTHER opc
+    | Select -> OTHER opc
     | _ -> UNSUPPORTED
 
   let opcls_of instr = instr |> instr_opcode |> classify
 
-  let oplist_of = function
-    | TER _ -> ter_list
-    | BINARY -> binary_list
-    | MEM _ -> mem_list
-    | CAST -> cast_list
-    | CMP -> cmp_list
-    | PHI -> phi_list
-    | OTHER _ -> other_list
-    | _ -> []
-
-  let random_op_of opcls = opcls |> oplist_of |> AUtil.choose_random
-
   (** [random_opcode ()] returns a random opcode. *)
-  let random_opcode () = AUtil.choose_random total_list
+  let random_opcode () = AUtil.choose_arr total_arr
 
-  (** [random_opcode_except opcode] returns another random opcode in its class.
-        If [opcode] is the only one in its class, returns [opcode]. *)
-  let random_opcode_except opcode =
-    let l =
-      List.filter (fun x -> x <> opcode) (opcode |> classify |> oplist_of)
-    in
-    match l with [] -> opcode | _ -> AUtil.choose_random l
+  (** [random_binary_except opcode] returns another random opcode in BINARY
+      except [opcode]. *)
+  let random_binary_except opcode = AUtil.arr_random_except binary_arr opcode
 
-  let random_cmp () = AUtil.choose_random cmp_kind
+  let random_icmp () = AUtil.choose_arr icmp_kind
+  let random_icmp_except opcode = AUtil.arr_random_except icmp_kind opcode
 
   let build_binary opcode o0 o1 llb =
     (match opcode with
