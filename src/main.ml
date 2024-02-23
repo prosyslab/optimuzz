@@ -79,10 +79,10 @@ let main () =
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
-  L.info "fuzzing campaign starts@.";
+  L.info "fuzzing campaign starts";
   let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
   let end_time = AUtil.now () in
-  L.info "fuzzing campaign ends@.";
+  L.info "fuzzing campaign ends";
   L.info "total coverage: %d lines" (CD.Coverage.cardinal coverage);
   L.info "time spent: %ds" (end_time - !AUtil.start_time);
 

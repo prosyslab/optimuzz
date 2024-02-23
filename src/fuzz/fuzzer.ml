@@ -113,7 +113,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
                 progress |> Progress.inc_gen |> Progress.add_cov cov
               in
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-              (* FIXME: some seeds are not saved... *)
+              L.info "save seed: %s" seed_name;
               ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
               let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
               (new_seed, progress, new_set) |> Either.right
@@ -149,7 +149,11 @@ let rec run pool llctx llset progress =
   F.printf "\r%a\t%010d\t%d@?" Progress.pp progress (ALlvm.hash_llm seed.llm)
     (List.length new_seeds);
 
-  List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
+  new_seeds
+  |> List.iter (fun (s : SeedPool.seed_t) ->
+         L.info "new seed (%010d) found. %a" (ALlvm.hash_llm s.llm)
+           SeedPool.pp_seed s);
+
   let new_pool =
     pool_popped
     |> SeedPool.push_list new_seeds

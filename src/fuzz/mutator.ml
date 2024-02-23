@@ -810,7 +810,7 @@ let cut_below llctx llm =
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
-  L.info "mutation: %a" pp_mutation mutation;
+  L.debug "mutation: %a" pp_mutation mutation;
   let mutant =
     match mutation with
     | CREATE -> create_rand_instr llctx llm

@@ -39,17 +39,17 @@ module Validator = struct
           match lines with
           | correct :: incorrect :: failed :: _errors ->
               if eq_line correct 1 then (
-                L.info "Validator: %s refines %s"
+                L.debug "Validator: %s refines %s"
                   (Filename.basename optimized)
                   (Filename.basename src);
                 Correct)
               else if eq_line incorrect 1 then (
-                L.info "Validator: %s does not refine %s"
+                L.debug "Validator: %s does not refine %s"
                   (Filename.basename optimized)
                   (Filename.basename src);
                 Incorrect)
               else if eq_line failed 1 then (
-                L.info "Validator: failed to validate %s and %s"
+                L.debug "Validator: failed to validate %s and %s"
                   (Filename.basename src)
                   (Filename.basename optimized);
                 Failed)
@@ -74,7 +74,7 @@ module Optimizer = struct
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
-    L.info "opt: %s -> %s"
+    L.debug "opt: %s -> %s"
       (Filename.basename filename)
       (Filename.basename output);
     AUtil.clean !Config.cov_file;

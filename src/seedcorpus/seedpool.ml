@@ -202,7 +202,7 @@ let make llctx llset =
                      let seed =
                        { priority = get_prio covers score; llm; covers; score }
                      in
-                     L.info "seed: %s, %a@." file pp_seed seed;
+                     L.info "seed: %s, %a" file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)
                      else (pool_first, seed :: other_seeds)))
          ([], [])
