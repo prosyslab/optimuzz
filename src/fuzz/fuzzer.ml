@@ -67,11 +67,11 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
   let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
   match optim_res with
   | INVALID | CRASH -> Restart
-  | VALID cov_mutant ->
-      let new_seed : SeedPool.seed_t =
-        let covered = CD.Coverage.cover_target target_path cov_mutant in
+  | VALID cov -> (
+      let child : SeedPool.seed_t =
+        let covered = CD.Coverage.cover_target target_path cov in
         let mutant_score =
-          score_func target_path cov_mutant
+          score_func target_path cov
           |> Option.fold
                ~none:(!Config.max_distance |> float_of_int)
                ~some:Fun.id
@@ -83,10 +83,13 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) =
           score = mutant_score;
         }
       in
-      L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
-      if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
-      then Interesting (new_seed, cov_mutant)
-      else Not_interesting
+      L.debug "mutant score: %f, covers: %b\n" child.score child.covers;
+
+      match seed with
+      | { covers = true; _ } when child.covers -> Interesting (child, cov)
+      | { covers = false; score; _ } when child.score < score || child.covers ->
+          Interesting (child, cov)
+      | _ -> Not_interesting)
 
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
