@@ -27,8 +27,7 @@ let measure_coverage_only ~passes () =
   let res = Optimizer.run ~passes !Config.cov_tgt_path in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   (match res with
-  | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
+  | Ok cov -> F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
   | _ -> ());
   exit 0
 
@@ -48,8 +47,7 @@ let measure_coverage_only ~passes () =
   let res = Optimizer.run ~passes !Config.cov_tgt_path in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   (match res with
-  | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
+  | Ok cov -> F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
   | _ -> ());
   exit 0
 

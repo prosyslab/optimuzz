@@ -152,12 +152,8 @@ let make llctx llset =
   let can_optimize file =
     let path = Filename.concat dir file in
     match Oracle.Optimizer.run ~passes:[ "instcombine" ] path with
-    | CRASH | INVALID ->
-        AUtil.name_opted_ver path |> AUtil.clean;
-        false
-    | VALID _ ->
-        AUtil.name_opted_ver path |> AUtil.clean;
-        true
+    | Ok _ -> true
+    | _ -> false
   in
 
   let score_func =
@@ -187,12 +183,19 @@ let make llctx llset =
              match llm with
              | None -> (pool_first, other_seeds)
              | Some llm -> (
-                 match
-                   Oracle.Optimizer.run_for_llm ~passes:[ "instcombine" ] llset
-                     llm
-                 with
-                 | CRASH | INVALID -> (pool_first, other_seeds)
-                 | VALID cov ->
+                 let filename =
+                   Format.sprintf "id:%010d.ll" (ALlvm.hash_llm llm)
+                 in
+                 ALlvm.save_ll !Config.out_dir filename llm;
+                 let opt_res =
+                   Filename.concat !Config.out_dir filename
+                   |> Oracle.Optimizer.run ~passes:[ "instcombine" ]
+                 in
+                 AUtil.clean filename;
+
+                 match opt_res with
+                 | Error Crash | Error No_cov -> (pool_first, other_seeds)
+                 | Ok cov ->
                      let covers = CD.Coverage.cover_target target_path cov in
                      let score =
                        match score_func target_path cov with

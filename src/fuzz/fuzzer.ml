@@ -66,8 +66,9 @@ let check_mutant (seed : SeedPool.seed_t) filename mutant target_path =
   (* TODO: not using run result, only caring coverage *)
   let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
   match optim_res with
-  | INVALID | CRASH -> Restart
-  | VALID cov -> (
+  | Error No_cov -> Restart
+  | Error Crash -> Restart
+  | Ok cov -> (
       let covers = CD.Coverage.cover_target target_path cov in
       let score =
         score_func target_path cov

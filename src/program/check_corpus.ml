@@ -25,14 +25,14 @@ let check_transformation llfile =
   in
 
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
-  | CRASH -> failwith ("Crashing module:" ^ llfile)
-  | INVALID | VALID _ -> (
+  | Error No_cov | Ok _ -> (
       try
         (* coverage is not required *)
         match Validator.run llfile llfile_opt with
         | Correct | Failed | Errors -> true
         | Incorrect -> false
       with Unix.Unix_error _ -> true)
+  | Error Crash -> failwith ("Crashing module:" ^ llfile)
 
 let args = ref []
 let ntasks = ref 12

@@ -69,7 +69,7 @@ let optimizer_passes =
 (** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
     The input can be a file or LLVM module. *)
 module Optimizer = struct
-  type res_t = VALID of CD.Coverage.t | (* TODO: clearify *) INVALID | CRASH
+  type err_t = No_cov | Crash
 
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
@@ -83,20 +83,9 @@ module Optimizer = struct
     in
     try
       let cov = CD.Coverage.read !Config.cov_file in
-      if exit_state = 0 then VALID cov else CRASH
+      if exit_state = 0 then Ok cov else Error Crash
     with Sys_error _ ->
       (* cov.cov is not generated : the file did not trigger [passes] *)
       (* prerr_endline "Optimizer: cov.cov is not generated"; *)
-      INVALID
-
-  let run_for_llm ~passes llset llm =
-    match ALlvm.LLModuleSet.get_new_name llm llset with
-    | None -> INVALID
-    | Some filename ->
-        (* transform input into a file for the optimizer *)
-        ALlvm.save_ll !Config.out_dir filename llm;
-        let input = Filename.concat !Config.out_dir filename in
-        let result = run ~passes input in
-        AUtil.clean input;
-        result
+      Error No_cov
 end
