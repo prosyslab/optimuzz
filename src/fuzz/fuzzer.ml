@@ -104,7 +104,10 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     else
       let dst = Mutator.run llctx src in
       match ALlvm.LLModuleSet.get_new_name dst llset with
-      | None -> llset |> Either.left
+      | None ->
+          L.info "duplicate mutant: %010d -> %010d" (ALlvm.hash_llm src.llm)
+            (ALlvm.hash_llm dst);
+          llset |> Either.left
       | Some filename -> (
           match check_mutant seed filename dst target_path with
           | Interesting (new_seed, cov) ->
