@@ -186,10 +186,11 @@ let make llctx llset =
                  let filename =
                    Format.sprintf "id:%010d.ll" (ALlvm.hash_llm llm)
                  in
-                 ALlvm.save_ll !Config.out_dir filename llm;
+                 let filename_full =
+                   ALlvm.save_ll !Config.out_dir filename llm
+                 in
                  let opt_res =
-                   Filename.concat !Config.out_dir filename
-                   |> Oracle.Optimizer.run ~passes:[ "instcombine" ]
+                   Oracle.Optimizer.run ~passes:[ "instcombine" ] filename_full
                  in
                  AUtil.clean filename;
 
@@ -238,7 +239,7 @@ let make llctx llset =
     pool_closest
     |> iter (fun seed ->
            let filename = name_seed seed in
-           ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+           ALlvm.save_ll !Config.corpus_dir filename seed.llm |> ignore);
 
     (new_set, pool_closest))
   else (
@@ -256,5 +257,5 @@ let make llctx llset =
     pool_covers
     |> List.iter (fun seed ->
            let filename = name_seed seed in
-           ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+           ALlvm.save_ll !Config.corpus_dir filename seed.llm |> ignore);
     (new_set, push_list pool_covers AUtil.PrioQueue.empty))

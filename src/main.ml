@@ -18,7 +18,7 @@ let do_pattern_only llset () =
     (fun llm ->
       match ALlvm.LLModuleSet.get_new_name llm llset with
       | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm)
+      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
     all_instances;
   exit 0
 
@@ -38,7 +38,7 @@ let do_pattern_only llset () =
     (fun llm ->
       match ALlvm.LLModuleSet.get_new_name llm llset with
       | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm)
+      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
     all_instances;
   exit 0
 

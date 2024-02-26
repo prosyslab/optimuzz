@@ -236,10 +236,12 @@ let read_ll llctx filepath =
   let buf = Llvm.MemoryBuffer.of_file filepath in
   Llvm_irreader.parse_ir llctx buf
 
-(** [save_ll target_dir output filename llmodule] *)
+(** [save_ll target_dir output filename llmodule] saves [llmodule]
+     to [target_dir] and returns the path to the saved file. *)
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
-  print_module output_name llm
+  print_module output_name llm;
+  output_name
 
 (** [get_function instr] returns the function that contains [instr]. *)
 let get_function instr = instr |> Llvm.instr_parent |> Llvm.block_parent

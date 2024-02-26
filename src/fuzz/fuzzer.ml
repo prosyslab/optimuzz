@@ -19,22 +19,16 @@ end
 
 type mutant = Mutant of ALlvm.llmodule
 
-let name_mutant_pair (Mutant llm) =
-  let filename = F.sprintf "%010d.ll" (ALlvm.hash_llm llm) in
-  let filename_full = Filename.concat !Config.out_dir filename in
-  let optimized_ir_filename = AUtil.name_opted_ver filename_full in
-
-  (filename_full, optimized_ir_filename)
+let name_mutant (Mutant llm) = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm)
 
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
-let measure_optimizer_coverage filename llm =
+let measure_optimizer_coverage (Mutant llm) =
   let open Oracle in
-  ALlvm.save_ll !Config.out_dir filename llm;
-  let filename_full = Filename.concat !Config.out_dir filename in
+  let filename = name_mutant (Mutant llm) in
+  let filename_full = ALlvm.save_ll !Config.out_dir filename llm in
   let optimized_ir_filename = AUtil.name_opted_ver filename_full in
-
   let optimization_res =
     Optimizer.run ~passes:optimizer_passes ~output:optimized_ir_filename
       filename_full
@@ -47,7 +41,7 @@ let measure_optimizer_coverage filename llm =
   else
     let validation_res = Validator.run filename_full optimized_ir_filename in
     if validation_res = Validator.Incorrect then
-      ALlvm.save_ll !Config.crash_dir filename llm;
+      ALlvm.save_ll !Config.crash_dir filename llm |> ignore;
     AUtil.clean filename_full;
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
@@ -66,7 +60,6 @@ type res_t =
   | Interesting of SeedPool.seed_t * CD.Coverage.t
 
 let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
-  let filename, _ = name_mutant_pair (Mutant llm) in
   let score_func =
     match !Config.metric with
     | "avg" -> CD.Coverage.avg_score
@@ -74,7 +67,7 @@ let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
     | _ -> invalid_arg "Invalid metric"
   in
   (* TODO: not using run result, only caring coverage *)
-  let optim_res, _valid_res = measure_optimizer_coverage filename llm in
+  let optim_res, _valid_res = measure_optimizer_coverage (Mutant llm) in
   match optim_res with
   | Error No_cov -> Restart
   | Error Crash -> Restart
@@ -124,7 +117,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               in
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               L.info "save seed: %s" seed_name;
-              ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
+              ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm |> ignore;
               let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
               (new_seed, progress, new_set) |> Either.right
           | Restart -> traverse src progress llset times
