@@ -6,6 +6,7 @@ module L = Logger
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
+type mutant = Mutant of llmodule
 
 let ( let* ) = Option.bind
 
@@ -28,10 +29,12 @@ let mutations =
 let choose_mutation mode score =
   match mode with
   | EXPAND ->
+      (* non covering input *)
       (* FIXME: highly skewed to CREATE if score is very big *)
       let r = Random.int (score + Array.length mutations) in
       if r <= score then mutations.(0) else mutations.(r - score)
   | FOCUS ->
+      (* covering input *)
       let mutations = [| OPCODE; OPERAND; FLAG; TYPE |] in
       let r = Random.int (Array.length mutations) in
       mutations.(r)
@@ -829,5 +832,6 @@ let rec mutate_inner_bb llctx mode llm score =
 (* TODO: add fuzzing configuration *)
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
   let mode = if seed.covers then FOCUS else EXPAND in
-  mutate_inner_bb llctx mode seed.llm (int_of_float seed.score)
+  let m = mutate_inner_bb llctx mode seed.llm (int_of_float seed.score) in
+  Mutant m
 (* |> mutate_CFG |> check_retval llctx *)

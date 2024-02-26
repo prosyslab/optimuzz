@@ -1,6 +1,6 @@
 (env
  (dev
   (flags
-   (:standard -warn-error -A -w -32))))
+   (:standard -warn-error -A -w -32 -unboxed-types))))
 
 (dirs src test)

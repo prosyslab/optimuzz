@@ -17,6 +17,15 @@ module Progress = struct
       (CD.Coverage.cardinal progress.cov_sofar)
 end
 
+type mutant = Mutant of ALlvm.llmodule
+
+let name_mutant_pair (Mutant llm) =
+  let filename = F.sprintf "%010d.ll" (ALlvm.hash_llm llm) in
+  let filename_full = Filename.concat !Config.out_dir filename in
+  let optimized_ir_filename = AUtil.name_opted_ver filename_full in
+
+  (filename_full, optimized_ir_filename)
+
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
@@ -56,7 +65,8 @@ type res_t =
   | Not_interesting
   | Interesting of SeedPool.seed_t * CD.Coverage.t
 
-let check_mutant (seed : SeedPool.seed_t) filename mutant target_path =
+let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
+  let filename, _ = name_mutant_pair (Mutant llm) in
   let score_func =
     match !Config.metric with
     | "avg" -> CD.Coverage.avg_score
@@ -64,7 +74,7 @@ let check_mutant (seed : SeedPool.seed_t) filename mutant target_path =
     | _ -> invalid_arg "Invalid metric"
   in
   (* TODO: not using run result, only caring coverage *)
-  let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
+  let optim_res, _valid_res = measure_optimizer_coverage filename llm in
   match optim_res with
   | Error No_cov -> Restart
   | Error Crash -> Restart
@@ -75,12 +85,7 @@ let check_mutant (seed : SeedPool.seed_t) filename mutant target_path =
         |> Option.fold ~none:(!Config.max_distance |> float_of_int) ~some:Fun.id
       in
       let child : SeedPool.seed_t =
-        {
-          priority = SeedPool.get_prio covers score;
-          llm = mutant;
-          covers;
-          score;
-        }
+        { priority = SeedPool.get_prio covers score; llm; covers; score }
       in
       L.debug "mutant score: %f, covers: %b\n" child.score child.covers;
 
@@ -102,14 +107,15 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
   let rec traverse (src : SeedPool.seed_t) progress llset times =
     if times = 0 then ALlvm.LLModuleSet.add src.llm llset |> Either.left
     else
-      let dst = Mutator.run llctx src in
-      match ALlvm.LLModuleSet.get_new_name dst llset with
-      | None ->
+      let (Mutant dst) = Mutator.run llctx src in
+      match ALlvm.LLModuleSet.mem dst llset with
+      | true ->
           L.info "duplicate mutant: %010d -> %010d" (ALlvm.hash_llm src.llm)
             (ALlvm.hash_llm dst);
-          llset |> Either.left
-      | Some filename -> (
-          match check_mutant seed filename dst target_path with
+          (* met a duplicate point in the space. try other direction. *)
+          traverse src progress llset times
+      | false -> (
+          match check_mutant seed (Mutant dst) target_path with
           | Interesting (new_seed, cov) ->
               assert (new_seed.llm == dst);
               assert (not @@ ALlvm.LLModuleSet.mem new_seed.llm llset);
