@@ -107,7 +107,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
           L.info "duplicate mutant: %010d -> %010d" (ALlvm.hash_llm src.llm)
             (ALlvm.hash_llm dst);
           (* met a duplicate point in the space. try other direction. *)
-          traverse src progress llset times
+          traverse src progress llset (times - 1)
       | false -> (
           match check_mutant seed (Mutant dst) target_path with
           | Interesting (new_seed, cov, crash) ->
