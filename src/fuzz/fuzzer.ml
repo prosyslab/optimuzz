@@ -57,7 +57,7 @@ let record_timestamp cov =
 type res_t =
   | Restart
   | Not_interesting
-  | Interesting of SeedPool.seed_t * CD.Coverage.t
+  | Interesting of SeedPool.seed_t * CD.Coverage.t * bool
 
 let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
   let score_func =
@@ -67,7 +67,7 @@ let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
     | _ -> invalid_arg "Invalid metric"
   in
   (* TODO: not using run result, only caring coverage *)
-  let optim_res, _valid_res = measure_optimizer_coverage (Mutant llm) in
+  let optim_res, valid_res = measure_optimizer_coverage (Mutant llm) in
   match optim_res with
   | Error No_cov -> Restart
   | Error Crash -> Restart
@@ -82,10 +82,11 @@ let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
       in
       L.debug "mutant score: %f, covers: %b\n" child.score child.covers;
 
+      let crash = valid_res = Incorrect in
       match seed with
-      | { covers = true; _ } when child.covers -> Interesting (child, cov)
+      | { covers = true; _ } when child.covers -> Interesting (child, cov, crash)
       | { covers = false; score; _ } when child.score < score || child.covers ->
-          Interesting (child, cov)
+          Interesting (child, cov, crash)
       | _ -> Not_interesting)
 
 (* each mutant is mutated [Config.num_mutation] times *)
@@ -109,7 +110,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
           traverse src progress llset times
       | false -> (
           match check_mutant seed (Mutant dst) target_path with
-          | Interesting (new_seed, cov) ->
+          | Interesting (new_seed, cov, crash) ->
               assert (new_seed.llm == dst);
               assert (not @@ ALlvm.LLModuleSet.mem new_seed.llm llset);
               let progress =
@@ -117,7 +118,11 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               in
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               L.info "save seed: %s" seed_name;
-              ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm |> ignore;
+              if crash then
+                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
+              else
+                ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
+                |> ignore;
               let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
               (new_seed, progress, new_set) |> Either.right
           | Restart -> traverse src progress llset times
