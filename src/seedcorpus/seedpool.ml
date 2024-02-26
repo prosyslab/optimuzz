@@ -238,7 +238,6 @@ let make llctx llset =
     pool_closest
     |> iter (fun seed ->
            let filename = name_seed seed in
-           Format.eprintf "%s@." filename;
            ALlvm.save_ll !Config.corpus_dir filename seed.llm);
 
     (new_set, pool_closest))
@@ -257,6 +256,5 @@ let make llctx llset =
     pool_covers
     |> List.iter (fun seed ->
            let filename = name_seed seed in
-           Format.eprintf "%s@." filename;
            ALlvm.save_ll !Config.corpus_dir filename seed.llm);
     (new_set, push_list pool_covers AUtil.PrioQueue.empty))
