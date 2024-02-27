@@ -139,19 +139,18 @@ let rec clean_llm llctx wide llm =
 
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
 let make llctx llset =
-  let dir = !Config.seed_dir in
+  let seed_dir = !Config.seed_dir in
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  assert (Sys.file_exists dir && Sys.is_directory dir);
+  assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
   let seed_files =
-    Sys.readdir dir
+    Sys.readdir seed_dir
     |> Array.to_list
     |> List.filter (fun file -> Filename.extension file = ".ll")
   in
 
-  let can_optimize file =
-    let path = Filename.concat dir file in
-    match Oracle.Optimizer.run ~passes:[ "instcombine" ] path with
+  let can_optimize filename =
+    match Oracle.Optimizer.run ~passes:[ "instcombine" ] filename with
     | Ok _ -> true
     | _ -> false
   in
@@ -168,12 +167,12 @@ let make llctx llset =
   let pool_covers, other_seeds =
     seed_files
     |> List.fold_left
-         (fun (pool_first, other_seeds) file ->
-           let path = Filename.concat dir file in
-           if can_optimize file |> not then (pool_first, other_seeds)
+         (fun (pool_first, other_seeds) seed_file ->
+           let filename = Filename.concat seed_dir seed_file in
+           if can_optimize filename |> not then (pool_first, other_seeds)
            else
              let llm =
-               ALlvm.MemoryBuffer.of_file path
+               ALlvm.MemoryBuffer.of_file filename
                |> Llvm_irreader.parse_ir llctx
                |> (fun llm ->
                     ALlvm.clean_module_data llm;
@@ -206,7 +205,7 @@ let make llctx llset =
                      let seed =
                        { priority = get_prio covers score; llm; covers; score }
                      in
-                     L.info "seed: %s, %a" file pp_seed seed;
+                     L.info "seed: %s, %a" seed_file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)
                      else (pool_first, seed :: other_seeds)))
          ([], [])
