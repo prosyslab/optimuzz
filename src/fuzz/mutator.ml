@@ -35,7 +35,7 @@ let choose_mutation mode score =
       if r <= score then mutations.(0) else mutations.(r - score)
   | FOCUS ->
       (* covering input *)
-      let mutations = [| OPCODE; OPERAND; FLAG; TYPE |] in
+      let mutations = [| OPCODE; OPERAND; FLAG; TYPE; CUT |] in
       let r = Random.int (Array.length mutations) in
       mutations.(r)
 
