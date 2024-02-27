@@ -89,10 +89,10 @@ let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
           Interesting (child, cov, crash)
       | _ -> Not_interesting)
 
-let save_seed crash parent seed =
+let save_seed is_crash parent seed =
   let seed_name = SeedPool.name_seed ~parent seed in
   L.info "save seed: %s" seed_name;
-  if crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm |> ignore
+  if is_crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm |> ignore
   else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm |> ignore
 
 (* each mutant is mutated [Config.num_mutation] times *)
@@ -105,32 +105,39 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
 
   (* explore LLVM IR space by mutating src to dst *)
   let rec traverse (src : SeedPool.seed_t) progress llset times =
-    if times = 0 then ALlvm.LLModuleSet.add src.llm llset |> Either.left
+    if times = 0 then (* failed to generate an unique interesting input *)
+      None
     else
       let (Mutant dst) = Mutator.run llctx src in
       match ALlvm.LLModuleSet.mem dst llset with
       | true ->
           L.info "duplicate mutant: %010d -> %010d" (ALlvm.hash_llm src.llm)
             (ALlvm.hash_llm dst);
-          (* met a duplicate point in the space. try other direction. *)
-          traverse src progress llset (times - 1)
+          (* met an interesting point which is already explored. *)
+          (* just pass. *)
+          (* will compare the mutant w.r.t the current score and covers *)
+          traverse { src with llm = dst } progress llset times
       | false -> (
           match check_mutant seed (Mutant dst) target_path with
-          | Interesting (new_seed, cov, crash) ->
-              assert (new_seed.llm == dst);
-              assert (not @@ ALlvm.LLModuleSet.mem new_seed.llm llset);
+          | Interesting (new_seed, cov, is_crash) ->
               let progress =
+                (* this input is unique due to LLModuleSet.mem check *)
+                (* thus, it is safe to call [inc_gen] *)
                 progress |> Progress.inc_gen |> Progress.add_cov cov
               in
-              save_seed crash seed new_seed;
-              let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
-              (new_seed, progress, new_set) |> Either.right
+              save_seed is_crash seed new_seed;
+              Some (new_seed, progress)
           | Restart -> traverse src progress llset times
           | Not_interesting ->
               traverse { src with llm = dst } progress llset (times - 1))
   in
 
-  traverse seed progress llset limit
+  match traverse seed progress llset limit with
+  | Some (new_seed, progress) ->
+      (* if an interesting mutant is found, expand llset. *)
+      let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
+      Either.Right (new_seed, progress, new_set)
+  | None -> Either.Left llset
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
