@@ -89,6 +89,12 @@ let check_mutant (seed : SeedPool.seed_t) (Mutant llm) target_path =
           Interesting (child, cov, crash)
       | _ -> Not_interesting)
 
+let save_seed crash parent seed =
+  let seed_name = SeedPool.name_seed ~parent seed in
+  L.info "save seed: %s" seed_name;
+  if crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm |> ignore
+  else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm |> ignore
+
 (* each mutant is mutated [Config.num_mutation] times *)
 let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     :
@@ -116,13 +122,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               let progress =
                 progress |> Progress.inc_gen |> Progress.add_cov cov
               in
-              let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-              L.info "save seed: %s" seed_name;
-              if crash then
-                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
-              else
-                ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
-                |> ignore;
+              save_seed crash seed new_seed;
               let new_set = ALlvm.LLModuleSet.add new_seed.llm llset in
               (new_seed, progress, new_set) |> Either.right
           | Restart -> traverse src progress llset times
