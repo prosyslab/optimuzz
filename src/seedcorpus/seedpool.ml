@@ -191,7 +191,7 @@ let make llctx llset =
                  let opt_res =
                    Oracle.Optimizer.run ~passes:[ "instcombine" ] filename_full
                  in
-                 AUtil.clean filename;
+                 AUtil.clean filename_full;
 
                  match opt_res with
                  | Error Crash | Error No_cov -> (pool_first, other_seeds)
