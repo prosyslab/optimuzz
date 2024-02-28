@@ -689,8 +689,8 @@ let verify_and_clean f_old f_new =
     All the other associated values are recursively changed.
     Returns [Some(instr)] if success, or [None] else. *)
 let change_type llctx llm =
-  let f = choose_function llm in
   let llm = Llvm_transform_utils.clone_module llm in
+  let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr = AUtil.choose_random all_instrs in
   (* llv is instruction now *)
