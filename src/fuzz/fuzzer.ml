@@ -18,9 +18,9 @@ module Progress = struct
 end
 
 type res_t =
-  | INVALID
-  | INTERESTING of (SeedPool.seed_t option * Progress.t)
-  | NOT_INTERESTING
+  | Invalid
+  | Interesting of SeedPool.seed_t * Progress.t
+  | Not_interesting
 
 (** runs optimizer with an input file
     and measure its coverage.
@@ -66,7 +66,7 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
   (* TODO: not using run result, only caring coverage *)
   let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
   match optim_res with
-  | INVALID | CRASH -> INVALID
+  | INVALID | CRASH -> Invalid
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
         let covered = CD.Coverage.cover_target target_path cov_mutant in
@@ -91,8 +91,8 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
         let progress =
           progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
         in
-        INTERESTING (Some new_seed, progress))
-      else NOT_INTERESTING
+        Interesting (new_seed, progress))
+      else Not_interesting
 
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
@@ -112,12 +112,11 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
         (None, progress)
     | Some filename -> (
         match check_mutant filename mutant target_path seed progress with
-        | INVALID -> mutate_seed llctx target_path llset seed progress times
-        | INTERESTING (Some seed, progress) ->
+        | Invalid -> mutate_seed llctx target_path llset seed progress times
+        | Interesting (seed, progress) ->
             ALlvm.LLModuleSet.add llset seed.llm ();
             (Some seed, progress)
-        | INTERESTING _ -> failwith "unreachable"
-        | NOT_INTERESTING ->
+        | Not_interesting ->
             mutate_seed llctx target_path llset { seed with llm = mutant }
               progress (times - 1))
 
