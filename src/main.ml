@@ -82,6 +82,9 @@ let main () =
     F.printf "no seed loaded@.";
     exit 0);
 
+  seed_pool
+  |> SeedPool.iter (fun seed -> ALlvm.LLModuleSet.add llset seed.llm ());
+
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
