@@ -19,7 +19,7 @@ end
 
 type res_t =
   | Invalid
-  | Interesting of SeedPool.seed_t * Progress.t
+  | Interesting of bool * SeedPool.seed_t * Progress.t
   | Not_interesting
 
 (** runs optimizer with an input file
@@ -42,8 +42,6 @@ let measure_optimizer_coverage filename llm =
     (optimization_res, Validator.Correct))
   else
     let validation_res = Validator.run filename_full optimized_ir_filename in
-    if validation_res = Validator.Incorrect then
-      ALlvm.save_ll !Config.crash_dir filename llm;
     AUtil.clean filename_full;
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
@@ -63,40 +61,37 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
     | "min" -> CD.Coverage.min_score
     | _ -> invalid_arg "Invalid metric"
   in
-  (* TODO: not using run result, only caring coverage *)
-  let optim_res, _valid_res = measure_optimizer_coverage filename mutant in
+  let optim_res, valid_res = measure_optimizer_coverage filename mutant in
   match optim_res with
   | INVALID | CRASH -> Invalid
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
-        let covered = CD.Coverage.cover_target target_path cov_mutant in
-        let mutant_score =
+        let covers = CD.Coverage.cover_target target_path cov_mutant in
+        let score =
           score_func target_path cov_mutant
-          |> Option.fold
-               ~none:(!Config.max_distance |> float_of_int)
-               ~some:Fun.id
+          |> Option.value ~default:(!Config.max_distance |> float_of_int)
         in
-        {
-          priority = SeedPool.get_prio covered mutant_score;
-          llm = mutant;
-          covers = covered;
-          score = mutant_score;
-        }
+        let priority = SeedPool.get_prio covers score in
+        { priority; llm = mutant; covers; score }
       in
       L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
-      then (
-        let corpus_name = SeedPool.name_seed ~parent:seed new_seed in
-        ALlvm.save_ll !Config.corpus_dir corpus_name mutant;
+      then
         let progress =
           progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
         in
-        Interesting (new_seed, progress))
+        let is_crash = valid_res = Oracle.Validator.Incorrect in
+        Interesting (is_crash, new_seed, progress)
       else Not_interesting
+
+let save_seed is_crash parent seed =
+  let seed_name = SeedPool.name_seed ~parent seed in
+  if is_crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm
+  else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
 
 (* each mutant is mutated [Config.num_mutation] times *)
 let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
-    : (SeedPool.seed_t * Progress.t) option =
+    =
   assert (seed.score > 0.0);
 
   let rec traverse times (src : SeedPool.seed_t) progress =
@@ -109,8 +104,9 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
       | None -> None
       | Some filename -> (
           match check_mutant filename dst target_path src progress with
-          | Interesting (new_seed, new_progress) ->
+          | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
+              save_seed is_crash src new_seed;
               Some (new_seed, new_progress)
           | Not_interesting ->
               traverse (times - 1) { src with llm = dst } progress
@@ -118,27 +114,6 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
   in
 
   traverse limit seed progress
-
-(*
-  if times < 0 then invalid_arg "Expected nonnegative mutation times"
-  else if times = 0 then (
-    (* used up all allowed mutation times *)
-    ALlvm.LLModuleSet.add llset seed.llm ();
-    None)
-  else
-    let mutant = Mutator.run llctx seed in
-    match ALlvm.LLModuleSet.get_new_name llset mutant with
-    | None -> (* duplicated seed *) None
-    | Some filename -> (
-        match check_mutant filename mutant target_path seed progress with
-        | Invalid -> mutate_seed llctx target_path llset seed progress times
-        | Interesting (seed, progress) ->
-            ALlvm.LLModuleSet.add llset seed.llm ();
-            Some (seed, progress)
-        | Not_interesting ->
-            mutate_seed llctx target_path llset { seed with llm = mutant }
-              progress (times - 1))
-*)
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
