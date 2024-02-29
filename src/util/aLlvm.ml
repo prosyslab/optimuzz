@@ -896,6 +896,8 @@ module ChangeRetVal = struct
     loop link_instr_init LLBMap.empty 0
 end
 
+let hash_llm llm = string_of_llmodule llm |> Hashtbl.hash
+
 module LLModuleSet = struct
   include Hashtbl.Make (struct
     type t = llmodule

@@ -25,8 +25,9 @@ type res_t =
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
-let measure_optimizer_coverage filename llm =
+let measure_optimizer_coverage llm =
   let open Oracle in
+  let filename = F.sprintf "%010d.ll" (ALlvm.hash_llm llm) in
   ALlvm.save_ll !Config.out_dir filename llm;
   let filename_full = Filename.concat !Config.out_dir filename in
   let optimized_ir_filename = AUtil.name_opted_ver filename_full in
@@ -54,14 +55,14 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
+let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
   let score_func =
     match !Config.metric with
     | "avg" -> CD.Coverage.avg_score
     | "min" -> CD.Coverage.min_score
     | _ -> invalid_arg "Invalid metric"
   in
-  let optim_res, valid_res = measure_optimizer_coverage filename mutant in
+  let optim_res, valid_res = measure_optimizer_coverage mutant in
   match optim_res with
   | INVALID | CRASH -> Invalid
   | VALID cov_mutant ->
@@ -100,10 +101,10 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
       None)
     else
       let dst = Mutator.run llctx src in
-      match ALlvm.LLModuleSet.get_new_name llset dst with
+      match ALlvm.LLModuleSet.find_opt llset dst with
       | None -> None
-      | Some filename -> (
-          match check_mutant filename dst target_path src progress with
+      | Some _ -> (
+          match check_mutant dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
               save_seed is_crash src new_seed;
