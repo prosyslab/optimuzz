@@ -95,10 +95,31 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
       else Not_interesting
 
 (* each mutant is mutated [Config.num_mutation] times *)
-let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
-    times : (SeedPool.seed_t * Progress.t) option =
+let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
+    : (SeedPool.seed_t * Progress.t) option =
   assert (seed.score > 0.0);
 
+  let rec traverse times (src : SeedPool.seed_t) progress =
+    if times = 0 then (
+      ALlvm.LLModuleSet.add llset src.llm ();
+      None)
+    else
+      let dst = Mutator.run llctx src in
+      match ALlvm.LLModuleSet.get_new_name llset dst with
+      | None -> None
+      | Some filename -> (
+          match check_mutant filename dst target_path src progress with
+          | Interesting (new_seed, new_progress) ->
+              ALlvm.LLModuleSet.add llset new_seed.llm ();
+              Some (new_seed, new_progress)
+          | Not_interesting ->
+              traverse (times - 1) { src with llm = dst } progress
+          | Invalid -> traverse times src progress)
+  in
+
+  traverse limit seed progress
+
+(*
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
     (* used up all allowed mutation times *)
@@ -117,6 +138,7 @@ let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
         | Not_interesting ->
             mutate_seed llctx target_path llset { seed with llm = mutant }
               progress (times - 1))
+*)
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
