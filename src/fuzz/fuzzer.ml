@@ -20,7 +20,7 @@ end
 type res_t =
   | Invalid
   | Interesting of bool * SeedPool.seed_t * Progress.t
-  | Not_interesting
+  | Not_interesting of bool * SeedPool.seed_t
 
 (** runs optimizer with an input file
     and measure its coverage.
@@ -75,14 +75,14 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
         { priority; llm = mutant; covers; score }
       in
       L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
+      let is_crash = valid_res = Oracle.Validator.Incorrect in
       if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
       then
         let progress =
           progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
         in
-        let is_crash = valid_res = Oracle.Validator.Incorrect in
         Interesting (is_crash, new_seed, progress)
-      else Not_interesting
+      else Not_interesting (is_crash, new_seed)
 
 let save_seed is_crash parent seed =
   let seed_name = SeedPool.name_seed ~parent seed in
@@ -108,7 +108,8 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               ALlvm.LLModuleSet.add llset new_seed.llm ();
               save_seed is_crash src new_seed;
               Some (new_seed, new_progress)
-          | Not_interesting ->
+          | Not_interesting (is_crash, new_seed) ->
+              save_seed is_crash src new_seed;
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in
