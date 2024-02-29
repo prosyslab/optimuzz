@@ -96,26 +96,24 @@ let check_mutant filename mutant target_path (seed : SeedPool.seed_t) progress =
 
 (* each mutant is mutated [Config.num_mutation] times *)
 let rec mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
-    times : SeedPool.seed_t option * Progress.t =
+    times : (SeedPool.seed_t * Progress.t) option =
   assert (seed.score > 0.0);
 
   if times < 0 then invalid_arg "Expected nonnegative mutation times"
   else if times = 0 then (
     (* used up all allowed mutation times *)
     ALlvm.LLModuleSet.add llset seed.llm ();
-    (None, progress))
+    None)
   else
     let mutant = Mutator.run llctx seed in
     match ALlvm.LLModuleSet.get_new_name llset mutant with
-    | None ->
-        (* duplicated seed *)
-        (None, progress)
+    | None -> (* duplicated seed *) None
     | Some filename -> (
         match check_mutant filename mutant target_path seed progress with
         | Invalid -> mutate_seed llctx target_path llset seed progress times
         | Interesting (seed, progress) ->
             ALlvm.LLModuleSet.add llset seed.llm ();
-            (Some seed, progress)
+            Some (seed, progress)
         | Not_interesting ->
             mutate_seed llctx target_path llset { seed with llm = mutant }
               progress (times - 1))
@@ -138,14 +136,15 @@ let rec run pool llctx llset progress =
   let rec iter times (seeds, progress) =
     if times = 0 then (seeds, progress)
     else
-      let new_seed, new_progress = mutator seed progress !Config.num_mutation in
-      iter (times - 1) (new_seed :: seeds, new_progress)
+      match mutator seed progress !Config.num_mutation with
+      | Some (new_seed, new_progress) ->
+          iter (times - 1) (new_seed :: seeds, new_progress)
+      | None -> iter (times - 1) (seeds, progress)
   in
 
   let new_seeds, progress = iter !Config.num_mutant ([], progress) in
   F.printf "\r%a@?" Progress.pp progress;
 
-  let new_seeds = List.filter_map Fun.id new_seeds in
   List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
   let new_pool =
     pool_popped
