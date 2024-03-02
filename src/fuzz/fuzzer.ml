@@ -27,7 +27,7 @@ type res_t =
     Returns the results *)
 let measure_optimizer_coverage llm =
   let open Oracle in
-  let filename = F.sprintf "%010d.ll" (ALlvm.hash_llm llm) in
+  let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
   ALlvm.save_ll !Config.out_dir filename llm;
   let filename_full = Filename.concat !Config.out_dir filename in
   let optimized_ir_filename = AUtil.name_opted_ver filename_full in
@@ -102,15 +102,22 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     else
       let dst = Mutator.run llctx src in
       match ALlvm.LLModuleSet.find_opt llset dst with
-      | None -> None
-      | Some _ -> (
+      | Some _ ->
+          (* duplicate seed *)
+          None
+      | None -> (
           match check_mutant dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
-              save_seed is_crash src new_seed;
+              let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+              if is_crash then
+                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
+              else ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
               Some (new_seed, new_progress)
           | Not_interesting (is_crash, new_seed) ->
-              save_seed is_crash src new_seed;
+              (if is_crash then
+                 let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm);
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in
