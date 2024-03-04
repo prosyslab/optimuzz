@@ -691,20 +691,27 @@ let verify_and_clean f_old f_new =
 let change_type llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
+  let f_params =
+    f |> params |> Array.to_list
+    (* |> List.filter (fun param ->
+           match use_begin param with Some _ -> true | None -> false) *)
+  in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr = AUtil.choose_random all_instrs in
-  (* llv is instruction now *)
-  let f = get_function instr in
+  let target = AUtil.choose_random (all_instrs @ f_params) in
+
   (* CONSIDER IMPOSSIBLE CASES *)
   if
-    OpCls.opcls_of instr = CMP
-    || instr |> type_of |> classify_type = Void
-    || instr |> type_of |> classify_type = Pointer
-    || fold_left_all_instr (fun accu i -> accu || OpCls.is_of i OTHER) false f
+    (not (classify_value target = Argument))
+    && (OpCls.opcls_of target = CMP
+       || target |> type_of |> classify_type = Void
+       || target |> type_of |> classify_type = Pointer
+       || fold_left_all_instr
+            (fun accu i -> accu || OpCls.is_of i OTHER)
+            false f)
   then None
   else
     (* decide type *)
-    let ty_old = type_of instr in
+    let ty_old = type_of target in
     let rec loop () =
       let ty = AUtil.choose_random !Config.interesting_types in
       if ty_old = ty then loop () else ty
@@ -716,7 +723,7 @@ let change_type llctx llm =
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
     reset_var_names f;
-    match collect_ty_changing_llvs instr ty_new (Some LLVMap.empty) with
+    match collect_ty_changing_llvs target ty_new (Some LLVMap.empty) with
     | None -> None
     | Some typemap ->
         let f_new = redef_fn llctx f typemap in
@@ -815,7 +822,9 @@ let rec mutate_inner_bb llctx mode llm score =
   L.info "mutation: %a" pp_mutation mutation;
   let mutation_result =
     match mutation with
-    | CREATE -> create_rand_instr llctx llm
+    | CREATE ->
+        (* create_rand_instr llctx llm  *)
+        None
     | OPCODE -> subst_rand_instr llctx llm
     | OPERAND -> subst_rand_opd llctx llm
     | FLAG -> modify_flag llctx llm
