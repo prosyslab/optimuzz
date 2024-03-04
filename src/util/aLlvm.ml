@@ -620,6 +620,11 @@ let reset_var_names f =
      once is enough, so if this makes performance issue, erase one *)
   () |> aux |> aux
 
+let canonicalize_func f =
+  reset_var_names f;
+  set_value_name "f" f;
+  ()
+
 (* THIS MODULE IS TO-BE-UPDATED. *)
 module ChangeRetVal = struct
   let find_block_by_name f name =

@@ -166,6 +166,7 @@ let create_rand_instr llctx llm =
       create_binary llctx loc opcode operand
         (randget_operand loc operand_ty |> Option.get)
       |> ignore;
+      canonicalize_func f;
       Some llm
   | CAST when is_integer -> (
       Logger.debug "create cast";
@@ -181,6 +182,7 @@ let create_rand_instr llctx llm =
           AUtil.choose_random tys
           |> create_cast llctx loc opcode operand
           |> ignore;
+          canonicalize_func f;
           Some llm)
   | CMP when is_integer ->
       Logger.debug "create cmp";
@@ -189,6 +191,7 @@ let create_rand_instr llctx llm =
       |> Option.get
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
+      canonicalize_func f;
       Some llm
   | MEM -> (
       Logger.debug "create mem";
@@ -198,6 +201,7 @@ let create_rand_instr llctx llm =
           let rand_ty = AUtil.choose_random !Config.interesting_integer_types in
           let b = builder_before llctx loc in
           build_load rand_ty operand "" b |> ignore;
+          canonicalize_func f;
           Some llm
       | _ -> None)
   | _ -> None
@@ -215,17 +219,21 @@ let subst_rand_instr llctx llm =
   | BINARY when is_noncommutative_binary instr ->
       if Random.bool () then (
         binary_exchange_operands llctx instr |> ignore;
+        canonicalize_func f;
         Some llm)
       else
         let new_opcode = OpCls.random_opcode_except old_opcode in
         subst_binary llctx instr new_opcode |> ignore;
+        canonicalize_func f;
         Some llm
   | BINARY ->
       let new_opcode = OpCls.random_opcode_except old_opcode in
       subst_binary llctx instr new_opcode |> ignore;
+      canonicalize_func f;
       Some llm
   | CAST ->
       subst_cast llctx instr |> ignore;
+      canonicalize_func f;
       Some llm
   | CMP ->
       let old_cmp = icmp_predicate instr |> Option.get in
@@ -234,6 +242,7 @@ let subst_rand_instr llctx llm =
         if cmp = old_cmp then rand_cond_code () else cmp
       in
       rand_cond_code () |> subst_cmp llctx instr |> ignore;
+      canonicalize_func f;
       Some llm
   | _ -> None
 
@@ -258,32 +267,39 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
           | 1 ->
               if check_ty left then (
                 set_operand instr 0 preferred_opd;
+                canonicalize_func f;
                 Some llm)
-              else subst_rand_opd llctx llm
+              else (
+                canonicalize_func f;
+                subst_rand_opd llctx llm)
           | 2 -> (
               (* try best to use the preferred operand *)
               match (check_ty left, check_ty right) with
               | false, false -> subst_rand_opd llctx llm
               | false, true ->
                   set_operand instr 1 preferred_opd;
+                  canonicalize_func f;
                   Some llm
               | true, false ->
                   set_operand instr 0 preferred_opd;
+                  canonicalize_func f;
                   Some llm
               | true, true ->
                   (* both are ok; replace random one into the preferred one *)
                   let i = Random.int 2 in
                   set_operand instr i preferred_opd;
+                  canonicalize_func f;
                   Some llm)
           | _ -> None)
       | _ -> None)
   | None ->
-      if num_operands > 0 then
+      if num_operands > 0 then (
         let i = Random.int num_operands in
         let operand_old = operand instr i in
         let* rand_opd = randget_operand instr (type_of operand_old) in
         let _ = set_operand instr i rand_opd in
-        Some llm
+        canonicalize_func f;
+        Some llm)
       else None
 
 (** [is_nuw instr] returns true if the instruction [instr] has the flag "nuw". *)
@@ -316,9 +332,11 @@ let modify_flag _llctx llm =
         let nuw_new, nsw_new = AUtil.choose_random cases in
         set_nuw nuw_new instr;
         set_nsw nsw_new instr;
+        canonicalize_func f;
         Some llm)
       else if can_be_exact opcode then (
         set_exact (not (is_exact instr)) instr;
+        canonicalize_func f;
         Some llm)
       else None
   | _ -> None
@@ -721,6 +739,7 @@ let change_type llctx llm =
     | Some typemap ->
         let f_new = redef_fn llctx f typemap in
         verify_and_clean f f_new |> ignore;
+        canonicalize_func f;
         Some llm
 
 let delete_empty_blocks func =
@@ -804,6 +823,7 @@ let cut_below llctx llm =
 
           L.debug "mutant: %s" (ALlvm.string_of_llmodule llm);
 
+          canonicalize_func f;
           Some llm
       | _ -> None)
 
