@@ -9,7 +9,7 @@ let llctx = ALlvm.create_context ()
 
 let initialize () =
   Config.initialize llctx ();
-  Random.init !Config.random_seed
+  Random.self_init ()
 
 let do_pattern_only llset () =
   let name, pat = !Config.pattern_path |> Pattern.Parser.run in
