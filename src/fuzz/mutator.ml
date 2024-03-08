@@ -24,7 +24,11 @@ let expand_mutations =
   |> List.flatten
   |> Array.of_list
 
-let focus_mutations = [| OPCODE; OPERAND; FLAG; TYPE; CUT |]
+let focus_mutations =
+  [ (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
 
 (* choose mutation *)
 let choose_mutation mode score =
@@ -107,33 +111,48 @@ let subst_cmp llctx instr cond_code =
     a llvalue as an operand, of type [ty], valid at [loc], if possible.
     NOTE: if [ty] is an integer type, this will always return [Some(_)]. *)
 let randget_operand loc ty =
-  let candidates =
+  let candidates_value =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
   in
-  let candidates =
+  let candidates_const =
     match classify_type ty with
     | TypeKind.Integer ->
-        const_int ty (AUtil.choose_random !Config.interesting_integers)
-        :: candidates
+        List.fold_left
+          (fun candidates i -> const_int ty i :: candidates)
+          []
+          !Config.interesting_integers
     | Vector ->
         (* TODO: check this *)
-        let el_ty = element_type ty in
-        let vec_size = vector_size ty in
-        let llv_arr =
-          Array.make vec_size
-            (const_int el_ty (AUtil.choose_random !Config.interesting_integers))
-        in
-        const_vector llv_arr :: candidates
-    | _ -> candidates
+        List.fold_left
+          (fun candidates vec ->
+            let el_ty = element_type ty in
+            let vec_size = vector_size ty in
+            let llv_arr = Array.make vec_size (const_int el_ty vec) in
+            const_vector llv_arr :: candidates)
+          []
+          !Config.interesting_integers
+    | _ -> []
   in
-  let candidates =
+  let candidates_param =
     loc
     |> get_function
     |> fold_left_params
          (fun candidates param ->
            if type_of param = ty then param :: candidates else candidates)
-         candidates
+         []
   in
+
+  let candidates =
+    if candidates_value <> [] then
+      match Random.int 3 with
+      | 0 -> candidates_value
+      | 1 -> candidates_const
+      | 2 -> candidates_param
+      | _ -> []
+    else if Random.bool () then candidates_const
+    else candidates_param
+  in
+
   if candidates <> [] then Some (AUtil.choose_random candidates) else None
 
 (** [create_rand_instr llctx preferred_opd loc] creates
@@ -227,14 +246,7 @@ let subst_rand_instr llctx llm =
   | CAST ->
       subst_cast llctx instr |> ignore;
       Some llm
-  | CMP ->
-      let old_cmp = icmp_predicate instr |> Option.get in
-      let rec rand_cond_code () =
-        let cmp = OpCls.random_cmp () in
-        if cmp = old_cmp then rand_cond_code () else cmp
-      in
-      rand_cond_code () |> subst_cmp llctx instr |> ignore;
-      Some llm
+  | CMP -> None
   | _ -> None
 
 (** [subst_rand_opd llctx llm] substitutes
@@ -243,7 +255,17 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr = AUtil.choose_random all_instrs in
+  let instr =
+    let rec choose_target times =
+      if times = 0 then AUtil.choose_random all_instrs
+      else
+        let candidate = AUtil.choose_random all_instrs in
+        if candidate |> instr_opcode |> OpCls.classify = TER then
+          choose_target (times - 1)
+        else candidate
+    in
+    choose_target 4
+  in
   let num_operands = num_operands instr in
 
   match preferred_opd with
@@ -278,7 +300,15 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
           | _ -> None)
       | _ -> None)
   | None ->
-      if num_operands > 0 then
+      if instr |> instr_opcode |> OpCls.classify = CMP && Random.bool () then (
+        let old_cmp = icmp_predicate instr |> Option.get in
+        let rec rand_cond_code () =
+          let cmp = OpCls.random_cmp () in
+          if cmp = old_cmp then rand_cond_code () else cmp
+        in
+        rand_cond_code () |> subst_cmp llctx instr |> ignore;
+        Some llm)
+      else if num_operands > 0 then
         let i = Random.int num_operands in
         let operand_old = operand instr i in
         let* rand_opd = randget_operand instr (type_of operand_old) in
