@@ -107,10 +107,13 @@ let subst_cmp llctx instr cond_code =
 
 (* HIGH-LEVEL MUTATION HELPERS *)
 
-(** [randget_operand llctx loc ty] gets, or generates
-    a llvalue as an operand, of type [ty], valid at [loc], if possible.
-    NOTE: if [ty] is an integer type, this will always return [Some(_)]. *)
-let randget_operand loc ty =
+(** [randget_operand llctx loc instr_old] gets, or generates
+    a llvalue as an operand, of type [instr_old], valid at [loc], if possible.
+    NOTE: if [instr_old] is an integer type, this will always return [Some(_)]. 
+      and if result is equal to [instr_old] pick one again.
+      *)
+let rec randget_operand loc instr_old =
+  let ty = type_of instr_old in
   let candidates_value =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
   in
@@ -153,7 +156,11 @@ let randget_operand loc ty =
     else candidates_param
   in
 
-  if candidates <> [] then Some (AUtil.choose_random candidates) else None
+  if candidates <> [] then
+    let res = AUtil.choose_random candidates in
+    if res = instr_old then randget_operand loc instr_old
+    else Some (AUtil.choose_random candidates)
+  else None
 
 (** [create_rand_instr llctx preferred_opd loc] creates
     a random instruction before instruction [loc],
@@ -168,10 +175,7 @@ let create_rand_instr llctx llm =
 
   let operand =
     if preds <> [] then AUtil.choose_random preds
-    else
-      randget_operand loc
-        (AUtil.choose_random !Config.interesting_integer_types)
-      |> Option.get
+    else randget_operand loc loc |> Option.get
   in
   Logger.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
@@ -183,7 +187,7 @@ let create_rand_instr llctx llm =
   | BINARY when is_integer ->
       Logger.debug "create binary";
       create_binary llctx loc opcode operand
-        (randget_operand loc operand_ty |> Option.get)
+        (randget_operand loc operand |> Option.get)
       |> ignore;
       Some llm
   | CAST when is_integer -> (
@@ -204,7 +208,7 @@ let create_rand_instr llctx llm =
   | CMP when is_integer ->
       Logger.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
-      randget_operand loc operand_ty
+      randget_operand loc operand
       |> Option.get
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
@@ -311,7 +315,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
       else if num_operands > 0 then
         let i = Random.int num_operands in
         let operand_old = operand instr i in
-        let* rand_opd = randget_operand instr (type_of operand_old) in
+        let* rand_opd = randget_operand instr operand_old in
         let _ = set_operand instr i rand_opd in
         Some llm
       else None
