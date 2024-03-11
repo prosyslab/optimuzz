@@ -109,7 +109,7 @@ let subst_cmp llctx instr cond_code =
 
 (** [randget_operand llctx loc instr_old] gets, or generates
     a llvalue as an operand, of type [instr_old], valid at [loc], if possible.
-    NOTE: if [instr_old] is an integer type, this will always return [Some(_)]. 
+    NOTE: if [instr_old] is an integer type, this will always return [Some(_)].
       and if result is equal to [instr_old] pick one again.
       *)
 let rec randget_operand loc instr_old =
@@ -227,7 +227,7 @@ let create_rand_instr llctx llm =
 
 (** [subst_rand_instr llctx llm] substitutes a random instruction
     into another random instruction of the same class,
-    with the same operands. *)
+    preserving its operands. *)
 let subst_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
@@ -260,6 +260,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let instr =
+    (* choose target instruction, avoiding terminators by best-effort *)
     let rec choose_target times =
       if times = 0 then AUtil.choose_random all_instrs
       else
