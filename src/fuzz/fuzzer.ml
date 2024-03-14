@@ -28,22 +28,21 @@ type res_t =
 let measure_optimizer_coverage llm =
   let open Oracle in
   let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
-  ALlvm.save_ll !Config.out_dir filename llm;
-  let filename_full = Filename.concat !Config.out_dir filename in
-  let optimized_ir_filename = AUtil.name_opted_ver filename_full in
+  let filename = ALlvm.save_ll !Config.out_dir filename llm in
+  let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res =
     Optimizer.run ~passes:optimizer_passes ~output:optimized_ir_filename
-      filename_full
+      filename
   in
 
   if !Config.no_tv then (
-    AUtil.clean filename_full;
+    AUtil.clean filename;
     AUtil.clean optimized_ir_filename;
     (optimization_res, Validator.Correct))
   else
-    let validation_res = Validator.run filename_full optimized_ir_filename in
-    AUtil.clean filename_full;
+    let validation_res = Validator.run filename optimized_ir_filename in
+    AUtil.clean filename;
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
@@ -111,13 +110,16 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               ALlvm.LLModuleSet.add llset new_seed.llm ();
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               if is_crash then
-                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
-              else ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm;
+                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
+              else
+                ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
+                |> ignore;
               Some (new_seed, new_progress)
           | Not_interesting (is_crash, new_seed) ->
               (if is_crash then
                  let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm);
+                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
+                 |> ignore);
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in
