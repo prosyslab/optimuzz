@@ -95,7 +95,7 @@ module Optimizer = struct
     | None -> INVALID
     | Some filename ->
         (* transform input into a file for the optimizer *)
-        ALlvm.save_ll !Config.out_dir filename llm;
+        let _ = ALlvm.save_ll !Config.out_dir filename llm in
         let input = Filename.concat !Config.out_dir filename in
         let result = run ~passes input in
         AUtil.clean input;

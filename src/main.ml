@@ -18,7 +18,7 @@ let do_pattern_only llset () =
     (fun llm ->
       match ALlvm.LLModuleSet.get_new_name llset llm with
       | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm)
+      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
     all_instances;
   exit 0
 
@@ -39,7 +39,7 @@ let do_pattern_only llset () =
     (fun llm ->
       match ALlvm.LLModuleSet.get_new_name llset llm with
       | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm)
+      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
     all_instances;
   exit 0
 
@@ -68,7 +68,7 @@ let main () =
     measure_coverage_only ~passes:[ "instcombine" ] ();
 
   (* fuzzing *)
-  let seed_pool = SeedPool.make llctx llset in
+  let seed_pool = SeedPool.make llctx in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
   L.info "initial seeds: %d" (SeedPool.cardinal seed_pool);
 
@@ -76,7 +76,7 @@ let main () =
   |> SeedPool.iter (fun seed ->
          let filename = SeedPool.name_seed seed in
          F.eprintf "%s@." filename;
-         ALlvm.save_ll !Config.corpus_dir filename seed.llm);
+         ALlvm.save_ll !Config.corpus_dir filename seed.llm |> ignore);
 
   if SeedPool.cardinal seed_pool = 0 then (
     F.printf "no seed loaded@.";
