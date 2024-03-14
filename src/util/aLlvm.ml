@@ -910,6 +910,6 @@ module LLModuleSet = struct
     match find_opt set llm with
     | Some _ -> None
     | None ->
-        let h = Hashtbl.hash (string_of_llmodule llm) |> string_of_int in
-        Format.sprintf "%s_%s.ll" (AUtil.get_current_time ()) h |> Option.some
+        let h = hash_llm llm in
+        Format.sprintf "id:%010d.ll" h |> Option.some
 end
