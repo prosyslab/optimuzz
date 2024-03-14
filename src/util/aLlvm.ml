@@ -236,10 +236,13 @@ let read_ll llctx filepath =
   let buf = Llvm.MemoryBuffer.of_file filepath in
   Llvm_irreader.parse_ir llctx buf
 
-(** [save_ll target_dir output filename llmodule] *)
+(** [save_ll target_dir output filename llmodule] saves [llmodule]
+ *  under [target_dir], named as [filename].
+ *  This functions returns the fully qualified filename of the produced file. *)
 let save_ll dir filename llm =
   let output_name = Filename.concat dir filename in
-  print_module output_name llm
+  print_module output_name llm;
+  output_name
 
 (** [get_function instr] returns the function that contains [instr]. *)
 let get_function instr = instr |> Llvm.instr_parent |> Llvm.block_parent
@@ -903,7 +906,7 @@ module LLModuleSet = struct
     type t = llmodule
 
     let equal a b = string_of_llmodule a = string_of_llmodule b
-    let hash llm = string_of_llmodule llm |> Hashtbl.hash
+    let hash = hash_llm
   end)
 
   let get_new_name set llm =
