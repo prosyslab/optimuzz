@@ -49,15 +49,7 @@ let subst_ret llctx instr wide =
   (* Set var names *)
   ALlvm.reset_var_names f_old;
 
-  let types = collect_instruction_types f_old in
-  (* add dummpy parameters *)
-  let extra_param =
-    match types with
-    | [] -> [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |]
-    | _ ->
-        let ty = AUtil.choose_random types in
-        [| ty; ty |]
-  in
+  let extra_param = [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |] in
 
   (* make param map to copy function. *)
   let params_old = ALlvm.params f_old in
