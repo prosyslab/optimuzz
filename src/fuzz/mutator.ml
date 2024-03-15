@@ -9,6 +9,11 @@ type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
 
 let ( let* ) = Option.bind
 
+let pp_mode fmt m =
+  match m with
+  | EXPAND -> Format.fprintf fmt "EXPAND"
+  | FOCUS -> Format.fprintf fmt "FOCUS"
+
 let pp_mutation fmt m =
   match m with
   | CREATE -> Format.fprintf fmt "CREATE"
@@ -878,8 +883,6 @@ let cut_below llctx llm =
           let _f_new = ALlvm.clone_function f_old new_ret_ty in
           ALlvm.delete_function f_old;
 
-          L.debug "mutant: %s" (ALlvm.string_of_llmodule llm);
-
           Some llm
       | _ -> None)
 
@@ -888,7 +891,7 @@ let cut_below llctx llm =
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
-  L.info "mutation: %a" pp_mutation mutation;
+  L.info "mutation(%a): %a" pp_mode mode pp_mutation mutation;
   let mutation_result =
     match mutation with
     | CREATE ->
