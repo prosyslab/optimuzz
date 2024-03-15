@@ -258,6 +258,94 @@ let subst_rand_instr llctx llm =
   | CMP -> None
   | _ -> None
 
+let subst_operand_of_index ?(include_const = false) llctx instr idx =
+  let old_operand = operand instr idx in
+  let candidates =
+    let prior_instrs =
+      get_instrs_before ~wide:true instr
+      |> list_filter_type (type_of old_operand)
+    in
+    let params =
+      get_function instr
+      |> fold_left_params
+           (fun accu p ->
+             if type_of p = type_of old_operand then p :: accu else accu)
+           []
+    in
+    let consts =
+      if include_const then
+        match classify_type (type_of old_operand) with
+        | TypeKind.Integer ->
+            List.fold_left
+              (fun accu i -> const_int (type_of old_operand) i :: accu)
+              []
+              !Config.interesting_integers
+        | Vector ->
+            List.fold_left
+              (fun accu vec ->
+                let el_ty = element_type (type_of old_operand) in
+                let vec_size = vector_size (type_of old_operand) in
+                let llv_arr = Array.make vec_size (const_int el_ty vec) in
+                const_vector llv_arr :: accu)
+              []
+              !Config.interesting_integers
+        | _ -> []
+      else []
+    in
+
+    prior_instrs @ params @ consts
+  in
+
+  if candidates = [] then Error "No non-constant candidats"
+  else
+    let new_operand = AUtil.choose_random candidates in
+    let _ = set_operand instr idx new_operand in
+    Ok ()
+
+type const_t = Const | Instr
+
+let is_const instr = if is_constant instr then Const else Instr
+
+(** this function does not choose an operand so that the target instruction
+ *  does not turn into a constant *)
+let subst_operand_of_unary llctx instr = subst_operand_of_index llctx instr 0
+
+let susbt_operand_of_binary llctx instr =
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  match (is_const left, is_const right) with
+  | Const, Const -> Error "Both operands are constants, which is impossible"
+  | Const, _ -> subst_operand_of_index llctx instr 0
+  | _, Const -> subst_operand_of_index llctx instr 1
+  | _ -> subst_operand_of_index ~include_const:true llctx instr (Random.int 2)
+
+let subst_operand_of_ternary llctx instr =
+  let left = operand instr 0 in
+  let middle = operand instr 1 in
+  let right = operand instr 2 in
+  match (is_const left, is_const middle, is_const right) with
+  | Const, Const, Const ->
+      Error "All operands are constants, which is impossible"
+  | Const, Const, _ -> (
+      match Random.int 3 with
+      | (0 | 1) as idx ->
+          subst_operand_of_index ~include_const:true llctx instr idx
+      | 2 -> subst_operand_of_index llctx instr 2
+      | _ -> failwith "unreachable")
+  | Const, _, Const -> (
+      match Random.int 3 with
+      | (0 | 2) as idx ->
+          subst_operand_of_index ~include_const:true llctx instr idx
+      | 1 -> subst_operand_of_index llctx instr 1
+      | _ -> failwith "unreachable")
+  | _, Const, Const -> (
+      match Random.int 3 with
+      | (1 | 2) as idx ->
+          subst_operand_of_index ~include_const:true llctx instr idx
+      | 0 -> subst_operand_of_index llctx instr 0
+      | _ -> failwith "unreachable")
+  | _ -> subst_operand_of_index ~include_const:true llctx instr (Random.int 3)
+
 (** [subst_rand_opd llctx llm] substitutes
     a random operand of a random instruction into another available random one. *)
 let rec subst_rand_opd ?preferred_opd llctx llm =
@@ -277,17 +365,16 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
     choose_target 4
   in
   L.debug "instr: %s" (string_of_llvalue instr);
-  let num_operands = num_operands instr in
 
   match preferred_opd with
   | Some preferred_opd -> (
       let preferred_ty = type_of preferred_opd in
       let check_ty llv = type_of llv = preferred_ty in
       match OpCls.opcls_of instr with
-      | (BINARY | CAST | CMP) when num_operands > 0 -> (
+      | (BINARY | CAST | CMP) when num_operands instr > 0 -> (
           let left = operand instr 0 in
           let right = operand instr 1 in
-          match num_operands with
+          match num_operands instr with
           | 1 ->
               if check_ty left then (
                 set_operand instr 0 preferred_opd;
@@ -310,7 +397,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
                   Some llm)
           | _ -> None)
       | _ -> None)
-  | None ->
+  | None -> (
       if instr |> instr_opcode |> OpCls.classify = CMP && Random.bool () then (
         let old_cmp = icmp_predicate instr |> Option.get in
         let rec rand_cond_code () =
@@ -321,13 +408,30 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
         L.debug "new_cmp: %s" (string_of_icmp new_cmp);
         new_cmp |> subst_cmp llctx instr |> ignore;
         Some llm)
-      else if num_operands > 0 then
-        let i = Random.int num_operands in
+      else
+        match num_operands instr with
+        | 1 -> (
+            match subst_operand_of_unary llctx instr with
+            | Ok () -> Some llm
+            | Error _ -> None)
+        | 2 -> (
+            match susbt_operand_of_binary llctx instr with
+            | Ok () -> Some llm
+            | Error _ -> None)
+        | 3 -> (
+            match subst_operand_of_ternary llctx instr with
+            | Ok () -> Some llm
+            | Error _ -> None)
+        | _ -> None)
+
+(*
+      if num_operands > 0 then let i = Random.int num_operands in
         let operand_old = operand instr i in
         let* rand_opd = randget_operand instr operand_old in
         let _ = set_operand instr i rand_opd in
         Some llm
       else None
+*)
 
 (** [is_nuw instr] returns true if the instruction [instr] has the flag "nuw". *)
 
@@ -786,13 +890,6 @@ let change_type llctx llm =
   if check_target_for_change_type target f then (
     (* decide type *)
     let ty_old = type_of target in
-    let rec loop () =
-      let ty = AUtil.choose_random !Config.interesting_types in
-      if ty_old = ty then loop () else ty
-    in
-    let ty_new = loop () in
-    L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
-      (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
