@@ -32,20 +32,9 @@ let measure_coverage_only ~passes () =
   | _ -> ());
   exit 0
 
-let do_pattern_only llset () =
-  let name, pat = !Config.pattern_path |> Pattern.Parser.run in
-  let all_instances = Pattern.Instantiation.run name pat in
-  List.iter
-    (fun llm ->
-      match ALlvm.LLModuleSet.get_new_name llset llm with
-      | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
-    all_instances;
-  exit 0
-
-let measure_coverage_only ~passes () =
+let measure_coverage_only cov_tgt_path ~passes () =
   let open Oracle in
-  let res = Optimizer.run ~passes !Config.cov_tgt_path in
+  let res = Optimizer.run ~passes cov_tgt_path in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   (match res with
   | Optimizer.VALID cov ->
@@ -53,19 +42,16 @@ let measure_coverage_only ~passes () =
   | _ -> ());
   exit 0
 
-let main () =
+let llfuzz () =
   let open Oracle in
   ALlvm.set_opaque_pointers llctx true;
   initialize ();
 
   let llset = ALlvm.LLModuleSet.create 4096 in
 
-  (* pattern *)
-  if !Config.pattern_path <> "" then do_pattern_only llset ();
-
   (* measure coverage *)
   if !Config.cov_tgt_path <> "" then
-    measure_coverage_only ~passes:[ "instcombine" ] ();
+    measure_coverage_only !Config.cov_tgt_path ~passes:[ "instcombine" ] ();
 
   (* fuzzing *)
   let seed_pool = SeedPool.make llctx in
@@ -98,4 +84,4 @@ let main () =
   F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
-let _ = main ()
+let _ = llfuzz ()
