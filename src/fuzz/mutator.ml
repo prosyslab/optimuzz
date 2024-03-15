@@ -276,6 +276,7 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
     in
     choose_target 4
   in
+  L.debug "instr: %s" (string_of_llvalue instr);
   let num_operands = num_operands instr in
 
   match preferred_opd with
@@ -316,7 +317,9 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
           let cmp = OpCls.random_cmp () in
           if cmp = old_cmp then rand_cond_code () else cmp
         in
-        rand_cond_code () |> subst_cmp llctx instr |> ignore;
+        let new_cmp = rand_cond_code () in
+        L.debug "new_cmp: %s" (string_of_icmp new_cmp);
+        new_cmp |> subst_cmp llctx instr |> ignore;
         Some llm)
       else if num_operands > 0 then
         let i = Random.int num_operands in
@@ -778,10 +781,18 @@ let change_type llctx llm =
   in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let target = AUtil.choose_random (all_instrs @ f_params) in
+  L.debug "instr: %s" (string_of_llvalue target);
   (* CONSIDER IMPOSSIBLE CASES *)
   if check_target_for_change_type target f then (
     (* decide type *)
     let ty_old = type_of target in
+    let rec loop () =
+      let ty = AUtil.choose_random !Config.interesting_types in
+      if ty_old = ty then loop () else ty
+    in
+    let ty_new = loop () in
+    L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
+      (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
