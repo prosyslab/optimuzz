@@ -8,6 +8,8 @@ all: fmt
 	$(DUNE) build
 	$(LN) _build/default/src/main.exe $(EXE)
 	$(LN) _build/default/src/program/check_corpus.exe check_corpus
+	$(LN) _build/default/src/program/cov.exe cov
+	$(LN) _build/default/src/program/pattern_check.exe pattern-check
 
 test: all
 	$(DUNE) test

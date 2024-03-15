@@ -7,3 +7,8 @@
  (name pattern_check)
  (modules pattern_check)
  (libraries pattern oracle util))
+
+(executable
+ (name cov)
+ (modules cov)
+ (libraries oracle util))
