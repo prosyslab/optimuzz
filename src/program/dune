@@ -2,3 +2,8 @@
  (name check_corpus)
  (modules check_corpus)
  (libraries oracle util domainslib progress))
+
+(executable
+ (name pattern_check)
+ (modules pattern_check)
+ (libraries pattern oracle util))
