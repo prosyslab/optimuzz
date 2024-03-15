@@ -144,6 +144,18 @@ let opcode_of_string = function
   | "LandingPad" -> LandingPad
   | _ -> Invalid
 
+let string_of_icmp = function
+  | Icmp.Eq -> "eq"
+  | Ne -> "ne"
+  | Ugt -> "ugt"
+  | Uge -> "uge"
+  | Ult -> "ult"
+  | Ule -> "ule"
+  | Sgt -> "sgt"
+  | Sge -> "sge"
+  | Slt -> "slt"
+  | Sle -> "sle"
+
 (** [fold_left_all_instr f a m] returns [f (... f (f (f a i1) i2) i3 ...) iN],
     where [i1 ... iN] are the instructions in function [m]. *)
 let fold_left_all_instr f a m =
