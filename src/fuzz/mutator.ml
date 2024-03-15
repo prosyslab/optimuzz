@@ -258,7 +258,7 @@ let subst_rand_instr llctx llm =
   | CMP -> None
   | _ -> None
 
-let subst_operand_of_index ?(include_const = false) llctx instr idx =
+let subst_operand_of_index ?(include_const = false) instr idx =
   let old_operand = operand instr idx in
   let candidates =
     let prior_instrs =
@@ -308,18 +308,18 @@ let is_const instr = if is_constant instr then Const else Instr
 
 (** this function does not choose an operand so that the target instruction
  *  does not turn into a constant *)
-let subst_operand_of_unary llctx instr = subst_operand_of_index llctx instr 0
+let subst_operand_of_unary instr = subst_operand_of_index instr 0
 
-let susbt_operand_of_binary llctx instr =
+let susbt_operand_of_binary instr =
   let left = operand instr 0 in
   let right = operand instr 1 in
   match (is_const left, is_const right) with
   | Const, Const -> Error "Both operands are constants, which is impossible"
-  | Const, _ -> subst_operand_of_index llctx instr 0
-  | _, Const -> subst_operand_of_index llctx instr 1
-  | _ -> subst_operand_of_index ~include_const:true llctx instr (Random.int 2)
+  | Const, _ -> subst_operand_of_index instr 0
+  | _, Const -> subst_operand_of_index instr 1
+  | _ -> subst_operand_of_index ~include_const:true instr (Random.int 2)
 
-let subst_operand_of_ternary llctx instr =
+let subst_operand_of_ternary instr =
   let left = operand instr 0 in
   let middle = operand instr 1 in
   let right = operand instr 2 in
@@ -328,23 +328,20 @@ let subst_operand_of_ternary llctx instr =
       Error "All operands are constants, which is impossible"
   | Const, Const, _ -> (
       match Random.int 3 with
-      | (0 | 1) as idx ->
-          subst_operand_of_index ~include_const:true llctx instr idx
-      | 2 -> subst_operand_of_index llctx instr 2
+      | (0 | 1) as idx -> subst_operand_of_index ~include_const:true instr idx
+      | 2 -> subst_operand_of_index instr 2
       | _ -> failwith "unreachable")
   | Const, _, Const -> (
       match Random.int 3 with
-      | (0 | 2) as idx ->
-          subst_operand_of_index ~include_const:true llctx instr idx
-      | 1 -> subst_operand_of_index llctx instr 1
+      | (0 | 2) as idx -> subst_operand_of_index ~include_const:true instr idx
+      | 1 -> subst_operand_of_index instr 1
       | _ -> failwith "unreachable")
   | _, Const, Const -> (
       match Random.int 3 with
-      | (1 | 2) as idx ->
-          subst_operand_of_index ~include_const:true llctx instr idx
-      | 0 -> subst_operand_of_index llctx instr 0
+      | (1 | 2) as idx -> subst_operand_of_index ~include_const:true instr idx
+      | 0 -> subst_operand_of_index instr 0
       | _ -> failwith "unreachable")
-  | _ -> subst_operand_of_index ~include_const:true llctx instr (Random.int 3)
+  | _ -> subst_operand_of_index ~include_const:true instr (Random.int 3)
 
 (** [subst_rand_opd llctx llm] substitutes
     a random operand of a random instruction into another available random one. *)
@@ -411,15 +408,15 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
       else
         match num_operands instr with
         | 1 -> (
-            match subst_operand_of_unary llctx instr with
+            match subst_operand_of_unary instr with
             | Ok () -> Some llm
             | Error _ -> None)
         | 2 -> (
-            match susbt_operand_of_binary llctx instr with
+            match susbt_operand_of_binary instr with
             | Ok () -> Some llm
             | Error _ -> None)
         | 3 -> (
-            match subst_operand_of_ternary llctx instr with
+            match subst_operand_of_ternary instr with
             | Ok () -> Some llm
             | Error _ -> None)
         | _ -> None)
