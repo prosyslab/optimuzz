@@ -371,20 +371,29 @@ let modify_flag _llctx llm =
    in
    subst_rand_opd llctx (aux len first_opd) instr *)
 
+type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
+
 let rec trav_cast llv ty_new accu =
-  match (llv |> type_of |> classify_type, classify_type ty_new) with
-  | Integer, Integer -> accu
-  | Integer, Vector ->
-      collect_ty_changing_llvs llv
-        (vector_type (type_of llv) (vector_size ty_new))
-        accu
-  | Vector, Integer ->
-      collect_ty_changing_llvs llv (llv |> type_of |> element_type) accu
-  | Vector, Vector ->
-      collect_ty_changing_llvs llv
-        (vector_type (llv |> type_of |> element_type) (vector_size ty_new))
-        accu
-  | _ -> failwith "Unsupported typekind"
+  match classify_value llv with
+  | Instruction opc
+    when (OpcodeClass.classify opc = CAST && type_of llv = ty_new)
+         || operand llv 0 |> type_of = ty_new ->
+      Retry
+  | _ when llv |> type_of = ty_new -> Retry
+  | _ -> (
+      match (llv |> type_of |> classify_type, classify_type ty_new) with
+      | Integer, Integer -> accu
+      | Integer, Vector ->
+          collect_ty_changing_llvs llv
+            (vector_type (type_of llv) (vector_size ty_new))
+            accu
+      | Vector, Integer ->
+          collect_ty_changing_llvs llv (llv |> type_of |> element_type) accu
+      | Vector, Vector ->
+          collect_ty_changing_llvs llv
+            (vector_type (llv |> type_of |> element_type) (vector_size ty_new))
+            accu
+      | _ -> failwith "Unsupported typekind")
 
 and trav_llvs_used_by_curr curr ty_new accu =
   match classify_value curr with
@@ -415,32 +424,30 @@ and trav_llvs_using_curr curr ty_new accu =
       | CAST -> trav_cast user ty_new accu
       | BINARY | PHI -> collect_ty_changing_llvs user ty_new accu
       | CMP ->
-          if classify_type ty_new = Vector then None
-          else
-            (* preserve type equality of both operands *)
-            let opd0 = operand user 0 in
-            let opd1 = operand user 1 in
-            accu
-            |> collect_ty_changing_llvs opd0 ty_new
-            |> collect_ty_changing_llvs opd1 ty_new
+          (* preserve type equality of both operands *)
+          let opd0 = operand user 0 in
+          let opd1 = operand user 1 in
+          accu
+          |> collect_ty_changing_llvs opd0 ty_new
+          |> collect_ty_changing_llvs opd1 ty_new
       | _ -> failwith "NEVER OCCUR")
     accu curr
 
 and collect_ty_changing_llvs llv ty_new accu =
   match accu with
-  | None -> None
-  | Some accu_inner when LLVMap.mem llv accu_inner -> accu
-  | Some _ when is_constant llv -> accu
-  | Some accu -> (
+  | Success accu_inner when LLVMap.mem llv accu_inner -> accu
+  | Success _ when is_constant llv -> accu
+  | Success accu -> (
       let accu = LLVMap.add llv ty_new accu in
       match classify_value llv with
       | Instruction opc ->
-          if OpCls.classify opc = CMP then None
+          if OpCls.classify opc = CMP then Impossible
           else
-            Some accu
+            Success accu
             |> trav_llvs_used_by_curr llv ty_new
             |> trav_llvs_using_curr llv ty_new
-      | _ -> Some accu |> trav_llvs_using_curr llv ty_new)
+      | _ -> Success accu |> trav_llvs_using_curr llv ty_new)
+  | _ -> accu
 
 let get_ty llv_old typemap =
   match LLVMap.find_opt llv_old typemap with
@@ -606,7 +613,12 @@ let migrate_cast builder instr_old typemap link_v =
   in
 
   (* FIXME: for now, using ZExt only *)
-  (if is_trunc then build_trunc else build_zext) opd dest_ty "" builder
+  (if is_trunc then build_trunc
+   else if instr_opcode instr_old = SExt then build_sext
+   else if instr_opcode instr_old = ZExt then build_zext
+   else if Random.bool () then build_sext
+   else build_zext)
+    opd dest_ty "" builder
 
 let migrate_cmp builder instr_old link_v =
   let opd0 = operand instr_old 0 in
@@ -614,7 +626,23 @@ let migrate_cmp builder instr_old link_v =
   let build_cmp o0 o1 =
     OpCls.build_cmp (icmp_predicate instr_old |> Option.get) o0 o1 builder
   in
-  build_cmp (migrate_self opd0 link_v) (migrate_self opd1 link_v)
+
+  let opd0, opd1 =
+    match (is_constant opd0, is_constant opd1) with
+    | true, true | false, false ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_self opd1 link_v in
+        (opd0, opd1)
+    | true, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd0 = migrate_to_other_ty opd0 (type_of opd1) link_v in
+        (opd0, opd1)
+    | false, true ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
+        (opd0, opd1)
+  in
+  build_cmp opd0 opd1
 
 let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
@@ -720,6 +748,18 @@ let verify_and_clean f_old f_new =
     delete_function f_new;
     None)
 
+let check_target_for_change_type target f =
+  if
+    target |> type_of |> classify_type = Void
+    || target |> type_of |> classify_type = Pointer
+  then false
+  else if classify_value target = Argument then true
+  else if
+    OpCls.opcls_of target = CMP
+    || fold_left_all_instr (fun accu i -> accu || OpCls.is_of i OTHER) false f
+  then false
+  else true
+
 (** [change_type llctx ty_new instr] changes type of [instr] randomly.
     All the other associated values are recursively changed.
     Returns [Some(instr)] if success, or [None] else. *)
@@ -734,35 +774,30 @@ let change_type llctx llm =
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let target = AUtil.choose_random (all_instrs @ f_params) in
   (* CONSIDER IMPOSSIBLE CASES *)
-  if
-    (not (classify_value target = Argument))
-    && (OpCls.opcls_of target = CMP
-       || target |> type_of |> classify_type = Void
-       || target |> type_of |> classify_type = Pointer
-       || fold_left_all_instr
-            (fun accu i -> accu || OpCls.is_of i OTHER)
-            false f)
-  then None
-  else
+  if check_target_for_change_type target f then (
     (* decide type *)
     let ty_old = type_of target in
-    let rec loop () =
-      let ty = AUtil.choose_random !Config.interesting_types in
-      if ty_old = ty then loop () else ty
-    in
-    let ty_new = loop () in
-    Logger.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
-      (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
     reset_var_names f;
-    match collect_ty_changing_llvs target ty_new (Some LLVMap.empty) with
-    | None -> None
-    | Some typemap ->
-        let f_new = redef_fn llctx f typemap in
-        verify_and_clean f f_new |> ignore;
-        Some llm
+
+    let rec loop () =
+      let ty_new = AUtil.choose_random !Config.interesting_types in
+      if ty_old = ty_new then loop ()
+      else
+        match collect_ty_changing_llvs target ty_new (Success LLVMap.empty) with
+        | Impossible -> None
+        | Retry -> loop ()
+        | Success typemap ->
+            L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
+              (string_of_lltype ty_new);
+            let f_new = redef_fn llctx f typemap in
+            verify_and_clean f f_new |> ignore;
+            Some llm
+    in
+    loop ())
+  else None
 
 let delete_empty_blocks func =
   let open Util in
