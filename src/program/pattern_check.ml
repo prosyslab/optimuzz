@@ -1,7 +1,7 @@
 open Util
 
 let pattern_path = ref ""
-let out_dir = ref "."
+let out_dir = ref "pattern-out"
 
 let speclist =
   [

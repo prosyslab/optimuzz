@@ -49,10 +49,6 @@ let llfuzz () =
 
   let llset = ALlvm.LLModuleSet.create 4096 in
 
-  (* measure coverage *)
-  if !Config.cov_tgt_path <> "" then
-    measure_coverage_only !Config.cov_tgt_path ~passes:[ "instcombine" ] ();
-
   (* fuzzing *)
   let seed_pool = SeedPool.make llctx in
   F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
