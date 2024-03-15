@@ -436,6 +436,9 @@ and collect_ty_changing_llvs llv ty_new accu =
       match classify_value llv with
       | Instruction opc ->
           if OpCls.classify opc = CMP then None
+          else if OpCls.classify opc = CAST && operand llv 0 |> type_of = ty_new
+          then (* prevent %y = CAST ty1 %x to ty2 mutated by ty2 |-> ty1 *)
+            None
           else
             Some accu
             |> trav_llvs_used_by_curr llv ty_new
@@ -746,23 +749,25 @@ let change_type llctx llm =
   else
     (* decide type *)
     let ty_old = type_of target in
-    let rec loop () =
-      let ty = AUtil.choose_random !Config.interesting_types in
-      if ty_old = ty then loop () else ty
-    in
-    let ty_new = loop () in
-    Logger.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
-      (string_of_lltype ty_new);
 
     (* Ensure each llvalue has its own name.
        This is necessary because we will use value names as key *)
     reset_var_names f;
-    match collect_ty_changing_llvs target ty_new (Some LLVMap.empty) with
-    | None -> None
-    | Some typemap ->
-        let f_new = redef_fn llctx f typemap in
-        verify_and_clean f f_new |> ignore;
-        Some llm
+
+    let rec loop () =
+      let ty_new = AUtil.choose_random !Config.interesting_types in
+      if ty_old = ty_new then loop ()
+      else
+        match collect_ty_changing_llvs target ty_new (Some LLVMap.empty) with
+        | None -> loop ()
+        | Some typemap ->
+            L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
+              (string_of_lltype ty_new);
+            let f_new = redef_fn llctx f typemap in
+            verify_and_clean f f_new |> ignore;
+            Some llm
+    in
+    loop ()
 
 let delete_empty_blocks func =
   let open Util in
