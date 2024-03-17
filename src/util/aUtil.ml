@@ -52,6 +52,14 @@ let choose_arr a =
   let len = Array.length a in
   if len == 0 then invalid_arg "Empty array" else Array.get a (Random.int len)
 
+let arr_random_except arr exc =
+  assert (Array.length arr > 1);
+  let rec loop () =
+    let ret = choose_arr arr in
+    if ret = exc then loop () else ret
+  in
+  loop ()
+
 let readlines filename =
   let file = open_in filename in
   let rec loop accu =
