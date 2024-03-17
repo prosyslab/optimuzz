@@ -180,8 +180,10 @@ let create_rand_instr llctx llm =
     |> AUtil.choose_random
   in
 
-  let preds = get_instrs_before ~wide:false loc in
-  let preds = preds @ (get_function loc |> params |> Array.to_list) in
+  let preds =
+    get_instrs_before ~wide:false loc
+    |> List.filter (fun i -> i |> type_of |> classify_type <> Void)
+  in
 
   let operand =
     if preds <> [] then AUtil.choose_random preds
