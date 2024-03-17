@@ -214,7 +214,7 @@ let create_rand_instr llctx llm =
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
       Some llm
-  | MEM -> (
+  | MEM _ -> (
       L.debug "create mem";
       match (opcode, classify_type operand_ty) with
       | Load, Pointer ->
@@ -351,8 +351,11 @@ let subst_rand_opd llctx llm =
       if times = 0 then AUtil.choose_random all_instrs
       else
         let candidate = AUtil.choose_random all_instrs in
-        if candidate |> instr_opcode |> OpCls.classify = TER then
-          choose_target (times - 1)
+        if
+          match candidate |> instr_opcode |> OpCls.classify with
+          | TER _ -> true
+          | _ -> false
+        then choose_target (times - 1)
         else candidate
     in
     choose_target 4
@@ -385,38 +388,54 @@ let subst_rand_opd llctx llm =
         | Error _ -> None)
     | _ -> None
 
+let edit_overflow instr =
+  let open Flag in
+  assert (instr |> instr_opcode |> can_overflow);
+  let cases =
+    match (is_nuw instr, is_nsw instr) with
+    | false, false -> [ (false, true); (true, false); (true, true) ]
+    | false, true -> [ (false, false); (true, false); (true, true) ]
+    | true, false -> [ (false, false); (false, true); (true, true) ]
+    | true, true -> [ (false, false); (false, true); (true, false) ]
+  in
+  let nuw_new, nsw_new = AUtil.choose_random cases in
+  set_nuw nuw_new instr;
+  set_nsw nsw_new instr
+
+let edit_be_exact instr =
+  let open Flag in
+  assert (instr |> instr_opcode |> can_be_exact);
+  set_exact (not (is_exact instr)) instr
+
 (** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
   let open Flag in
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr = AUtil.choose_random all_instrs in
-  let opcode = instr_opcode instr in
-  match OpCls.classify opcode with
-  | BINARY ->
-      (* there is no instruction that has both exact and nuw/nsw *)
-      if can_overflow opcode then (
-        (* can have both nuw and nsw *)
-        (* flip flags but ensure that one of the flags change *)
-        (* For example, if both nuw and nsw are already set,
-           turn off at least one of them *)
-        let cases =
-          match (is_nuw instr, is_nsw instr) with
-          | false, false -> [ (false, true); (true, false); (true, true) ]
-          | false, true -> [ (false, false); (true, false); (true, true) ]
-          | true, false -> [ (false, false); (false, true); (true, true) ]
-          | true, true -> [ (false, false); (false, true); (true, false) ]
-        in
-        let nuw_new, nsw_new = AUtil.choose_random cases in
-        set_nuw nuw_new instr;
-        set_nsw nsw_new instr;
-        Some llm)
-      else if can_be_exact opcode then (
-        set_exact (not (is_exact instr)) instr;
-        Some llm)
-      else None
-  | _ -> None
+  let can_overflow i = i |> instr_opcode |> can_overflow in
+  let can_be_exact i = i |> instr_opcode |> can_be_exact in
+  let instrs_overflow = List.filter can_overflow all_instrs in
+  let instrs_be_exact = List.filter can_be_exact all_instrs in
+
+  let ret = Some llm in
+  match (instrs_overflow, instrs_be_exact) with
+  | [], [] -> None
+  | _, [] ->
+      instrs_overflow |> AUtil.choose_random |> edit_overflow;
+      ret
+  | [], _ ->
+      instrs_be_exact |> AUtil.choose_random |> edit_be_exact;
+      ret
+  | _ ->
+      let i =
+        instrs_overflow
+        |> List.rev_append instrs_be_exact
+        |> AUtil.choose_random
+      in
+      (* no opcode can be both *)
+      if can_overflow i then edit_overflow i else edit_be_exact i;
+      ret
 
 type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 
@@ -449,7 +468,7 @@ and trav_llvs_used_by_curr curr ty_new accu =
   match classify_value curr with
   | Instruction opc -> (
       match OpcodeClass.classify opc with
-      | MEM -> accu
+      | MEM _ -> accu
       | CAST -> trav_cast (operand curr 0) ty_new accu
       | BINARY ->
           let opd0 = operand curr 0 in
@@ -472,7 +491,7 @@ and trav_llvs_using_curr curr ty_new accu =
     (fun accu use ->
       let user = user use in
       match OpCls.opcls_of user with
-      | TER | MEM -> (* does not affect *) accu
+      | TER _ | MEM _ -> (* does not affect *) accu
       | CAST -> trav_cast user ty_new accu
       | BINARY | PHI -> collect_ty_changing_llvs user ty_new accu
       | CMP ->
@@ -709,13 +728,13 @@ let migrate_phi builder instr_old typemap =
 let migrate_instr builder instr_old typemap link_v link_b =
   let instr_new =
     match OpCls.opcls_of instr_old with
-    | TER -> migrate_ter builder instr_old link_v link_b
+    | TER _ -> migrate_ter builder instr_old link_v link_b
     | BINARY -> migrate_binary builder instr_old typemap link_v
-    | MEM -> migrate_mem builder instr_old typemap link_v
+    | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
     | CMP -> migrate_cmp builder instr_old link_v
     | PHI -> migrate_phi builder instr_old typemap
-    | OTHER -> failwith "Unsupported instruction"
+    | _ -> failwith "Unsupported instruction"
   in
   if instr_old |> type_of |> classify_type <> Void then
     set_value_name (value_name instr_old) instr_new;
@@ -818,7 +837,9 @@ let check_target_for_change_type target f =
   else if classify_value target = Argument then true
   else if
     OpCls.opcls_of target = CMP
-    || fold_left_all_instr (fun accu i -> accu || OpCls.is_of i OTHER) false f
+    || fold_left_all_instr
+         (fun accu i -> accu || OpCls.opcls_of i = UNSUPPORTED)
+         false f
   then false
   else true
 
