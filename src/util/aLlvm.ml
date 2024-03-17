@@ -335,10 +335,20 @@ let replace_hard before after =
   replace_all_uses_with before after;
   delete_instruction before
 
+(* OpcodeClass.t follows classification of LLVM language reference:
+   https://llvm.org/docs/LangRef.html *)
 module OpcodeClass = struct
   exception Improper_class
 
-  type t = TER | BINARY | MEM | CAST | CMP | PHI | OTHER
+  type t =
+    | TER of Opcode.t
+    | BINARY
+    | MEM of Opcode.t
+    | CAST
+    | CMP
+    | PHI
+    | OTHER of Opcode.t
+    | UNSUPPORTED
 
   (* use these lists to mark progress *)
   let ter_list = [ Opcode.Ret; Br ]
@@ -364,7 +374,7 @@ module OpcodeClass = struct
   let cast_list = [ Opcode.Trunc; ZExt; SExt ]
   let cmp_list = [ Opcode.ICmp ]
   let phi_list = [ Opcode.PHI ]
-  let other_list = []
+  let other_list = [ Opcode.Select ]
 
   (* helper for cmp instruction *)
   let cmp_kind = [ Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle ]
@@ -374,27 +384,28 @@ module OpcodeClass = struct
     @ other_list
 
   let classify = function
-    | Opcode.Ret | Br -> TER
+    | (Opcode.Ret | Br) as opc -> TER opc
     | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
     | Xor ->
         BINARY
-    | Alloca | Load | Store -> MEM
+    | (Alloca | Load | Store) as opc -> MEM opc
     | Trunc | ZExt | SExt -> CAST
     | ICmp -> CMP
     | PHI -> PHI
-    | _ -> OTHER
+    | Select as opc -> OTHER opc
+    | _ -> UNSUPPORTED
 
   let opcls_of instr = instr |> instr_opcode |> classify
-  let is_of instr cls = opcls_of instr = cls
 
   let oplist_of = function
-    | TER -> ter_list
+    | TER _ -> ter_list
     | BINARY -> binary_list
-    | MEM -> mem_list
+    | MEM _ -> mem_list
     | CAST -> cast_list
     | CMP -> cmp_list
     | PHI -> phi_list
-    | OTHER -> other_list
+    | OTHER _ -> other_list
+    | _ -> []
 
   let random_op_of opcls = opcls |> oplist_of |> AUtil.choose_random
 
@@ -440,13 +451,14 @@ module OpcodeClass = struct
   let build_cmp icmp o0 o1 llb = build_icmp icmp o0 o1 "" llb
 
   let string_of_opcls = function
-    | TER -> "TER"
+    | TER opc -> Printf.sprintf "TER (%s)" (string_of_opcode opc)
     | BINARY -> "BINARY"
-    | MEM -> "MEM"
+    | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
     | CMP -> "CMP"
     | PHI -> "PHI"
-    | _ -> "OTHER"
+    | OTHER opc -> Printf.sprintf "OTHER (%s)" (string_of_opcode opc)
+    | UNSUPPORTED -> "UNSUPPORTED"
 end
 
 module Flag = struct
