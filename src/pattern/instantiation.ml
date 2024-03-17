@@ -145,7 +145,7 @@ let run name pat : instance_t list =
                       in
                       (instr_new, llm_binop) :: accu
                   | CMP ->
-                      List.fold_left
+                      Array.fold_left
                         (fun accu kind ->
                           let llm_cmp =
                             Llvm_transform_utils.clone_module llm_binop
@@ -156,7 +156,7 @@ let run name pat : instance_t list =
                             build_cmp kind lhs rhs (builder_ur llm_cmp)
                           in
                           (instr_new, llm_cmp) :: accu)
-                        accu cmp_kind
+                        accu icmp_kind
                   | _ -> failwith "Not implemented")
                 accu rhs_llvs rhs_llms)
             [] lhs_llvs lhs_llms
