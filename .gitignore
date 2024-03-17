@@ -70,3 +70,4 @@ llfuzz-out
 compile_flags.txt
 cov
 pattern-check
+result.sh
