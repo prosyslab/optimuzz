@@ -89,15 +89,4 @@ module Optimizer (Cov : CD.COVERAGE) = struct
       (* cov.cov is not generated : the file did not trigger [passes] *)
       (* prerr_endline "Optimizer: cov.cov is not generated"; *)
       INVALID
-
-  let run_for_llm ~passes llset llm =
-    match ALlvm.LLModuleSet.get_new_name llset llm with
-    | None -> INVALID
-    | Some filename ->
-        (* transform input into a file for the optimizer *)
-        let _ = ALlvm.save_ll !Config.out_dir filename llm in
-        let input = Filename.concat !Config.out_dir filename in
-        let result = run ~passes input in
-        AUtil.clean input;
-        result
 end
