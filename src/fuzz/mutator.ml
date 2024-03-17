@@ -171,7 +171,14 @@ let create_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let loc = AUtil.choose_random all_instrs in
+
+  (* there is block terminator, so this is safe *)
+  let loc =
+    all_instrs
+    |> List.filter (fun i -> instr_opcode i <> PHI)
+    |> AUtil.choose_random
+  in
+
   let preds = get_instrs_before ~wide:false loc in
   let preds = preds @ (get_function loc |> params |> Array.to_list) in
 
