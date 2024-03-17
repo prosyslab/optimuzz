@@ -1,10 +1,12 @@
 open Oracle
 module F = Format
 module Path = Coverage.Path
+module CD = Coverage.Domain
 
 let input_file = ref ""
 let direct = ref ""
 let passes = ref []
+let metric = ref "avg"
 
 let speclist =
   [
@@ -12,16 +14,18 @@ let speclist =
     ( "-passes",
       Arg.String (fun s -> passes := String.split_on_char ',' s),
       "Comma separated list of passes" );
+    ("-metric", Arg.Set_string metric, "Metric to use (avg, min)");
   ]
 
-let measure_coverage (module Optimizer) input direct ~passes () =
+let measure_coverage (module Cov : CD.COVERAGE) input direct ~passes () =
+  let module Optimizer = Optimizer (Cov) in
   let res = Optimizer.run ~passes input in
   let target = Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   match res with
   | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov);
-      F.printf "Covers: %b@." (CD.Coverage.cover_target target cov);
+      F.printf "Total coverage: %d@." (Cov.cardinal cov);
+      F.printf "Covers: %b@." (Cov.cover_target target cov);
       ()
   | _ -> ()
 
@@ -35,4 +39,13 @@ let _ =
 
   L.from_file "cov.log";
 
-  measure_coverage !input_file !direct ~passes:!passes ()
+  match !metric with
+  | "avg" ->
+      measure_coverage
+        (module Coverage.Avg_dist)
+        !input_file !direct ~passes:!passes ()
+  | "min" ->
+      measure_coverage
+        (module Coverage.Min_dist)
+        !input_file !direct ~passes:!passes ()
+  | _ -> failwith "Invalid metric"
