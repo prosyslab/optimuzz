@@ -1,21 +1,20 @@
 open Util
 module CD = Coverage.Domain
-module Path = Coverage.Path
 module SeedPool = Seedcorpus.Seedpool
 module OpCls = ALlvm.OpcodeClass
 module F = Format
 module L = Logger
 
 module Progress = struct
-  type t = { cov_sofar : CD.Coverage.t; gen_count : int }
+  type t = { cov_sofar : CD.PathSet.t; gen_count : int }
 
-  let empty = { cov_sofar = CD.Coverage.empty; gen_count = 0 }
+  let empty = { cov_sofar = CD.PathSet.empty; gen_count = 0 }
   let inc_gen p = { p with gen_count = p.gen_count + 1 }
-  let add_cov cov p = { p with cov_sofar = CD.Coverage.union p.cov_sofar cov }
+  let add_cov cov p = { p with cov_sofar = CD.PathSet.union p.cov_sofar cov }
 
   let pp fmt progress =
     F.fprintf fmt "generated: %d, coverage: %d" progress.gen_count
-      (CD.Coverage.cardinal progress.cov_sofar)
+      (CD.PathSet.cardinal progress.cov_sofar)
 end
 
 type res_t =
@@ -52,25 +51,21 @@ let record_timestamp cov =
   let now = AUtil.now () in
   if now - !AUtil.recent_time > !Config.log_time then (
     AUtil.recent_time := now;
-    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
+    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.PathSet.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
-  let score_func =
-    match !Config.metric with
-    | "avg" -> CD.Coverage.avg_score
-    | "min" -> CD.Coverage.min_score
-    | _ -> invalid_arg "Invalid metric"
-  in
+let check_mutant (module Cov : CD.COVERAGE) mutant target_path
+    (seed : SeedPool.seed_t) progress =
   let optim_res, valid_res = measure_optimizer_coverage mutant in
   match optim_res with
   | INVALID | CRASH -> Invalid
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
-        let covers = CD.Coverage.cover_target target_path cov_mutant in
+        let covers = CD.PathSet.cover_target target_path cov_mutant in
         let score =
-          score_func target_path cov_mutant
-          |> Option.value ~default:(!Config.max_distance |> float_of_int)
+          match Cov.score target_path cov_mutant with
+          | Infinity -> !Config.max_distance |> float_of_int
+          | Real score -> score
         in
         let priority = SeedPool.get_prio covers score in
         { priority; llm = mutant; covers; score }
@@ -91,8 +86,8 @@ let save_seed is_crash parent seed =
   else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
 
 (* each mutant is mutated [Config.num_mutation] times *)
-let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
-    =
+let mutate_seed (module Cov : CD.COVERAGE) llctx target_path llset
+    (seed : SeedPool.seed_t) progress limit =
   assert (seed.score > 0.0);
 
   let rec traverse times (src : SeedPool.seed_t) progress =
@@ -106,7 +101,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
           (* duplicate seed *)
           None
       | None -> (
-          match check_mutant dst target_path src progress with
+          match check_mutant (module Cov) dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
@@ -129,10 +124,10 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
-let rec run pool llctx llset progress =
+let rec run (module Cov : CD.COVERAGE) pool llctx llset progress =
   let seed, pool_popped = SeedPool.pop pool in
-  let target_path = Path.parse !Config.cov_directed |> Option.get in
-  let mutator = mutate_seed llctx target_path llset in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
+  let mutator = mutate_seed (module Cov) llctx target_path llset in
 
   pool
   |> SeedPool.iter (fun seed ->
@@ -166,4 +161,5 @@ let rec run pool llctx llset progress =
     !Config.time_budget > 0
     && AUtil.now () - !AUtil.start_time > !Config.time_budget
   in
-  if exhausted then progress.cov_sofar else run new_pool llctx llset progress
+  if exhausted then progress.cov_sofar
+  else run (module Cov) new_pool llctx llset progress

@@ -37,7 +37,6 @@ let check_transformation llfile =
   in
 
   (* HACK: both min and avg has same implementation of [ cover_target ] *)
-  let module Optimizer = Optimizer (Coverage.Avg_dist) in
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (

@@ -1,15 +1,14 @@
 module CD = Coverage.Domain
-module Path = Coverage.Path
 
 let print_score = function
-  | None -> Printf.printf "None\n"
-  | Some x -> Printf.printf "%f\n" x
+  | CD.Infinity -> Printf.printf "None\n"
+  | CD.Real x -> Printf.printf "%f\n" x
 
 let _ =
-  let target_path = Path.parse "A:B:C:D" |> Option.get in
-  let cov = CD.Coverage.read Sys.argv.(1) in
-  CD.Coverage.avg_score target_path cov |> print_score;
-  CD.Coverage.min_score target_path cov |> print_score;
-  CD.Coverage.cover_target target_path cov |> Printf.printf "%b\n";
+  let target_path = CD.Path.parse "A:B:C:D" |> Option.get in
+  let cov = CD.PathSet.read Sys.argv.(1) in
+  Coverage.Avg_dist.score target_path cov |> print_score;
+  Coverage.Min_dist.score target_path cov |> print_score;
+  CD.PathSet.cover_target target_path cov |> Printf.printf "%b\n";
 
   ()

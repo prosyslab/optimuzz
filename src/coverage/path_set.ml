@@ -1,4 +1,4 @@
-type elt = string list
+type t = string list
 (** represents a line in the coverage file *)
 
 let compare = compare
@@ -42,23 +42,3 @@ let distances src dst =
   |> List.fold_left (* [ (A, n1); (A :: B, n2); (A :: B :: C; n3) ] *)
        (fun accu p -> (p, distance p dst) :: accu)
        []
-
-include Set.Make (struct
-  type t = elt
-
-  let compare = compare
-end)
-
-let read file =
-  let ic = open_in file in
-  let rec aux accu =
-    match input_line ic with
-    | line -> (
-        match parse line with
-        | Some path -> add path accu |> aux
-        | None -> aux accu)
-    | exception End_of_file -> accu
-  in
-  let cov = aux empty in
-  close_in ic;
-  cov

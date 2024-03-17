@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules path domain min_dist avg_dist)
+ (modules domain min_dist avg_dist)
  (libraries unix util config))

@@ -1,5 +1,4 @@
 open Util
-module Path = Coverage.Path
 module CD = Coverage.Domain
 module L = Logger
 
@@ -132,9 +131,9 @@ let rec clean_llm llctx wide llm =
 
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
 let make (module Cov : CD.COVERAGE) llctx =
-  let module Opt = Oracle.Optimizer (Cov) in
+  let module Opt = Oracle.Optimizer in
   let dir = !Config.seed_dir in
-  let target_path = Path.parse !Config.cov_directed |> Option.get in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   assert (Sys.file_exists dir && Sys.is_directory dir);
 
   let seed_files =
@@ -181,21 +180,16 @@ let make (module Cov : CD.COVERAGE) llctx =
                  AUtil.clean filename;
                  match res with
                  | CRASH | INVALID -> (pool_first, other_seeds)
-                 | VALID cov ->
-                     let covers = Cov.cover_target target_path cov in
-                     let score = Cov.score target_path cov in
-                     let score_int =
+                 | VALID pathset ->
+                     let covers = CD.PathSet.cover_target target_path pathset in
+                     let score = Cov.score target_path pathset in
+                     let score =
                        match score with
-                       | None -> !Config.max_distance |> float_of_int
-                       | Some x -> x
+                       | Infinity -> !Config.max_distance |> float_of_int
+                       | Real x -> x
                      in
                      let seed =
-                       {
-                         priority = get_prio covers score_int;
-                         llm;
-                         covers;
-                         score = score_int;
-                       }
+                       { priority = get_prio covers score; llm; covers; score }
                      in
                      L.info "seed: %s, %a@." file pp_seed seed;
                      if covers then (seed :: pool_first, other_seeds)

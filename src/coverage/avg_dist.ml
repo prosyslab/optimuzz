@@ -1,3 +1,5 @@
+open Domain
+
 module DistanceSet = struct
   include Set.Make (struct
     type t = Path.t * int
@@ -9,35 +11,24 @@ module DistanceSet = struct
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
 end
 
-include Set.Make (Path)
-
-let read file =
-  let ic = open_in file in
-  let rec aux accu =
-    match input_line ic with
-    | line -> (
-        match Path.parse line with
-        | Some path -> add path accu |> aux
-        | None -> aux accu)
-    | exception End_of_file -> accu
-  in
-  let cov = aux empty in
-  close_in ic;
-  cov
-
 (* TODO: improve algorithm *)
 let score target_path cov =
   let distances : DistanceSet.t =
-    fold
+    PathSet.fold
       (fun path accu ->
         let ds = Path.distances path target_path |> List.to_seq in
         accu |> DistanceSet.add_seq ds)
       cov DistanceSet.empty
   in
   let total, cnt = DistanceSet.sum_cnt distances in
-  if cnt = 0 then None
+  if cnt = 0 then Infinity
   else
     let avg = float_of_int total /. float_of_int cnt in
-    Some avg
+    Real avg
 
-let cover_target = mem
+let compare score1 score2 =
+  match (score1, score2) with
+  | Infinity, Infinity -> 0
+  | Infinity, _ -> 1
+  | _, Infinity -> -1
+  | Real s1, Real s2 -> compare s1 s2

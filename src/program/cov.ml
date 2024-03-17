@@ -1,6 +1,5 @@
 open Oracle
 module F = Format
-module Path = Coverage.Path
 module CD = Coverage.Domain
 
 let input_file = ref ""
@@ -18,15 +17,16 @@ let speclist =
   ]
 
 let measure_coverage (module Cov : CD.COVERAGE) input direct ~passes () =
-  let module Optimizer = Optimizer (Cov) in
   let res = Optimizer.run ~passes input in
-  let target = Path.parse direct |> Option.get in
+  let target = CD.Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   match res with
-  | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (Cov.cardinal cov);
-      F.printf "Covers: %b@." (Cov.cover_target target cov);
-      ()
+  | Optimizer.VALID pathset -> (
+      F.printf "Total coverage: %d@." (CD.PathSet.cardinal pathset);
+      F.printf "Covers: %b@." (CD.PathSet.cover_target target pathset);
+      match Cov.score target pathset with
+      | Real score -> F.printf "Score: %f@." score
+      | Infinity -> F.printf "Score: N/A@.")
   | _ -> ()
 
 let _ =

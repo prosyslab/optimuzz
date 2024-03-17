@@ -1,3 +1,5 @@
+open Domain
+
 module DistanceSetMin = struct
   include Set.Make (struct
     type t = Path.t * int
@@ -6,34 +8,23 @@ module DistanceSetMin = struct
   end)
 end
 
-include Set.Make (Path)
-
-let read file =
-  let ic = open_in file in
-  let rec aux accu =
-    match input_line ic with
-    | line -> (
-        match Path.parse line with
-        | Some path -> add path accu |> aux
-        | None -> aux accu)
-    | exception End_of_file -> accu
-  in
-  let cov = aux empty in
-  close_in ic;
-  cov
-
 (* TODO: improve algorithm *)
 let score target_path cov =
   let distances : DistanceSetMin.t =
-    fold
+    PathSet.fold
       (fun path accu ->
         let ds = Path.distances path target_path |> List.to_seq in
         accu |> DistanceSetMin.add_seq ds)
       cov DistanceSetMin.empty
   in
-  if DistanceSetMin.is_empty distances then None
+  if DistanceSetMin.is_empty distances then Infinity
   else
     let _, min = DistanceSetMin.min_elt distances in
-    Some (float_of_int min)
+    Real (float_of_int min)
 
-let cover_target = mem
+let compare score1 score2 =
+  match (score1, score2) with
+  | Infinity, Infinity -> 0
+  | Infinity, _ -> 1
+  | _, Infinity -> -1
+  | Real s1, Real s2 -> compare s1 s2
