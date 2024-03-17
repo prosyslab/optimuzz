@@ -11,37 +11,6 @@ let initialize () =
   Config.initialize llctx ();
   Random.self_init ()
 
-let do_pattern_only llset () =
-  let name, pat = !Config.pattern_path |> Pattern.Parser.run in
-  let all_instances = Pattern.Instantiation.run name pat in
-  List.iter
-    (fun llm ->
-      match ALlvm.LLModuleSet.get_new_name llset llm with
-      | None -> ()
-      | Some filename -> ALlvm.save_ll !Config.out_dir filename llm |> ignore)
-    all_instances;
-  exit 0
-
-let measure_coverage_only ~passes () =
-  let open Oracle in
-  let res = Optimizer.run ~passes !Config.cov_tgt_path in
-  passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
-  (match res with
-  | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
-  | _ -> ());
-  exit 0
-
-let measure_coverage_only cov_tgt_path ~passes () =
-  let open Oracle in
-  let res = Optimizer.run ~passes cov_tgt_path in
-  passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
-  (match res with
-  | Optimizer.VALID cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov)
-  | _ -> ());
-  exit 0
-
 let llfuzz () =
   let open Oracle in
   ALlvm.set_opaque_pointers llctx true;
