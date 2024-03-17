@@ -131,7 +131,8 @@ let rec clean_llm llctx wide llm =
   with _ -> if wide then clean_llm llctx false llm else None
 
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-let make llctx =
+let make (module Cov : CD.COVERAGE) llctx =
+  let module Opt = Oracle.Optimizer (Cov) in
   let dir = !Config.seed_dir in
   let target_path = Path.parse !Config.cov_directed |> Option.get in
   assert (Sys.file_exists dir && Sys.is_directory dir);
@@ -144,20 +145,13 @@ let make llctx =
 
   let can_optimize file =
     let path = Filename.concat dir file in
-    match Oracle.Optimizer.run ~passes:[ "instcombine" ] path with
+    match Opt.run ~passes:[ "instcombine" ] path with
     | CRASH | INVALID ->
         AUtil.name_opted_ver path |> AUtil.clean;
         false
     | VALID _ ->
         AUtil.name_opted_ver path |> AUtil.clean;
         true
-  in
-
-  let score_func =
-    match !Config.metric with
-    | "avg" -> CD.Coverage.avg_score
-    | "min" -> CD.Coverage.min_score
-    | _ -> failwith "invalid metric"
   in
 
   (* pool_covers contains seeds which cover the target *)
@@ -183,15 +177,13 @@ let make llctx =
                  let h = ALlvm.hash_llm llm in
                  let filename = Format.sprintf "id:%010d.ll" h in
                  let filename = ALlvm.save_ll !Config.out_dir filename llm in
-                 let res =
-                   Oracle.Optimizer.run ~passes:[ "instcombine" ] filename
-                 in
+                 let res = Opt.run ~passes:[ "instcombine" ] filename in
                  AUtil.clean filename;
                  match res with
                  | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID cov ->
-                     let covers = CD.Coverage.cover_target target_path cov in
-                     let score = score_func target_path cov in
+                     let covers = Cov.cover_target target_path cov in
+                     let score = Cov.score target_path cov in
                      let score_int =
                        match score with
                        | None -> !Config.max_distance |> float_of_int
