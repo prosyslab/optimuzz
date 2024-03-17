@@ -14,7 +14,7 @@ let speclist =
       "Comma separated list of passes" );
   ]
 
-let measure_coverage input direct ~passes () =
+let measure_coverage (module Optimizer) input direct ~passes () =
   let res = Optimizer.run ~passes input in
   let target = Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
