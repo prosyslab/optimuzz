@@ -55,8 +55,8 @@ let create_binary llctx loc opcode o0 o1 =
 let create_cast llctx loc opcode o ty =
   (OpCls.build_cast opcode) o ty (builder_before llctx loc)
 
-let create_cmp llctx loc icmp o0 o1 =
-  (OpCls.build_cmp icmp) o0 o1 (builder_before llctx loc)
+let create_icmp llctx loc icmp o0 o1 =
+  (OpCls.build_icmp icmp) o0 o1 (builder_before llctx loc)
 
 (** [binary_exchange_operands llctx instr] exchanges the two operands of the binary
     instruction [instr], without any extra keywords.
@@ -100,10 +100,10 @@ let subst_cast llctx instr =
   | Trunc -> None
   | _ -> failwith "NEVER OCCUR"
 
-let subst_cmp llctx instr cond =
+let subst_icmp llctx instr cond =
   let left = operand instr 0 in
   let right = operand instr 1 in
-  let new_instr = create_cmp llctx instr cond left right in
+  let new_instr = create_icmp llctx instr cond left right in
   replace_hard instr new_instr;
   new_instr
 
@@ -217,11 +217,11 @@ let create_rand_instr llctx llm =
           |> create_cast llctx loc opcode operand
           |> ignore;
           Some llm)
-  | CMP when is_not_ptr ->
-      L.debug "create cmp";
+  | OTHER ICmp when is_not_ptr ->
+      L.debug "create icmp";
       let rand_cond = AUtil.choose_arr OpCls.icmp_kind in
       get_rand_opd loc operand_ty
-      |> create_cmp llctx loc rand_cond operand
+      |> create_icmp llctx loc rand_cond operand
       |> ignore;
       Some llm
   | OTHER Select ->
@@ -258,7 +258,7 @@ let subst_rand_instr llctx llm =
   | CAST ->
       subst_cast llctx instr |> ignore;
       Some llm
-  | CMP -> None
+  | OTHER ICmp -> None
   | _ -> None
 
 let subst_operand_of_index ?(include_const = false) instr idx =
@@ -369,7 +369,7 @@ let subst_rand_opd llctx llm =
   in
   L.debug "instr: %s" (string_of_llvalue instr);
 
-  if instr |> instr_opcode |> OpCls.classify = CMP && Random.bool () then (
+  if instr_opcode instr = ICmp && Random.bool () then (
     let old_cmp = icmp_predicate instr |> Option.get in
     let rec rand_cond_code () =
       let cmp = OpCls.random_icmp () in
@@ -377,7 +377,7 @@ let subst_rand_opd llctx llm =
     in
     let new_cmp = rand_cond_code () in
     L.debug "new_cmp: %s" (string_of_icmp new_cmp);
-    new_cmp |> subst_cmp llctx instr |> ignore;
+    new_cmp |> subst_icmp llctx instr |> ignore;
     Some llm)
   else
     match num_operands instr with
@@ -483,7 +483,7 @@ and trav_llvs_used_by_curr curr ty_new accu =
           accu
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 ty_new
-      | PHI ->
+      | OTHER PHI ->
           (* propagate over all incoming values *)
           List.fold_left
             (fun accu (i, _) -> collect_ty_changing_llvs i ty_new accu)
@@ -506,8 +506,9 @@ and trav_llvs_using_curr curr ty_new accu =
       match OpCls.opcls_of user with
       | TER _ | MEM _ -> (* does not affect *) accu
       | CAST -> trav_cast user ty_new accu
-      | BINARY | PHI | OTHER Select -> collect_ty_changing_llvs user ty_new accu
-      | CMP ->
+      | BINARY | OTHER PHI | OTHER Select ->
+          collect_ty_changing_llvs user ty_new accu
+      | OTHER ICmp ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
           let opd1 = operand user 1 in
@@ -528,7 +529,7 @@ and collect_ty_changing_llvs llv ty_new accu =
       let accu = LLVMap.add llv ty_new accu in
       match classify_value llv with
       | Instruction opc ->
-          if OpCls.classify opc = CMP then Impossible
+          if opc = ICmp then Impossible
           else
             Success accu
             |> trav_llvs_used_by_curr llv ty_new
@@ -710,11 +711,11 @@ let migrate_cast builder instr_old typemap link_v =
    else build_zext)
     opd dest_ty "" builder
 
-let migrate_cmp builder instr_old link_v =
+let migrate_icmp builder instr_old link_v =
   let opd0 = operand instr_old 0 in
   let opd1 = operand instr_old 1 in
-  let build_cmp o0 o1 =
-    OpCls.build_cmp (icmp_predicate instr_old |> Option.get) o0 o1 builder
+  let build_icmp o0 o1 =
+    OpCls.build_icmp (icmp_predicate instr_old |> Option.get) o0 o1 builder
   in
 
   let opd0, opd1 =
@@ -732,7 +733,7 @@ let migrate_cmp builder instr_old link_v =
         let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
         (opd0, opd1)
   in
-  build_cmp opd0 opd1
+  build_icmp opd0 opd1
 
 let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
@@ -778,8 +779,8 @@ let migrate_instr builder instr_old typemap link_v link_b =
     | BINARY -> migrate_binary builder instr_old typemap link_v
     | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
-    | CMP -> migrate_cmp builder instr_old link_v
-    | PHI -> migrate_phi builder instr_old typemap
+    | OTHER ICmp -> migrate_icmp builder instr_old link_v
+    | OTHER PHI -> migrate_phi builder instr_old typemap
     | OTHER Select -> migrate_select builder instr_old typemap link_v
     | _ -> failwith "Unsupported instruction"
   in
@@ -883,7 +884,7 @@ let check_target_for_change_type target f =
   then false
   else if classify_value target = Argument then true
   else if
-    OpCls.opcls_of target = CMP
+    OpCls.opcls_of target = OTHER ICmp
     || fold_left_all_instr
          (fun accu i -> accu || OpCls.opcls_of i = UNSUPPORTED)
          false f
