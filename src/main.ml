@@ -39,10 +39,10 @@ let llfuzz_avg_dist llset () =
   in
   let end_time = AUtil.now () in
   L.info "fuzzing campaign ends@.";
-  L.info "total coverage: %d lines" (CD.PathSet.cardinal coverage);
+  L.info "total coverage: %d lines" (CD.Cov.cardinal coverage);
   L.info "time spent: %ds" (end_time - !AUtil.start_time);
 
-  F.printf "\ntotal coverage: %d lines@." (CD.PathSet.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (CD.Cov.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let llfuzz_min_dist llset () =
@@ -73,10 +73,10 @@ let llfuzz_min_dist llset () =
   in
   let end_time = AUtil.now () in
   L.info "fuzzing campaign ends@.";
-  L.info "total coverage: %d lines" (CD.PathSet.cardinal coverage);
+  L.info "total coverage: %d lines" (CD.Cov.cardinal coverage);
   L.info "time spent: %ds" (end_time - !AUtil.start_time);
 
-  F.printf "\ntotal coverage: %d lines@." (CD.PathSet.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (CD.Cov.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let llfuzz () =

@@ -6,15 +6,15 @@ module F = Format
 module L = Logger
 
 module Progress = struct
-  type t = { cov_sofar : CD.PathSet.t; gen_count : int }
+  type t = { cov_sofar : CD.Cov.t; gen_count : int }
 
-  let empty = { cov_sofar = CD.PathSet.empty; gen_count = 0 }
+  let empty = { cov_sofar = CD.Cov.empty; gen_count = 0 }
   let inc_gen p = { p with gen_count = p.gen_count + 1 }
-  let add_cov cov p = { p with cov_sofar = CD.PathSet.union p.cov_sofar cov }
+  let add_cov cov p = { p with cov_sofar = CD.Cov.union p.cov_sofar cov }
 
   let pp fmt progress =
     F.fprintf fmt "generated: %d, coverage: %d" progress.gen_count
-      (CD.PathSet.cardinal progress.cov_sofar)
+      (CD.Cov.cardinal progress.cov_sofar)
 end
 
 type res_t =
@@ -51,7 +51,7 @@ let record_timestamp cov =
   let now = AUtil.now () in
   if now - !AUtil.recent_time > !Config.log_time then (
     AUtil.recent_time := now;
-    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.PathSet.cardinal cov)
+    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Cov.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
 let check_mutant (module Metric : CD.METRIC) mutant target_path
@@ -61,7 +61,7 @@ let check_mutant (module Metric : CD.METRIC) mutant target_path
   | INVALID | CRASH -> Invalid
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
-        let covers = CD.PathSet.cover_target target_path cov_mutant in
+        let covers = CD.Cov.cover_target target_path cov_mutant in
         let score =
           match Metric.score target_path cov_mutant with
           | Infinity -> !Config.max_distance |> float_of_int

@@ -51,7 +51,7 @@ end = struct
          []
 end
 
-module PathSet = struct
+module Cov = struct
   include Set.Make (Path)
 
   let read file =
@@ -74,6 +74,6 @@ end
 type score_t = Real of float | Infinity
 
 module type METRIC = sig
-  val score : Path.t -> PathSet.t -> score_t
+  val score : Path.t -> Cov.t -> score_t
   val compare : score_t -> score_t -> int
 end

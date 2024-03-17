@@ -6,9 +6,9 @@ let print_score = function
 
 let _ =
   let target_path = CD.Path.parse "A:B:C:D" |> Option.get in
-  let cov = CD.PathSet.read Sys.argv.(1) in
+  let cov = CD.Cov.read Sys.argv.(1) in
   Coverage.Avg_dist.score target_path cov |> print_score;
   Coverage.Min_dist.score target_path cov |> print_score;
-  CD.PathSet.cover_target target_path cov |> Printf.printf "%b\n";
+  CD.Cov.cover_target target_path cov |> Printf.printf "%b\n";
 
   ()

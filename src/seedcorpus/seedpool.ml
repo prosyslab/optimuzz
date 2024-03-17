@@ -181,7 +181,7 @@ let make (module Cov : CD.METRIC) llctx =
                  match res with
                  | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID pathset ->
-                     let covers = CD.PathSet.cover_target target_path pathset in
+                     let covers = CD.Cov.cover_target target_path pathset in
                      let score = Cov.score target_path pathset in
                      let score =
                        match score with

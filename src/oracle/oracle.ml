@@ -70,7 +70,7 @@ let optimizer_passes =
 (** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
     The input can be a file or LLVM module. *)
 module Optimizer = struct
-  type res_t = VALID of CD.PathSet.t | (* TODO: clearify *) INVALID | CRASH
+  type res_t = VALID of CD.Cov.t | (* TODO: clearify *) INVALID | CRASH
 
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
@@ -83,7 +83,7 @@ module Optimizer = struct
       AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
     in
     try
-      let cov = CD.PathSet.read !Config.cov_file in
+      let cov = CD.Cov.read !Config.cov_file in
       if exit_state = 0 then VALID cov else CRASH
     with Sys_error _ ->
       (* cov.cov is not generated : the file did not trigger [passes] *)

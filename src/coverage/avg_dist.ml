@@ -14,7 +14,7 @@ end
 (* TODO: improve algorithm *)
 let score target_path cov =
   let distances : DistanceSet.t =
-    PathSet.fold
+    Cov.fold
       (fun path accu ->
         let ds = Path.distances path target_path |> List.to_seq in
         accu |> DistanceSet.add_seq ds)

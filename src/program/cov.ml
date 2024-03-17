@@ -16,15 +16,15 @@ let speclist =
     ("-metric", Arg.Set_string metric, "Metric to use (avg, min)");
   ]
 
-let measure_coverage (module Cov : CD.METRIC) input direct ~passes () =
+let measure_coverage (module Metric : CD.METRIC) input direct ~passes () =
   let res = Optimizer.run ~passes input in
   let target = CD.Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   match res with
   | Optimizer.VALID pathset -> (
-      F.printf "Total coverage: %d@." (CD.PathSet.cardinal pathset);
-      F.printf "Covers: %b@." (CD.PathSet.cover_target target pathset);
-      match Cov.score target pathset with
+      F.printf "Total coverage: %d@." (CD.Cov.cardinal pathset);
+      F.printf "Covers: %b@." (CD.Cov.cover_target target pathset);
+      match Metric.score target pathset with
       | Real score -> F.printf "Score: %f@." score
       | Infinity -> F.printf "Score: N/A@.")
   | _ -> ()
