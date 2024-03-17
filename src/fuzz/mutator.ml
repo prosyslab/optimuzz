@@ -341,7 +341,7 @@ let subst_operand_of_ternary instr =
 
 (** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
     another available one, randomly. *)
-let rec subst_rand_opd ?preferred_opd llctx llm =
+let subst_rand_opd llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
@@ -359,72 +359,31 @@ let rec subst_rand_opd ?preferred_opd llctx llm =
   in
   L.debug "instr: %s" (string_of_llvalue instr);
 
-  match preferred_opd with
-  | Some preferred_opd -> (
-      let preferred_ty = type_of preferred_opd in
-      let check_ty llv = type_of llv = preferred_ty in
-      match OpCls.opcls_of instr with
-      | (BINARY | CAST | CMP) when num_operands instr > 0 -> (
-          let left = operand instr 0 in
-          let right = operand instr 1 in
-          match num_operands instr with
-          | 1 ->
-              if check_ty left then (
-                set_operand instr 0 preferred_opd;
-                Some llm)
-              else subst_rand_opd llctx llm
-          | 2 -> (
-              (* try best to use the preferred operand *)
-              match (check_ty left, check_ty right) with
-              | false, false -> subst_rand_opd llctx llm
-              | false, true ->
-                  set_operand instr 1 preferred_opd;
-                  Some llm
-              | true, false ->
-                  set_operand instr 0 preferred_opd;
-                  Some llm
-              | true, true ->
-                  (* both are ok; replace random one into the preferred one *)
-                  let i = Random.int 2 in
-                  set_operand instr i preferred_opd;
-                  Some llm)
-          | _ -> None)
-      | _ -> None)
-  | None -> (
-      if instr |> instr_opcode |> OpCls.classify = CMP && Random.bool () then (
-        let old_cmp = icmp_predicate instr |> Option.get in
-        let rec rand_cond_code () =
-          let cmp = OpCls.random_cmp () in
-          if cmp = old_cmp then rand_cond_code () else cmp
-        in
-        let new_cmp = rand_cond_code () in
-        L.debug "new_cmp: %s" (string_of_icmp new_cmp);
-        new_cmp |> subst_cmp llctx instr |> ignore;
-        Some llm)
-      else
-        match num_operands instr with
-        | 1 -> (
-            match subst_operand_of_unary instr with
-            | Ok () -> Some llm
-            | Error _ -> None)
-        | 2 -> (
-            match susbt_operand_of_binary instr with
-            | Ok () -> Some llm
-            | Error _ -> None)
-        | 3 -> (
-            match subst_operand_of_ternary instr with
-            | Ok () -> Some llm
-            | Error _ -> None)
-        | _ -> None)
-
-(*
-      if num_operands > 0 then let i = Random.int num_operands in
-        let operand_old = operand instr i in
-        let* rand_opd = randget_operand instr operand_old in
-        let _ = set_operand instr i rand_opd in
-        Some llm
-      else None
-*)
+  if instr |> instr_opcode |> OpCls.classify = CMP && Random.bool () then (
+    let old_cmp = icmp_predicate instr |> Option.get in
+    let rec rand_cond_code () =
+      let cmp = OpCls.random_cmp () in
+      if cmp = old_cmp then rand_cond_code () else cmp
+    in
+    let new_cmp = rand_cond_code () in
+    L.debug "new_cmp: %s" (string_of_icmp new_cmp);
+    new_cmp |> subst_cmp llctx instr |> ignore;
+    Some llm)
+  else
+    match num_operands instr with
+    | 1 -> (
+        match subst_operand_of_unary instr with
+        | Ok () -> Some llm
+        | Error _ -> None)
+    | 2 -> (
+        match susbt_operand_of_binary instr with
+        | Ok () -> Some llm
+        | Error _ -> None)
+    | 3 -> (
+        match subst_operand_of_ternary instr with
+        | Ok () -> Some llm
+        | Error _ -> None)
+    | _ -> None
 
 (** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
@@ -458,19 +417,6 @@ let modify_flag _llctx llm =
         Some llm)
       else None
   | _ -> None
-
-(** [make_chain llctx len instr initial_opd] make chained mutation;
-    For example, if the original llvm was ... -> instr -> i1 -> ...,
-    calling this will make: ... -> (chain of length [len]) -> instr -> i1,
-    where an operand of instr will be replaced of the last mutation of chain.
-    Returns operand-substitued [instr]. *)
-(* let make_chain llctx len first_opd instr =
-   assert (len >= 2);
-   let create pref = create_rand_instr llctx pref instr in
-   let rec aux i accu =
-     if i = 1 then accu else aux (i - 1) (Some (create accu |> Option.get))
-   in
-   subst_rand_opd llctx (aux len first_opd) instr *)
 
 type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 
