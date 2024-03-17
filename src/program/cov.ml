@@ -16,7 +16,7 @@ let speclist =
     ("-metric", Arg.Set_string metric, "Metric to use (avg, min)");
   ]
 
-let measure_coverage (module Cov : CD.COVERAGE) input direct ~passes () =
+let measure_coverage (module Cov : CD.METRIC) input direct ~passes () =
   let res = Optimizer.run ~passes input in
   let target = CD.Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);

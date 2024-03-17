@@ -12,7 +12,7 @@ type t = seed_t AUtil.PrioQueue.queue
 
 val pp_seed : Format.formatter -> seed_t -> unit
 val name_seed : ?parent:seed_t -> seed_t -> string
-val make : (module Coverage.Domain.COVERAGE) -> ALlvm.llcontext -> t
+val make : (module Coverage.Domain.METRIC) -> ALlvm.llcontext -> t
 val get_prio : bool -> float -> int
 val pop : t -> seed_t * t
 val push : seed_t -> t -> t

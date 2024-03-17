@@ -73,7 +73,7 @@ end
 
 type score_t = Real of float | Infinity
 
-module type COVERAGE = sig
+module type METRIC = sig
   val score : Path.t -> PathSet.t -> score_t
   val compare : score_t -> score_t -> int
 end

@@ -130,7 +130,7 @@ let rec clean_llm llctx wide llm =
   with _ -> if wide then clean_llm llctx false llm else None
 
 (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-let make (module Cov : CD.COVERAGE) llctx =
+let make (module Cov : CD.METRIC) llctx =
   let module Opt = Oracle.Optimizer in
   let dir = !Config.seed_dir in
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in

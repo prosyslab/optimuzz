@@ -54,7 +54,7 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.PathSet.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let check_mutant (module Cov : CD.COVERAGE) mutant target_path
+let check_mutant (module Metric : CD.METRIC) mutant target_path
     (seed : SeedPool.seed_t) progress =
   let optim_res, valid_res = measure_optimizer_coverage mutant in
   match optim_res with
@@ -63,7 +63,7 @@ let check_mutant (module Cov : CD.COVERAGE) mutant target_path
       let new_seed : SeedPool.seed_t =
         let covers = CD.PathSet.cover_target target_path cov_mutant in
         let score =
-          match Cov.score target_path cov_mutant with
+          match Metric.score target_path cov_mutant with
           | Infinity -> !Config.max_distance |> float_of_int
           | Real score -> score
         in
@@ -86,7 +86,7 @@ let save_seed is_crash parent seed =
   else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
 
 (* each mutant is mutated [Config.num_mutation] times *)
-let mutate_seed (module Cov : CD.COVERAGE) llctx target_path llset
+let mutate_seed (module Metric : CD.METRIC) llctx target_path llset
     (seed : SeedPool.seed_t) progress limit =
   assert (seed.score > 0.0);
 
@@ -101,7 +101,7 @@ let mutate_seed (module Cov : CD.COVERAGE) llctx target_path llset
           (* duplicate seed *)
           None
       | None -> (
-          match check_mutant (module Cov) dst target_path src progress with
+          match check_mutant (module Metric) dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
@@ -124,10 +124,10 @@ let mutate_seed (module Cov : CD.COVERAGE) llctx target_path llset
 
 (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
-let rec run (module Cov : CD.COVERAGE) pool llctx llset progress =
+let rec run (module Metric : CD.METRIC) pool llctx llset progress =
   let seed, pool_popped = SeedPool.pop pool in
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  let mutator = mutate_seed (module Cov) llctx target_path llset in
+  let mutator = mutate_seed (module Metric) llctx target_path llset in
 
   pool
   |> SeedPool.iter (fun seed ->
@@ -162,4 +162,4 @@ let rec run (module Cov : CD.COVERAGE) pool llctx llset progress =
     && AUtil.now () - !AUtil.start_time > !Config.time_budget
   in
   if exhausted then progress.cov_sofar
-  else run (module Cov) new_pool llctx llset progress
+  else run (module Metric) new_pool llctx llset progress
