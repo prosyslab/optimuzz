@@ -18,6 +18,6 @@ let score target_path cov =
 let compare score1 score2 =
   match (score1, score2) with
   | None, None -> 0
-  | None, Some _ -> 1
-  | Some _, None -> -1
+  | None, _ -> -1
+  | _, None -> 1
   | Some s1, Some s2 -> compare s1 s2
