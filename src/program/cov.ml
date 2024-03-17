@@ -1,5 +1,6 @@
 open Oracle
 module F = Format
+module Path = Coverage.Path
 
 let input_file = ref ""
 let direct = ref ""
@@ -15,7 +16,7 @@ let speclist =
 
 let measure_coverage input direct ~passes () =
   let res = Optimizer.run ~passes input in
-  let target = CD.Path.parse direct |> Option.get in
+  let target = Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   match res with
   | Optimizer.VALID cov ->

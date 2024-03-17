@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain)
+ (modules path domain)
  (libraries unix util config))
