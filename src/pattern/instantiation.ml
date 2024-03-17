@@ -36,7 +36,7 @@ let run name pat : instance_t list =
           binop |> string_of_binop |> Util.ALlvm.opcode_of_string |> classify
         with
         | BINARY -> i32
-        | CMP -> i1
+        | OTHER ICmp -> i1
         | _ -> failwith "Not implemented")
     | _ -> failwith "Return is not a instruction"
   in
@@ -144,7 +144,7 @@ let run name pat : instance_t list =
                         build_binary opcode_llvm lhs rhs (builder_ur llm_binop)
                       in
                       (instr_new, llm_binop) :: accu
-                  | CMP ->
+                  | OTHER ICmp ->
                       Array.fold_left
                         (fun accu kind ->
                           let llm_cmp =
@@ -153,7 +153,7 @@ let run name pat : instance_t list =
                           let lhs = renew_llv lhs_name lhs_llv llm_cmp in
                           let rhs = renew_llv rhs_name rhs_llv llm_cmp in
                           let instr_new =
-                            build_cmp kind lhs rhs (builder_ur llm_cmp)
+                            build_icmp kind lhs rhs (builder_ur llm_cmp)
                           in
                           (instr_new, llm_cmp) :: accu)
                         accu icmp_kind

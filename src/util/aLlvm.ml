@@ -309,15 +309,12 @@ let replace_hard before after =
 (* OpcodeClass.t follows classification of LLVM language reference:
    https://llvm.org/docs/LangRef.html *)
 module OpcodeClass = struct
-  exception Improper_class
-
+  (* NEVER construct this type directly, use classify *)
   type t =
     | TER of Opcode.t
     | BINARY
     | MEM of Opcode.t
     | CAST
-    | CMP
-    | PHI
     | OTHER of Opcode.t
     | UNSUPPORTED
 
@@ -342,16 +339,13 @@ module OpcodeClass = struct
 
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
-  let cmp_arr = [| Opcode.ICmp |]
-  let phi_arr = [| Opcode.PHI |]
-  let other_arr = [| Opcode.Select |]
+  let other_arr = [| Opcode.ICmp; PHI; Select |]
 
   (* helper for cmp instruction *)
   let icmp_kind = [| Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle |]
 
   let total_arr =
-    Array.concat
-      [ ter_arr; binary_arr; mem_arr; cast_arr; cmp_arr; phi_arr; other_arr ]
+    Array.concat [ ter_arr; binary_arr; mem_arr; cast_arr; other_arr ]
 
   let classify opc =
     match opc with
@@ -361,9 +355,7 @@ module OpcodeClass = struct
         BINARY
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt -> CAST
-    | ICmp -> CMP
-    | PHI -> PHI
-    | Select -> OTHER opc
+    | ICmp | PHI | Select -> OTHER opc
     | _ -> UNSUPPORTED
 
   let opcls_of instr = instr |> instr_opcode |> classify
@@ -378,8 +370,8 @@ module OpcodeClass = struct
   let random_icmp () = AUtil.choose_arr icmp_kind
   let random_icmp_except opcode = AUtil.arr_random_except icmp_kind opcode
 
-  let build_binary opcode o0 o1 llb =
-    (match opcode with
+  let build_binary opc o0 o1 llb =
+    (match opc with
     | Opcode.Add -> build_add
     | Sub -> build_sub
     | Mul -> build_mul
@@ -393,26 +385,24 @@ module OpcodeClass = struct
     | And -> build_and
     | Or -> build_or
     | Xor -> build_xor
-    | _ -> raise Improper_class)
+    | _ -> invalid_arg (string_of_opcode opc ^ " is not a binary opcode."))
       o0 o1 "" llb
 
-  let build_cast opcode o ty llb =
-    (match opcode with
+  let build_cast opc o ty llb =
+    (match opc with
     | Opcode.Trunc -> build_trunc
     | ZExt -> build_zext
     | SExt -> build_sext
-    | _ -> raise Improper_class)
+    | _ -> invalid_arg (string_of_opcode opc ^ " is not a cast opcode."))
       o ty "" llb
 
-  let build_cmp icmp o0 o1 llb = build_icmp icmp o0 o1 "" llb
+  let build_icmp icmp o0 o1 llb = build_icmp icmp o0 o1 "" llb
 
   let string_of_opcls = function
     | TER opc -> Printf.sprintf "TER (%s)" (string_of_opcode opc)
     | BINARY -> "BINARY"
     | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
-    | CMP -> "CMP"
-    | PHI -> "PHI"
     | OTHER opc -> Printf.sprintf "OTHER (%s)" (string_of_opcode opc)
     | UNSUPPORTED -> "UNSUPPORTED"
 end
