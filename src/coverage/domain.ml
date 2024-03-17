@@ -1,22 +1,3 @@
-module DistanceSet = struct
-  include Set.Make (struct
-    type t = Path.t * int
-
-    let compare = compare
-  end)
-
-  let sum_cnt s =
-    (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
-end
-
-module DistanceSetMin = struct
-  include Set.Make (struct
-    type t = Path.t * int
-
-    let compare (_, d1) (_, d2) = compare d1 d2
-  end)
-end
-
 module Coverage : sig
   type t
 
