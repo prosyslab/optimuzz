@@ -7,8 +7,6 @@ type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
 
-let ( let* ) = Option.bind
-
 let pp_mode fmt m =
   match m with
   | EXPAND -> Format.fprintf fmt "EXPAND"
@@ -108,35 +106,19 @@ let subst_cmp llctx instr cond_code =
   replace_hard instr new_instr;
   new_instr
 
-(* HIGH-LEVEL MUTATION HELPERS *)
-
-(** [randget_operand llctx loc instr_old] gets, or generates
-    a llvalue as an operand, of type [instr_old], valid at [loc], if possible.
-    NOTE: if [instr_old] is an integer type, this will always return [Some(_)].
-      and if result is equal to [instr_old] pick one again.
-      *)
-let rec randget_operand loc instr_old =
-  let ty = type_of instr_old in
-  let candidates_value =
+let get_valid_llvs loc ty =
+  let candidates_instr =
     loc |> get_instrs_before ~wide:false |> list_filter_type ty
   in
   let candidates_const =
     match classify_type ty with
-    | TypeKind.Integer ->
-        List.fold_left
-          (fun candidates i -> const_int ty i :: candidates)
-          []
-          !Config.interesting_integers
+    | Integer -> List.map (const_int ty) !Config.interesting_integers
     | Vector ->
-        (* TODO: check this *)
-        List.fold_left
-          (fun candidates vec ->
-            let el_ty = element_type ty in
-            let vec_size = vector_size ty in
-            let llv_arr = Array.make vec_size (const_int el_ty vec) in
-            const_vector llv_arr :: candidates)
-          []
-          !Config.interesting_integers
+        let el_ty = element_type ty in
+        let vec_size = vector_size ty in
+        let mk_vec i = const_vector (Array.make vec_size (const_int el_ty i)) in
+        List.map mk_vec !Config.interesting_integers
+    | Pointer -> [ ty |> type_context |> pointer_type |> const_null ]
     | _ -> []
   in
   let candidates_param =
@@ -147,23 +129,42 @@ let rec randget_operand loc instr_old =
            if type_of param = ty then param :: candidates else candidates)
          []
   in
+  [ candidates_instr; candidates_const; candidates_param ]
 
-  let candidates =
-    if candidates_value <> [] then
-      match Random.int 3 with
-      | 0 -> candidates_value
-      | 1 -> candidates_const
-      | 2 -> candidates_param
-      | _ -> []
-    else if Random.bool () then candidates_const
-    else candidates_param
+let get_valid_nonconst_llvs_allty loc =
+  let instrs = loc |> get_instrs_before ~wide:false in
+  let params = loc |> get_function |> params |> Array.to_list in
+  List.rev_append params instrs
+
+let get_rand_const ty =
+  let v = AUtil.choose_random !Config.interesting_integers in
+  match classify_type ty with
+  | Integer -> const_int ty v
+  | Vector ->
+      const_vector (Array.make (vector_size ty) (const_int (element_type ty) v))
+  | Pointer -> const_null ty
+  | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
+
+(** [get_rand_opd llctx loc instr_old] gets, or generates
+        a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
+let get_rand_opd loc ty =
+  get_valid_llvs loc ty
+  |> List.filter (( <> ) [])
+  |> AUtil.choose_random
+  |> AUtil.choose_random
+
+(** [get_alternate loc instr_old] find an alternate value for [instr_old],
+    valid at [loc].
+    If result is equal to [instr_old], this will pick another one.
+    Return is wrapped by [Option] to represent impossible cases. *)
+let get_alternate loc llv_old =
+  let cands =
+    get_valid_llvs loc (type_of llv_old)
+    |> List.map (List.filter (( <> ) llv_old))
+    |> List.filter (( <> ) [])
   in
-
-  if candidates <> [] then
-    let res = AUtil.choose_random candidates in
-    if res = instr_old then randget_operand loc instr_old
-    else Some (AUtil.choose_random candidates)
-  else None
+  if cands = [] then None
+  else Some (cands |> AUtil.choose_random |> AUtil.choose_random)
 
 (** [create_rand_instr llctx llm] creates a random instruction. *)
 let create_rand_instr llctx llm =
@@ -176,7 +177,7 @@ let create_rand_instr llctx llm =
 
   let operand =
     if preds <> [] then AUtil.choose_random preds
-    else randget_operand loc loc |> Option.get
+    else (* TO-FIX: rebasing *) get_rand_opd loc (type_of loc)
   in
   L.debug "operand: %s" (string_of_llvalue operand);
   let operand_ty = type_of operand in
@@ -187,8 +188,7 @@ let create_rand_instr llctx llm =
   match OpCls.classify opcode with
   | BINARY when is_integer ->
       L.debug "create binary";
-      create_binary llctx loc opcode operand
-        (randget_operand loc operand |> Option.get)
+      create_binary llctx loc opcode operand (get_rand_opd loc operand_ty)
       |> ignore;
       Some llm
   | CAST when is_integer -> (
@@ -209,8 +209,7 @@ let create_rand_instr llctx llm =
   | CMP when is_integer ->
       L.debug "create cmp";
       let rand_cond = AUtil.choose_random OpCls.cmp_kind in
-      randget_operand loc operand
-      |> Option.get
+      get_rand_opd loc operand_ty
       |> create_cmp llctx loc rand_cond operand
       |> ignore;
       Some llm
