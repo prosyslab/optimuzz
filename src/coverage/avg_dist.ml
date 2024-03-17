@@ -21,14 +21,14 @@ let score target_path cov =
       cov DistanceSet.empty
   in
   let total, cnt = DistanceSet.sum_cnt distances in
-  if cnt = 0 then Infinity
+  if cnt = 0 then None
   else
     let avg = float_of_int total /. float_of_int cnt in
-    Real avg
+    Some avg
 
 let compare score1 score2 =
   match (score1, score2) with
-  | Infinity, Infinity -> 0
-  | Infinity, _ -> 1
-  | _, Infinity -> -1
-  | Real s1, Real s2 -> compare s1 s2
+  | None, None -> 0
+  | None, _ -> 1
+  | _, None -> -1
+  | Some s1, Some s2 -> -compare s1 s2

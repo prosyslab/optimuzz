@@ -3,6 +3,7 @@ module Path : sig
 
   val compare : t -> t -> int
   val parse : string -> t option
+  val equal_depth : t -> t -> int
   val distances : t -> t -> (t * int) list
 end = struct
   type t = string list
@@ -24,8 +25,8 @@ end = struct
   let length = List.length
 
   (* how many same nodes along the path from the root
-   * src : file1 ; func1 ; path1  ; path2  ; ...
-   dst : file2 ; func2 ; path1' ; path2' ; ... *)
+     src : file1 ; func1 ; path1  ; path2  ; ...
+     dst : file2 ; func2 ; path1' ; path2' ; ... *)
   let equal_depth src dst =
     let rec fold acc l1 l2 =
       match (l1, l2) with
@@ -71,7 +72,7 @@ module Cov = struct
   let cover_target = mem
 end
 
-type score_t = Real of float | Infinity
+type score_t = float option
 
 module type METRIC = sig
   val score : Path.t -> Cov.t -> score_t

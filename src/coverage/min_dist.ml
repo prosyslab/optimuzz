@@ -17,14 +17,14 @@ let score target_path cov =
         accu |> DistanceSetMin.add_seq ds)
       cov DistanceSetMin.empty
   in
-  if DistanceSetMin.is_empty distances then Infinity
+  if DistanceSetMin.is_empty distances then None
   else
     let _, min = DistanceSetMin.min_elt distances in
-    Real (float_of_int min)
+    Some (float_of_int min)
 
 let compare score1 score2 =
   match (score1, score2) with
-  | Infinity, Infinity -> 0
-  | Infinity, _ -> 1
-  | _, Infinity -> -1
-  | Real s1, Real s2 -> compare s1 s2
+  | None, None -> 0
+  | None, _ -> 1
+  | _, None -> -1
+  | Some s1, Some s2 -> -compare s1 s2

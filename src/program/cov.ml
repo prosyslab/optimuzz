@@ -25,8 +25,8 @@ let measure_coverage (module Metric : CD.METRIC) input direct ~passes () =
       F.printf "Total coverage: %d@." (CD.Cov.cardinal pathset);
       F.printf "Covers: %b@." (CD.Cov.cover_target target pathset);
       match Metric.score target pathset with
-      | Real score -> F.printf "Score: %f@." score
-      | Infinity -> F.printf "Score: N/A@.")
+      | Some score -> F.printf "Score: %f@." score
+      | None -> F.printf "Score: N/A@.")
   | _ -> ()
 
 let _ =

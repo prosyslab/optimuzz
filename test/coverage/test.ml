@@ -1,8 +1,8 @@
 module CD = Coverage.Domain
 
 let print_score = function
-  | CD.Infinity -> Printf.printf "None\n"
-  | CD.Real x -> Printf.printf "%f\n" x
+  | None -> Printf.printf "None\n"
+  | Some x -> Printf.printf "%f\n" x
 
 let _ =
   let target_path = CD.Path.parse "A:B:C:D" |> Option.get in

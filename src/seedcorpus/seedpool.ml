@@ -182,12 +182,12 @@ let make (module Cov : CD.METRIC) llctx =
                  | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID pathset ->
                      let covers = CD.Cov.cover_target target_path pathset in
-                     let score = Cov.score target_path pathset in
                      let score =
-                       match score with
-                       | Infinity -> !Config.max_distance |> float_of_int
-                       | Real x -> x
+                       Cov.score target_path pathset
+                       |> Option.value
+                            ~default:(!Config.max_distance |> float_of_int)
                      in
+
                      let seed =
                        { priority = get_prio covers score; llm; covers; score }
                      in

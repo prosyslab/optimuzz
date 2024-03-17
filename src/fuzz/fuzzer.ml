@@ -64,8 +64,8 @@ let check_mutant (module Metric : CD.METRIC) mutant target_path
         let covers = CD.Cov.cover_target target_path cov_mutant in
         let score =
           match Metric.score target_path cov_mutant with
-          | Infinity -> !Config.max_distance |> float_of_int
-          | Real score -> score
+          | None -> !Config.max_distance |> float_of_int
+          | Some score -> score
         in
         let priority = SeedPool.get_prio covers score in
         { priority; llm = mutant; covers; score }
