@@ -1,7 +1,6 @@
 open Util
 module CD = Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
-module OpCls = ALlvm.OpcodeClass
 module F = Format
 module L = Logger
 
