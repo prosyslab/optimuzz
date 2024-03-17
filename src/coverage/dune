@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain min_dist avg_dist)
+ (modules domain min_dist avg_dist dafl_score)
  (libraries unix util config))
