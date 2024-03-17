@@ -3,6 +3,18 @@ open Util
 open Domainslib
 module L = Logger
 
+let args = ref []
+let ntasks = ref 12
+let re = ref None
+
+let speclist =
+  [
+    ("-ntasks", Arg.Int (fun n -> ntasks := n), "the degree of parallelism");
+    ( "-re",
+      Arg.String (fun s -> re := Some (Str.regexp s)),
+      "regular expression to filter files" );
+  ]
+
 let collect_module_files ?predicate dir =
   let predicate = match predicate with Some f -> f | None -> fun _ -> true in
   Sys.readdir dir
@@ -24,6 +36,8 @@ let check_transformation llfile =
     "tmp" ^ Filename.dir_sep ^ filename_opt
   in
 
+  (* HACK: both min and avg has same implementation of [ cover_target ] *)
+  let module Optimizer = Optimizer (Coverage.Avg_dist) in
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (
@@ -33,18 +47,6 @@ let check_transformation llfile =
         | Correct | Failed | Errors -> true
         | Incorrect -> false
       with Unix.Unix_error _ -> true)
-
-let args = ref []
-let ntasks = ref 12
-let re = ref None
-
-let speclist =
-  [
-    ("-ntasks", Arg.Int (fun n -> ntasks := n), "the degree of parallelism");
-    ( "-re",
-      Arg.String (fun s -> re := Some (Str.regexp s)),
-      "regular expression to filter files" );
-  ]
 
 let bar ~total =
   let open Progress.Line in
