@@ -71,3 +71,4 @@ compile_flags.txt
 cov
 pattern-check
 result.sh
+run.sh
