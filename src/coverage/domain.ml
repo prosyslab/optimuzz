@@ -78,3 +78,8 @@ module type METRIC = sig
   val score : Path.t -> Cov.t -> score_t
   val compare : score_t -> score_t -> int
 end
+
+let pp_score fmt (score : score_t) =
+  match score with
+  | Some f -> Format.fprintf fmt "%f" f
+  | None -> Format.fprintf fmt "None"

@@ -6,27 +6,33 @@ type seed_t = {
   priority : int;
   llm : Llvm.llmodule;
   covers : bool;
-  score : float;
+  score : Coverage.Domain.score_t;
 }
 
 type t = seed_t AUtil.PrioQueue.queue
 
 let pp_seed fmt seed =
-  Format.fprintf fmt "score: %.3f, covers: %b" seed.score seed.covers
+  match seed.score with
+  | Some score -> Format.fprintf fmt "score: %.3f, covers: %b" score seed.covers
+  | None -> Format.fprintf fmt "score: None, covers: %b" seed.covers
 
-let name_seed ?(parent : seed_t option) (seed : seed_t) =
+let name_seed ?(parent : seed_t option) (seed : seed_t) : string =
   let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
   match parent with
   | None ->
-      Format.sprintf "id:%010d,score:%f,covers:%b.ll" hash seed.score
-        seed.covers
+      Format.asprintf "id:%010d,score:%a,covers:%b.ll" hash
+        Coverage.Domain.pp_score seed.score seed.covers
   | Some { llm = src; _ } ->
-      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" hash
+      Format.asprintf "id:%010d,src:%010d,score:%a,covers:%b.ll" hash
         (ALlvm.string_of_llmodule src |> Hashtbl.hash)
-        seed.score seed.covers
+        CD.pp_score seed.score seed.covers
 
 let get_prio covers score =
-  if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
+  if covers then 0
+  else
+    match score with
+    | Some score -> score |> Float.mul 10.0 |> Float.to_int
+    | None -> 100
 
 let push s pool = AUtil.PrioQueue.insert pool s.priority s
 let pop pool = AUtil.PrioQueue.extract pool
@@ -182,11 +188,7 @@ let make (module Cov : CD.METRIC) llctx =
                  | CRASH | INVALID -> (pool_first, other_seeds)
                  | VALID pathset ->
                      let covers = CD.Cov.cover_target target_path pathset in
-                     let score =
-                       Cov.score target_path pathset
-                       |> Option.value
-                            ~default:(!Config.max_distance |> float_of_int)
-                     in
+                     let score = Cov.score target_path pathset in
 
                      let seed =
                        { priority = get_prio covers score; llm; covers; score }

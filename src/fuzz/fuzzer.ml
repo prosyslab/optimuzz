@@ -62,17 +62,16 @@ let check_mutant (module Metric : CD.METRIC) mutant target_path
   | VALID cov_mutant ->
       let new_seed : SeedPool.seed_t =
         let covers = CD.Cov.cover_target target_path cov_mutant in
-        let score =
-          match Metric.score target_path cov_mutant with
-          | None -> !Config.max_distance |> float_of_int
-          | Some score -> score
-        in
+        let score = Metric.score target_path cov_mutant in
         let priority = SeedPool.get_prio covers score in
         { priority; llm = mutant; covers; score }
       in
-      L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
+      L.debug "mutant score: %a, covers: %b\n" CD.pp_score new_seed.score
+        new_seed.covers;
       let is_crash = valid_res = Oracle.Validator.Incorrect in
-      if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
+      if
+        new_seed.covers
+        || ((not seed.covers) && Metric.compare new_seed.score seed.score > 0)
       then
         let progress =
           progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
@@ -88,8 +87,6 @@ let save_seed is_crash parent seed =
 (* each mutant is mutated [Config.num_mutation] times *)
 let mutate_seed (module Metric : CD.METRIC) llctx target_path llset
     (seed : SeedPool.seed_t) progress limit =
-  assert (seed.score > 0.0);
-
   let rec traverse times (src : SeedPool.seed_t) progress =
     if times = 0 then (
       ALlvm.LLModuleSet.add llset src.llm ();

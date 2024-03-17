@@ -1014,8 +1014,10 @@ let rec mutate_inner_bb llctx mode llm score =
       llm
   | None -> mutate_inner_bb llctx mode llm score
 
+let to_mutation_score = function Some f -> int_of_float f | None -> 10
+
 (* TODO: add fuzzing configuration *)
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
   let mode = if seed.covers then FOCUS else EXPAND in
-  mutate_inner_bb llctx mode seed.llm (int_of_float seed.score)
+  mutate_inner_bb llctx mode seed.llm (to_mutation_score seed.score)
 (* |> mutate_CFG |> check_retval llctx *)

@@ -11,13 +11,9 @@ let score target_path cov =
       cov ScoreSet.empty
   in
 
-  ScoreSet.fold
-    (fun x accu -> match accu with None -> Some x | Some y -> Some (x +. y))
-    scores None
+  ScoreSet.fold (fun x accu -> accu +. x) scores 0.0 |> Option.some
 
 let compare score1 score2 =
   match (score1, score2) with
-  | None, None -> 0
-  | None, _ -> -1
-  | _, None -> 1
   | Some s1, Some s2 -> compare s1 s2
+  | _ -> failwith "unreachable: dafl only returns real scores"
