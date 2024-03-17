@@ -109,7 +109,9 @@ let subst_icmp llctx instr cond =
 
 let get_valid_llvs loc ty =
   let candidates_instr =
-    loc |> get_instrs_before ~wide:false |> list_filter_type ty
+    loc
+    |> get_instrs_before ~wide:false
+    |> List.filter (fun v -> type_of v <> ty)
   in
   let candidates_const =
     match classify_type ty with
@@ -167,106 +169,189 @@ let get_alternate loc llv_old =
   if cands = [] then None
   else Some (cands |> AUtil.choose_random |> AUtil.choose_random)
 
+let get_dst_tys opc ty_src =
+  assert (OpCls.classify opc = CAST);
+  let tycls_src = classify_type ty_src in
+  assert (tycls_src = Integer || tycls_src = Vector);
+
+  let tys_whole =
+    if tycls_src = Integer then !Config.interesting_integer_types
+    else
+      !Config.interesting_vector_types
+      |> List.filter (fun t -> vector_size t = vector_size ty_src)
+  in
+  let bw =
+    if tycls_src = Integer then integer_bitwidth
+    else fun t -> t |> element_type |> integer_bitwidth
+  in
+  let pred = if opc = Trunc then ( < ) else ( > ) in
+  List.filter (fun t -> pred (bw t) (bw ty_src)) tys_whole
+
+let create_rand_select llctx loc opd =
+  let builder = builder_before llctx loc in
+  let ty_opd = type_of opd in
+  let tycls_opd = classify_type ty_opd in
+  assert (tycls_opd = Integer || tycls_opd = Vector);
+
+  (* if opd is i1 or <n x i1>, it can be used as condition *)
+  let use_opd_as_cond =
+    AUtil.rand_bool ()
+    && ((tycls_opd = Integer && integer_bitwidth ty_opd = 1)
+       || (tycls_opd = Vector && integer_bitwidth (element_type ty_opd) = 1))
+  in
+
+  (* cond, t/f value must have same size (if vector) *)
+  let llvs_same_size =
+    loc
+    |> get_valid_nonconst_llvs_allty
+    |> List.filter (fun v ->
+           let ty_v = type_of v in
+           if tycls_opd = Integer then classify_type ty_v = Integer
+           else
+             classify_type ty_v = Vector
+             && vector_size ty_opd = vector_size ty_v)
+  in
+
+  let aux cands =
+    if cands = [] then get_rand_const ty_opd else AUtil.choose_random cands
+  in
+  if use_opd_as_cond then
+    let () = L.debug "create_rand_select: use the operand as cond" in
+    let tv = aux llvs_same_size in
+    let fv =
+      aux (List.filter (fun v -> type_of v = type_of tv) llvs_same_size)
+    in
+    build_select opd tv fv "" builder
+  else
+    let () = L.debug "create_rand_select: use the operand as term" in
+    let opd' = aux (List.filter (fun v -> type_of v = ty_opd) llvs_same_size) in
+    let ty_i1 =
+      if tycls_opd = Integer then i1_type llctx
+      else vector_type (i1_type llctx) (vector_size ty_opd)
+    in
+    let llvs_i1 = List.filter (fun v -> type_of v = ty_i1) llvs_same_size in
+    let cond =
+      if llvs_i1 = [] then get_rand_const ty_i1 else AUtil.choose_random llvs_i1
+    in
+    build_select cond opd opd' "" builder
+
 (** [create_rand_instr llctx llm] creates a random instruction. *)
 let create_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
-  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
 
-  (* there is block terminator, so this is safe *)
-  let loc =
-    all_instrs
+  (* 1. the location must not precede PHI nodes
+     2. the location must have at least one available non-const llv,
+        note that void instrs cannot be operands,
+        and we will not create MEM instrs *)
+  let not_void_or_ptr llv =
+    let tycls = llv |> type_of |> classify_type in
+    tycls <> Void && tycls <> Pointer
+  in
+  let cands_loc =
+    fold_left_all_instr (fun accu instr -> instr :: accu) [] f
     |> List.filter (fun i -> instr_opcode i <> PHI)
-    |> AUtil.choose_random
+    |> List.filter (fun i ->
+           i
+           |> get_valid_nonconst_llvs_allty
+           |> List.filter not_void_or_ptr
+           <> [])
   in
+  if cands_loc = [] then None
+  else
+    let loc = AUtil.choose_random cands_loc in
+    L.debug "location: %s" (string_of_llvalue loc);
 
-  let preds =
-    get_instrs_before ~wide:false loc
-    |> List.filter (fun i -> i |> type_of |> classify_type <> Void)
-  in
+    let opd =
+      loc
+      |> get_valid_nonconst_llvs_allty
+      |> List.filter not_void_or_ptr
+      |> AUtil.choose_random
+    in
+    L.debug "operand: %s" (string_of_llvalue opd);
+    let ty_opd = type_of opd in
+    let tycls_opd = classify_type ty_opd in
+    assert (tycls_opd = Integer || tycls_opd = Vector);
 
-  let operand =
-    if preds <> [] then AUtil.choose_random preds
-    else (* TO-FIX: rebasing *) get_rand_opd loc (type_of loc)
-  in
-  L.debug "operand: %s" (string_of_llvalue operand);
-  let operand_ty = type_of operand in
-  let is_not_ptr = classify_type operand_ty <> Pointer in
-  let is_integer = classify_type operand_ty = Integer in
+    let ty_dst_trunc = get_dst_tys Trunc ty_opd in
+    let ty_dst_ext = get_dst_tys ZExt ty_opd in
 
-  let opcode = OpCls.random_opcode () in
-  L.debug "opcode: %s" (string_of_opcode opcode);
-  match OpCls.classify opcode with
-  | BINARY when is_not_ptr ->
-      L.debug "create binary";
-      create_binary llctx loc opcode operand (get_rand_opd loc operand_ty)
-      |> ignore;
-      Some llm
-  | CAST when is_integer -> (
-      L.debug "create cast";
-      let pred ty =
-        match opcode with
-        | Trunc -> integer_bitwidth ty < integer_bitwidth operand_ty
-        | SExt | ZExt | _ -> integer_bitwidth ty > integer_bitwidth operand_ty
+    (* choose proper opcode *)
+    let opc =
+      let cands_opc = Opcode.ICmp :: Select :: Array.to_list OpCls.binary_arr in
+      let cands_opc =
+        if ty_dst_trunc = [] then cands_opc else Trunc :: cands_opc
       in
-      let candid_tys = List.filter pred !Config.interesting_integer_types in
-      match candid_tys with
-      | [] -> None
-      | tys ->
-          AUtil.choose_random tys
-          |> create_cast llctx loc opcode operand
-          |> ignore;
-          Some llm)
-  | OTHER ICmp when is_not_ptr ->
-      L.debug "create icmp";
-      let rand_cond = AUtil.choose_arr OpCls.icmp_kind in
-      get_rand_opd loc operand_ty
-      |> create_icmp llctx loc rand_cond operand
-      |> ignore;
-      Some llm
-  | OTHER Select ->
-      let cond = get_rand_opd loc (i1_type llctx) in
-      build_select cond operand
-        (get_rand_opd loc operand_ty)
-        "" (builder_before llctx loc)
-      |> ignore;
-      Some llm
-  | _ -> None
+      let cands_opc =
+        if ty_dst_ext = [] then cands_opc else ZExt :: SExt :: cands_opc
+      in
+      AUtil.choose_random cands_opc
+    in
+    L.debug "opcode: %s" (string_of_opcode opc);
+
+    (* create instruction by opcls *)
+    (match OpCls.classify opc with
+    | BINARY ->
+        let opd' = get_rand_opd loc ty_opd in
+        create_binary llctx loc opc opd opd'
+    | CAST ->
+        let ty_dst =
+          AUtil.choose_random (if opc = Trunc then ty_dst_trunc else ty_dst_ext)
+        in
+        create_cast llctx loc opc opd ty_dst
+    | OTHER ICmp ->
+        let cond = OpCls.random_icmp () in
+        let opd' = get_rand_opd loc ty_opd in
+        create_icmp llctx loc cond opd opd'
+    | OTHER Select -> create_rand_select llctx loc opd
+    | _ -> failwith "NEVER OCCUR")
+    |> ignore;
+    Some llm
 
 (** [subst_rand_instr llctx llm] substitutes a random instruction into another
-    random instruction of the same [OpCls.t], with the same operands.
-    Note: flags are not preserved. *)
+      random instruction of the same [OpCls.t], with the same operands.
+      Note: flags are not preserved. *)
 let subst_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr = AUtil.choose_random all_instrs in
-  let old_opcode = instr_opcode instr in
-  match OpCls.classify old_opcode with
-  | BINARY when is_noncommutative_binary instr ->
-      if Random.bool () then (
-        binary_exchange_operands llctx instr |> ignore;
-        Some llm)
-      else
-        let new_opcode = OpCls.random_binary_except old_opcode in
-        subst_binary llctx instr new_opcode |> ignore;
+
+  (* choose target instruction, possible opcls are:
+     BINARY, CAST(Ext), OTHER(ICmp) *)
+  let is_tgt i =
+    match OpCls.opcls_of i with
+    | BINARY -> true
+    | CAST -> instr_opcode i <> Trunc
+    | OTHER ICmp -> true
+    | _ -> false
+  in
+  let cands_instr = List.filter is_tgt all_instrs in
+
+  if cands_instr = [] then None
+  else
+    let instr = AUtil.choose_random cands_instr in
+    let opc_old = instr_opcode instr in
+    match OpCls.classify opc_old with
+    | BINARY ->
+        let opc_new = OpCls.random_binary_except opc_old in
+        subst_binary llctx instr opc_new |> ignore;
         Some llm
-  | BINARY ->
-      let new_opcode = OpCls.random_binary_except old_opcode in
-      subst_binary llctx instr new_opcode |> ignore;
-      Some llm
-  | CAST ->
-      subst_cast llctx instr |> ignore;
-      Some llm
-  | OTHER ICmp -> None
-  | _ -> None
+    | CAST ->
+        subst_cast llctx instr |> ignore;
+        Some llm
+    | OTHER ICmp ->
+        let pred_old = icmp_predicate instr |> Option.get in
+        let pred_new = OpCls.random_icmp_except pred_old in
+        subst_icmp llctx instr pred_new |> ignore;
+        Some llm
+    | _ -> failwith "NEVER OCCUR"
 
 let subst_operand_of_index ?(include_const = false) instr idx =
   let old_operand = operand instr idx in
   let candidates =
     let prior_instrs =
       get_instrs_before ~wide:true instr
-      |> list_filter_type (type_of old_operand)
+      |> List.filter (fun v -> type_of v <> type_of old_operand)
     in
     let params =
       get_function instr

@@ -277,10 +277,6 @@ let get_instrs_before ~wide i =
   in
   aux [] (instr_pred i)
 
-(** [list_filter_type ty vl] returns
-    a filtered version of [vl]; only llvalues with type [ty] remains. *)
-let list_filter_type ty vl = List.filter (fun v -> type_of v = ty) vl
-
 (** [get_blocks_after bb] returns
     a list of all blocks after [bb] in its parent function. *)
 let get_blocks_after bb =
