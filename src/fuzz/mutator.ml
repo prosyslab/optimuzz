@@ -107,11 +107,26 @@ let subst_icmp llctx instr cond =
   replace_hard instr new_instr;
   new_instr
 
-let get_valid_llvs loc ty =
+type opd_cands_t = {
+  instr : llvalue list;
+  param : llvalue list;
+  const : llvalue list;
+}
+
+let get_rand_const ty =
+  let v = AUtil.choose_random !Config.interesting_integers in
+  match classify_type ty with
+  | Integer -> const_int ty v
+  | Vector ->
+      const_vector (Array.make (vector_size ty) (const_int (element_type ty) v))
+  | Pointer -> const_null ty
+  | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
+
+let get_opd_cands loc ty =
   let candidates_instr =
     loc
     |> get_instrs_before ~wide:false
-    |> List.filter (fun v -> type_of v <> ty)
+    |> List.filter (fun v -> type_of v = ty)
   in
   let candidates_const =
     match classify_type ty with
@@ -132,42 +147,39 @@ let get_valid_llvs loc ty =
            if type_of param = ty then param :: candidates else candidates)
          []
   in
-  [ candidates_instr; candidates_const; candidates_param ]
+  {
+    instr = candidates_instr;
+    const = candidates_const;
+    param = candidates_param;
+  }
 
-let get_valid_nonconst_llvs_allty loc =
+let get_opd_cands_nonconst_allty loc =
   let instrs = loc |> get_instrs_before ~wide:false in
   let params = loc |> get_function |> params |> Array.to_list in
   List.rev_append params instrs
 
-let get_rand_const ty =
-  let v = AUtil.choose_random !Config.interesting_integers in
-  match classify_type ty with
-  | Integer -> const_int ty v
-  | Vector ->
-      const_vector (Array.make (vector_size ty) (const_int (element_type ty) v))
-  | Pointer -> const_null ty
-  | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
-
 (** [get_rand_opd llctx loc instr_old] gets, or generates
-        a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
+    a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
 let get_rand_opd loc ty =
-  get_valid_llvs loc ty
+  let opd_cands = get_opd_cands loc ty in
+  [ opd_cands.instr; opd_cands.param; opd_cands.const ]
   |> List.filter (( <> ) [])
-  |> AUtil.choose_random
+  |> AUtil.choose_random (* at least constant is not empty *)
   |> AUtil.choose_random
 
 (** [get_alternate loc instr_old] find an alternate value for [instr_old],
     valid at [loc].
     If result is equal to [instr_old], this will pick another one.
     Return is wrapped by [Option] to represent impossible cases. *)
-let get_alternate loc llv_old =
-  let cands =
-    get_valid_llvs loc (type_of llv_old)
-    |> List.map (List.filter (( <> ) llv_old))
-    |> List.filter (( <> ) [])
+let get_alternate loc ?(include_const = false) llv_old =
+  let opd_cands = get_opd_cands loc (type_of llv_old) in
+  let cands = [ opd_cands.instr; opd_cands.param ] in
+  let cands = if include_const then opd_cands.const :: cands else cands in
+  let cands_diff =
+    cands |> List.map (List.filter (( <> ) llv_old)) |> List.filter (( <> ) [])
   in
-  if cands = [] then None
-  else Some (cands |> AUtil.choose_random |> AUtil.choose_random)
+  if cands_diff = [] then None
+  else Some (cands_diff |> AUtil.choose_random |> AUtil.choose_random)
 
 let get_dst_tys opc ty_src =
   assert (OpCls.classify opc = CAST);
@@ -203,7 +215,7 @@ let create_rand_select llctx loc opd =
   (* cond, t/f value must have same size (if vector) *)
   let llvs_same_size =
     loc
-    |> get_valid_nonconst_llvs_allty
+    |> get_opd_cands_nonconst_allty
     |> List.filter (fun v ->
            let ty_v = type_of v in
            if tycls_opd = Integer then classify_type ty_v = Integer
@@ -253,7 +265,7 @@ let create_rand_instr llctx llm =
     |> List.filter (fun i -> instr_opcode i <> PHI)
     |> List.filter (fun i ->
            i
-           |> get_valid_nonconst_llvs_allty
+           |> get_opd_cands_nonconst_allty
            |> List.filter not_void_or_ptr
            <> [])
   in
@@ -264,7 +276,7 @@ let create_rand_instr llctx llm =
 
     let opd =
       loc
-      |> get_valid_nonconst_llvs_allty
+      |> get_opd_cands_nonconst_allty
       |> List.filter not_void_or_ptr
       |> AUtil.choose_random
     in
@@ -347,48 +359,16 @@ let subst_rand_instr llctx llm =
     | _ -> failwith "NEVER OCCUR"
 
 let subst_operand_of_index ?(include_const = false) instr idx =
-  let old_operand = operand instr idx in
-  let candidates =
-    let prior_instrs =
-      get_instrs_before ~wide:true instr
-      |> List.filter (fun v -> type_of v <> type_of old_operand)
-    in
-    let params =
-      get_function instr
-      |> fold_left_params
-           (fun accu p ->
-             if type_of p = type_of old_operand then p :: accu else accu)
-           []
-    in
-    let consts =
-      if include_const then
-        match classify_type (type_of old_operand) with
-        | TypeKind.Integer ->
-            List.fold_left
-              (fun accu i -> const_int (type_of old_operand) i :: accu)
-              []
-              !Config.interesting_integers
-        | Vector ->
-            List.fold_left
-              (fun accu vec ->
-                let el_ty = element_type (type_of old_operand) in
-                let vec_size = vector_size (type_of old_operand) in
-                let llv_arr = Array.make vec_size (const_int el_ty vec) in
-                const_vector llv_arr :: accu)
-              []
-              !Config.interesting_integers
-        | _ -> []
-      else []
-    in
-
-    prior_instrs @ params @ consts
-  in
-
-  if candidates = [] then Error "No non-constant candidats"
-  else
-    let new_operand = AUtil.choose_random candidates in
-    let _ = set_operand instr idx new_operand in
-    Ok ()
+  let opd_old = operand instr idx in
+  L.debug "opd_old: %s" (string_of_llvalue opd_old);
+  L.debug "include_const: %s" (string_of_bool include_const);
+  match get_alternate instr ~include_const opd_old with
+  | None ->
+      L.debug "No alternate exists for opd_old";
+      Error "No non-constant candidates"
+  | Some opd_new ->
+      L.debug "opd_new: %s" (string_of_llvalue opd_new);
+      Ok (set_operand instr idx opd_new)
 
 type const_t = Const | Instr
 
@@ -455,16 +435,14 @@ let subst_rand_opd llctx llm =
   L.debug "instr: %s" (string_of_llvalue instr);
 
   if instr_opcode instr = ICmp && Random.bool () then (
-    let old_cmp = icmp_predicate instr |> Option.get in
-    let rec rand_cond_code () =
-      let cmp = OpCls.random_icmp () in
-      if cmp = old_cmp then rand_cond_code () else cmp
-    in
-    let new_cmp = rand_cond_code () in
-    L.debug "new_cmp: %s" (string_of_icmp new_cmp);
-    new_cmp |> subst_icmp llctx instr |> ignore;
+    (* change icmp cond *)
+    let pred_old = icmp_predicate instr |> Option.get in
+    let pred_new = OpCls.random_icmp_except pred_old in
+    L.debug "pred_new: %s" (string_of_icmp pred_new);
+    pred_new |> subst_icmp llctx instr |> ignore;
     Some llm)
   else
+    (* change operands, applicating set_operand *)
     match num_operands instr with
     | 1 -> (
         match subst_operand_of_unary instr with
@@ -1102,6 +1080,7 @@ let cut_below llctx llm =
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
   L.info "mutation(%a): %a" pp_mode mode pp_mutation mutation;
+  L.debug "before:\n%s" (string_of_llmodule llm);
   let mutation_result =
     match mutation with
     | CREATE ->
