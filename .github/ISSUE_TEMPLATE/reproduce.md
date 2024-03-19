@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-issue url: https://github.com/llvm/llvm-project/issues/70470
+issue url: 
 
 Fix:
 
