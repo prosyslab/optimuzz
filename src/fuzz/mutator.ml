@@ -1080,7 +1080,7 @@ let cut_below llctx llm =
 let rec mutate_inner_bb llctx mode llm score =
   let mutation = choose_mutation mode score in
   L.info "mutation(%a): %a" pp_mode mode pp_mutation mutation;
-  L.debug "before:\n%s" (string_of_llmodule llm);
+  (* L.debug "before:\n%s" (string_of_llmodule llm); *)
   let mutation_result =
     match mutation with
     | CREATE ->
@@ -1096,7 +1096,9 @@ let rec mutate_inner_bb llctx mode llm score =
   | Some llm ->
       L.debug "mutant: %s" (string_of_llmodule llm);
       llm
-  | None -> mutate_inner_bb llctx mode llm score
+  | None ->
+      L.debug "None";
+      mutate_inner_bb llctx mode llm score
 
 let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
   let mode = if seed.covers then FOCUS else EXPAND in
