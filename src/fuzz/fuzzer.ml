@@ -91,7 +91,7 @@ let save_seed is_crash parent seed =
 (* each mutant is mutated [Config.num_mutation] times *)
 let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     =
-  assert (seed.score > 0.0);
+  assert (if not @@ seed.covers then seed.score > 0.0 else true);
 
   let rec traverse times (src : SeedPool.seed_t) progress =
     if times = 0 then (
