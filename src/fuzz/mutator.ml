@@ -358,105 +358,49 @@ let subst_rand_instr llctx llm =
         Some llm
     | _ -> failwith "NEVER OCCUR"
 
-let subst_operand_of_index ?(include_const = false) instr idx =
-  let opd_old = operand instr idx in
-  L.debug "opd_old: %s" (string_of_llvalue opd_old);
-  L.debug "include_const: %s" (string_of_bool include_const);
-  match get_alternate instr ~include_const opd_old with
-  | None ->
-      L.debug "No alternate exists for opd_old";
-      Error "No non-constant candidates"
-  | Some opd_new ->
-      L.debug "opd_new: %s" (string_of_llvalue opd_new);
-      Ok (set_operand instr idx opd_new)
+let count_const_opds instr =
+  let rec loop accu i =
+    if i >= num_operands instr then accu
+    else loop (accu + if is_constant (operand instr i) then 1 else 0) (i + 1)
+  in
+  loop 0 0
 
-type const_t = Const | Instr
+let invest_opd_alts instr =
+  let num_opds = num_operands instr in
+  let cnt = count_const_opds instr in
+  assert (num_opds = 0 || cnt < num_opds);
+  let can_be_const opd = if cnt + 1 = num_opds then is_constant opd else true in
 
-let is_const instr = if is_constant instr then Const else Instr
-
-(** this function does not choose an operand so that the target instruction
- *  does not turn into a constant *)
-let subst_operand_of_unary instr = subst_operand_of_index instr 0
-
-let susbt_operand_of_binary instr =
-  let left = operand instr 0 in
-  let right = operand instr 1 in
-  match (is_const left, is_const right) with
-  | Const, Const -> Error "Both operands are constants, which is impossible"
-  | Const, _ -> subst_operand_of_index instr 0
-  | _, Const -> subst_operand_of_index instr 1
-  | _ -> subst_operand_of_index ~include_const:true instr (Random.int 2)
-
-let subst_operand_of_ternary instr =
-  let left = operand instr 0 in
-  let middle = operand instr 1 in
-  let right = operand instr 2 in
-  match (is_const left, is_const middle, is_const right) with
-  | Const, Const, Const ->
-      Error "All operands are constants, which is impossible"
-  | Const, Const, _ -> (
-      match Random.int 3 with
-      | (0 | 1) as idx -> subst_operand_of_index ~include_const:true instr idx
-      | 2 -> subst_operand_of_index instr 2
-      | _ -> failwith "unreachable")
-  | Const, _, Const -> (
-      match Random.int 3 with
-      | (0 | 2) as idx -> subst_operand_of_index ~include_const:true instr idx
-      | 1 -> subst_operand_of_index instr 1
-      | _ -> failwith "unreachable")
-  | _, Const, Const -> (
-      match Random.int 3 with
-      | (1 | 2) as idx -> subst_operand_of_index ~include_const:true instr idx
-      | 0 -> subst_operand_of_index instr 0
-      | _ -> failwith "unreachable")
-  | _ -> subst_operand_of_index ~include_const:true instr (Random.int 3)
+  let rec loop accu i =
+    if i >= num_opds then accu
+    else
+      let opd = operand instr i in
+      match get_alternate instr ~include_const:(can_be_const opd) opd with
+      | None -> loop accu (i + 1)
+      | Some alt -> loop ((i, alt) :: accu) (i + 1)
+  in
+  loop [] 0
 
 (** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
     another available one, randomly. *)
-let subst_rand_opd llctx llm =
+let subst_rand_opd _llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr =
-    (* choose target instruction, avoiding terminators by best-effort *)
-    let rec choose_target times =
-      if times = 0 then AUtil.choose_random all_instrs
-      else
-        let candidate = AUtil.choose_random all_instrs in
-        if
-          match candidate |> instr_opcode |> OpCls.classify with
-          | TER _ -> true
-          | _ -> false
-        then choose_target (times - 1)
-        else candidate
-    in
-    choose_target 4
-  in
-  L.debug "instr: %s" (string_of_llvalue instr);
 
-  if instr_opcode instr = ICmp && Random.bool () then (
-    (* change icmp cond *)
-    let pred_old = icmp_predicate instr |> Option.get in
-    let pred_new = OpCls.random_icmp_except pred_old in
-    L.debug "pred_new: %s" (string_of_icmp pred_new);
-    pred_new |> subst_icmp llctx instr |> ignore;
-    Some llm)
+  let cands =
+    all_instrs
+    |> List.map (fun instr -> (instr, invest_opd_alts instr))
+    |> List.filter (fun (_, alts) -> alts <> [])
+  in
+  if cands = [] then None
   else
-    (* change operands, applicating set_operand *)
-    match num_operands instr with
-    | 1 -> (
-        match subst_operand_of_unary instr with
-        | Ok () -> Some llm
-        | Error _ -> None)
-    | 2 -> (
-        match susbt_operand_of_binary instr with
-        | Ok () -> Some llm
-        | Error _ -> None)
-    | 3 -> (
-        match subst_operand_of_ternary instr with
-        | Ok () -> Some llm
-        | Error _ -> None)
-    | _ -> None
+    let instr, alts = AUtil.choose_random cands in
+    let alt = AUtil.choose_random alts in
+    L.debug "instr: %s" (string_of_llvalue instr);
+    L.debug "substitute %d to %s" (fst alt) (string_of_llvalue (snd alt));
+    set_operand instr (fst alt) (snd alt);
+    Some llm
 
 let edit_overflow instr =
   let open Flag in
