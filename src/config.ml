@@ -84,6 +84,7 @@ let opts =
     ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
+    ("-tv-bin", Arg.Set_string alive_tv_bin, "Path to alive-tv executable");
     (* fuzzing options *)
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
