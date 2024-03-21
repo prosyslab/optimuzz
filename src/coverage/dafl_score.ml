@@ -11,7 +11,8 @@ let score target_path cov =
       cov ScoreSet.empty
   in
 
-  ScoreSet.fold (fun x accu -> accu +. x) scores 0.0 |> Option.some
+  if ScoreSet.is_empty scores then Some 0.0
+  else ScoreSet.max_elt scores |> Option.some
 
 let compare score1 score2 =
   match (score1, score2) with

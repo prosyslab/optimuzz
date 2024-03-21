@@ -5,6 +5,7 @@ module Path : sig
   val parse : string -> t option
   val equal_depth : t -> t -> int
   val distances : t -> t -> (t * int) list
+  val pp : Format.formatter -> t -> unit
 end = struct
   type t = string list
   (** represents a line in the coverage file *)
@@ -50,6 +51,8 @@ end = struct
     |> List.fold_left (* [ (A, n1); (A :: B, n2); (A :: B :: C; n3) ] *)
          (fun accu p -> (p, distance p dst) :: accu)
          []
+
+  let pp fmt t = Format.fprintf fmt "%s" (String.concat " ; " t)
 end
 
 module Cov = struct
