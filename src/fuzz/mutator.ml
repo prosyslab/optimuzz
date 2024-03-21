@@ -368,7 +368,8 @@ let count_const_opds instr =
 let invest_opd_alts instr =
   let num_opds = num_operands instr in
   let cnt = count_const_opds instr in
-  assert (num_opds = 0 || cnt < num_opds);
+  (* TODO: below assertion is broken due to alloca.
+     assert (num_opds = 0 || cnt < num_opds); *)
   let can_be_const opd = if cnt + 1 = num_opds then is_constant opd else true in
 
   let rec loop accu i =
