@@ -206,6 +206,43 @@ let get_dst_tys opc ty_src =
   let pred = if opc = Trunc then ( < ) else ( > ) in
   List.filter (fun t -> pred (bw t) (bw ty_src)) tys_whole
 
+let create_rand_extractelement llctx loc opd =
+  let builder = builder_before llctx loc in
+  let ty_opd = type_of opd in
+  let tycls_opd = classify_type ty_opd in
+  assert (tycls_opd = Integer || tycls_opd = Vector);
+
+  if tycls_opd = Integer then (
+    (* %0 = extractelement %VEC, %opd *)
+    let cands =
+      get_opd_cands_nonconst_allty loc
+      |> Candidates.with_const
+           [
+             get_rand_const
+               (AUtil.choose_random !Config.interesting_vector_types);
+           ]
+      |> Candidates.filter_each (fun v ->
+             v |> type_of |> classify_type = Vector)
+    in
+    assert (not (Candidates.is_empty cands));
+    let vec = Candidates.choose cands in
+    build_extractelement vec opd "" builder)
+  else
+    (* %0 = extractelement %opd, %INT *)
+    let cands =
+      get_opd_cands_nonconst_allty loc
+      |> Candidates.with_const
+           [
+             get_rand_const
+               (AUtil.choose_random !Config.interesting_integer_types);
+           ]
+      |> Candidates.filter_each (fun v ->
+             v |> type_of |> classify_type = Integer)
+    in
+    assert (not (Candidates.is_empty cands));
+    let idx = Candidates.choose cands in
+    build_extractelement opd idx "" builder
+
 let create_rand_select llctx loc opd =
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
@@ -909,13 +946,14 @@ let check_target_for_change_type target f =
     || target |> type_of |> classify_type = Pointer
   then false
   else if classify_value target = Argument then true
-  else if
-    OpCls.opcls_of target = OTHER ICmp
-    || fold_left_all_instr
-         (fun accu i -> accu || OpCls.opcls_of i = UNSUPPORTED)
-         false f
-  then false
-  else true
+  else if OpCls.opcls_of target = OTHER ICmp then false
+  else
+    fold_left_all_instr
+      (fun accu i ->
+        accu
+        &&
+        match OpCls.opcls_of i with VEC _ | UNSUPPORTED -> false | _ -> true)
+      true f
 
 (** [change_type llctx llm] changes type of a random instruction.
     All the other associated values are recursively changed. *)
