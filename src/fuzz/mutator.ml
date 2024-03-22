@@ -1040,6 +1040,8 @@ let rec mutate_inner_bb llctx mode llm score =
   match mutation_result with
   | Some llm ->
       L.debug "mutant: %s" (string_of_llmodule llm);
+      let f = choose_function llm in
+      reset_var_names f;
       llm
   | None ->
       L.debug "None";
