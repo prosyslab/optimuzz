@@ -107,11 +107,30 @@ let subst_icmp llctx instr cond =
   replace_hard instr new_instr;
   new_instr
 
-type opd_cands_t = {
-  instr : llvalue list;
-  param : llvalue list;
-  const : llvalue list;
-}
+module Candidates = struct
+  type t = { instr : llvalue list; param : llvalue list; const : llvalue list }
+
+  let is_empty cands = cands.instr = [] && cands.param = [] && cands.const = []
+  let no_const cands = { cands with const = [] }
+  let with_const const cands = { cands with const }
+
+  let filter_each pred cands =
+    let filter = List.filter pred in
+    {
+      instr = filter cands.instr;
+      param = filter cands.param;
+      const = filter cands.const;
+    }
+
+  let flatten cands =
+    cands.instr |> List.rev_append cands.param |> List.rev_append cands.const
+
+  let choose cands =
+    assert (not (is_empty cands));
+    List.filter (( <> ) []) [ cands.const; cands.param; cands.instr ]
+    |> AUtil.choose_random
+    |> AUtil.choose_random
+end
 
 let get_rand_const ty =
   let v = AUtil.choose_random !Config.interesting_integers in
@@ -122,13 +141,13 @@ let get_rand_const ty =
   | Pointer -> const_null ty
   | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
 
-let get_opd_cands loc ty =
-  let candidates_instr =
+let get_opd_cands loc ty : Candidates.t =
+  let cands_instr =
     loc
     |> get_instrs_before ~wide:false
     |> List.filter (fun v -> type_of v = ty)
   in
-  let candidates_const =
+  let cands_const =
     match classify_type ty with
     | Integer -> List.map (const_int ty) !Config.interesting_integers
     | Vector ->
@@ -139,47 +158,35 @@ let get_opd_cands loc ty =
     | Pointer -> [ ty |> type_context |> pointer_type |> const_null ]
     | _ -> []
   in
-  let candidates_param =
+  let cands_param =
     loc
     |> get_function
     |> fold_left_params
-         (fun candidates param ->
-           if type_of param = ty then param :: candidates else candidates)
+         (fun accu param -> if type_of param = ty then param :: accu else accu)
          []
   in
-  {
-    instr = candidates_instr;
-    const = candidates_const;
-    param = candidates_param;
-  }
+  { instr = cands_instr; const = cands_const; param = cands_param }
 
-let get_opd_cands_nonconst_allty loc =
+let get_opd_cands_nonconst_allty loc : Candidates.t =
   let instrs = loc |> get_instrs_before ~wide:false in
   let params = loc |> get_function |> params |> Array.to_list in
-  List.rev_append params instrs
+  { instr = instrs; param = params; const = [] }
 
 (** [get_rand_opd llctx loc instr_old] gets, or generates
     a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
-let get_rand_opd loc ty =
-  let opd_cands = get_opd_cands loc ty in
-  [ opd_cands.instr; opd_cands.param; opd_cands.const ]
-  |> List.filter (( <> ) [])
-  |> AUtil.choose_random (* at least constant is not empty *)
-  |> AUtil.choose_random
+let get_rand_opd loc ty = Candidates.choose (get_opd_cands loc ty)
 
 (** [get_alternate loc instr_old] find an alternate value for [instr_old],
     valid at [loc].
     If result is equal to [instr_old], this will pick another one.
     Return is wrapped by [Option] to represent impossible cases. *)
 let get_alternate loc ?(include_const = false) llv_old =
-  let opd_cands = get_opd_cands loc (type_of llv_old) in
-  let cands = [ opd_cands.instr; opd_cands.param ] in
-  let cands = if include_const then opd_cands.const :: cands else cands in
-  let cands_diff =
-    cands |> List.map (List.filter (( <> ) llv_old)) |> List.filter (( <> ) [])
+  let cands =
+    get_opd_cands loc (type_of llv_old)
+    |> (if include_const then Fun.id else Candidates.no_const)
+    |> Candidates.filter_each (( <> ) llv_old)
   in
-  if cands_diff = [] then None
-  else Some (cands_diff |> AUtil.choose_random |> AUtil.choose_random)
+  if Candidates.is_empty cands then None else Some (Candidates.choose cands)
 
 let get_dst_tys opc ty_src =
   assert (OpCls.classify opc = CAST);
@@ -216,6 +223,7 @@ let create_rand_select llctx loc opd =
   let llvs_same_size =
     loc
     |> get_opd_cands_nonconst_allty
+    |> Candidates.flatten
     |> List.filter (fun v ->
            let ty_v = type_of v in
            if tycls_opd = Integer then classify_type ty_v = Integer
@@ -260,26 +268,21 @@ let create_rand_instr llctx llm =
     let tycls = llv |> type_of |> classify_type in
     tycls <> Void && tycls <> Pointer
   in
-  let cands_loc =
+  let cands =
     fold_left_all_instr (fun accu instr -> instr :: accu) [] f
     |> List.filter (fun i -> instr_opcode i <> PHI)
-    |> List.filter (fun i ->
-           i
-           |> get_opd_cands_nonconst_allty
-           |> List.filter not_void_or_ptr
-           <> [])
+    |> List.map (fun i ->
+           ( i,
+             i
+             |> get_opd_cands_nonconst_allty
+             |> Candidates.filter_each not_void_or_ptr ))
+    |> List.filter (fun (_, c) -> not (Candidates.is_empty c))
   in
-  if cands_loc = [] then None
+  if cands = [] then None
   else
-    let loc = AUtil.choose_random cands_loc in
+    let loc, cands_opd = AUtil.choose_random cands in
     L.debug "location: %s" (string_of_llvalue loc);
-
-    let opd =
-      loc
-      |> get_opd_cands_nonconst_allty
-      |> List.filter not_void_or_ptr
-      |> AUtil.choose_random
-    in
+    let opd = Candidates.choose cands_opd in
     L.debug "operand: %s" (string_of_llvalue opd);
     let ty_opd = type_of opd in
     let tycls_opd = classify_type ty_opd in
@@ -290,7 +293,9 @@ let create_rand_instr llctx llm =
 
     (* choose proper opcode *)
     let opc =
-      let cands_opc = Opcode.ICmp :: Select :: Array.to_list OpCls.binary_arr in
+      let cands_opc =
+        List.flatten [ [ Opcode.ICmp; Select ]; Array.to_list OpCls.binary_arr ]
+      in
       let cands_opc =
         if ty_dst_trunc = [] then cands_opc else Trunc :: cands_opc
       in
