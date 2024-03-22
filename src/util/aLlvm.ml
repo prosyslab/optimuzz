@@ -309,6 +309,7 @@ module OpcodeClass = struct
   type t =
     | TER of Opcode.t
     | BINARY
+    | VEC of Opcode.t
     | MEM of Opcode.t
     | CAST
     | OTHER of Opcode.t
@@ -333,6 +334,7 @@ module OpcodeClass = struct
       Xor;
     |]
 
+  let vec_arr = [||]
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
   let other_arr = [| Opcode.ICmp; PHI; Select |]
@@ -341,7 +343,7 @@ module OpcodeClass = struct
   let icmp_kind = [| Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle |]
 
   let total_arr =
-    Array.concat [ ter_arr; binary_arr; mem_arr; cast_arr; other_arr ]
+    Array.concat [ ter_arr; binary_arr; vec_arr; mem_arr; cast_arr; other_arr ]
 
   let classify opc =
     match opc with
@@ -397,6 +399,7 @@ module OpcodeClass = struct
   let string_of_opcls = function
     | TER opc -> Printf.sprintf "TER (%s)" (string_of_opcode opc)
     | BINARY -> "BINARY"
+    | VEC opc -> Printf.sprintf "VEC (%s)" (string_of_opcode opc)
     | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
     | OTHER opc -> Printf.sprintf "OTHER (%s)" (string_of_opcode opc)
