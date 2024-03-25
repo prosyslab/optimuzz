@@ -1,6 +1,6 @@
 (library
  (name seedcorpus)
- (modules seedpool)
+ (modules prep seedpool)
  (libraries
   util
   llvm.irreader
