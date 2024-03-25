@@ -44,6 +44,7 @@ let collect_instruction_types func =
          ALlvm.type_of instr |> ALlvm.classify_type <> Void)
   |> List.fold_left (fun accu instr -> ALlvm.type_of instr :: accu) []
 
+(* this function add the type-changed function in the module *)
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
 
@@ -81,41 +82,63 @@ let subst_ret llctx instr wide =
 let rec clean_llm llctx wide llm =
   (* make llm clone*)
   let llm_clone = Llvm_transform_utils.clone_module llm in
-  (* search functions return constant*)
+
+  (* delete functions which does not return *)
+  let funcs_non_ret =
+    llm_clone
+    |> ALlvm.fold_left_functions
+         (fun accu f -> if not @@ check_exist_ret f then f :: accu else accu)
+         []
+  in
+  funcs_non_ret |> List.iter ALlvm.delete_function;
+
+  (* delete functions which call non-llvm-intrinsic functions *)
+  let funcs_including_calls =
+    llm_clone
+    |> ALlvm.fold_left_functions
+         (fun accu f ->
+           if
+             f
+             |> ALlvm.any_all_instr (fun instr ->
+                    ALlvm.instr_opcode instr = Call
+                    && not (ALlvm.is_llvm_intrinsic instr))
+           then f :: accu
+           else accu)
+         []
+  in
+  funcs_including_calls |> List.iter ALlvm.delete_function;
+
+  (* delete functions which return constant *)
   let deleted_functions =
     ALlvm.fold_left_functions
       (fun acc f ->
-        if not (check_exist_ret f) then f :: acc
-        else
-          let res =
-            ALlvm.fold_left_all_instr
-              (fun res instr ->
-                if res then res
-                else
-                  match ALlvm.instr_opcode instr with
-                  | Call -> if ALlvm.is_llvm_intrinsic instr then res else true
-                  | Ret -> (
-                      if res then res
-                      else
-                        match ALlvm.classify_value (ALlvm.operand instr 0) with
-                        | ALlvm.ValueKind.ConstantInt | ConstantPointerNull
-                        | ConstantFP | NullValue | Function ->
-                            (* if function returns constant then substitute return instruction. *)
-                            subst_ret llctx instr wide
-                        | _ -> (
-                            let ret_ty =
-                              ALlvm.operand instr 0 |> ALlvm.type_of
-                            in
-                            match ALlvm.classify_type ret_ty with
-                            (* if function is void type then substitute return instruction. *)
-                            | ALlvm.TypeKind.Void -> subst_ret llctx instr wide
-                            | _ -> false))
-                  | _ -> false)
-              false f
-          in
-          if res then f :: acc else acc)
+        let res =
+          ALlvm.fold_left_all_instr
+            (fun res instr ->
+              if res then res
+              else if ALlvm.instr_opcode instr = Ret then
+                match ALlvm.classify_value (ALlvm.operand instr 0) with
+                | ALlvm.ValueKind.ConstantInt | ConstantPointerNull | ConstantFP
+                | NullValue | Function ->
+                    (* if function returns constant then
+                     * make a new function that returns an instruction,
+                     * delete the old function. *)
+                    subst_ret llctx instr wide
+                | _ -> (
+                    let ret_ty = ALlvm.operand instr 0 |> ALlvm.type_of in
+                    match ALlvm.classify_type ret_ty with
+                    (* if function is of void type then
+                     * make a new function that returns an instruction,
+                     * delete the old function. *)
+                    | ALlvm.TypeKind.Void -> subst_ret llctx instr wide
+                    | _ -> false)
+              else false)
+            false f
+        in
+        if res then f :: acc else acc)
       [] llm_clone
   in
+  (* deletes subject functions after [subst_ret] *)
   List.iter (fun f -> ALlvm.delete_function f) (List.rev deleted_functions);
   try
     if ALlvm.verify_module llm_clone then (
