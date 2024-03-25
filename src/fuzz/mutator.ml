@@ -295,6 +295,40 @@ let create_rand_insertelement llctx loc opd =
     let idx = get_any_integer loc in
     build_insertelement opd el idx "" builder
 
+(* result = shufflevector <n x <ty>> v1, <n x <ty>> v2, <m x i32> mask
+   ; yields <m x <ty>> *)
+let create_rand_shufflevector llctx loc opd =
+  assert (match classify_value loc with Instruction _ -> true | _ -> false);
+  assert (not (is_constant opd));
+  let builder = builder_before llctx loc in
+  let ty_opd = type_of opd in
+  let tycls_opd = classify_type ty_opd in
+  assert (tycls_opd = Vector);
+
+  let is_elty_i32 ty =
+    assert (classify_type ty = Vector);
+    ty |> element_type |> integer_bitwidth = 32
+  in
+  if is_elty_i32 ty_opd && AUtil.rand_bool () then
+    (* use opd as mask *)
+    let vec_a = loc |> get_all_vector_cands |> Candidates.choose in
+    let vec_b = get_rand_opd loc (type_of vec_a) in
+    build_shufflevector vec_a vec_b opd "" builder
+  else
+    (* use opd as one of input vectors *)
+    let opd' = get_rand_opd loc ty_opd in
+    let mask =
+      let cands_mask =
+        loc
+        |> get_all_vector_cands
+        |> Candidates.filter_each (fun v -> v |> type_of |> is_elty_i32)
+      in
+      (* constants exist *)
+      assert (not (Candidates.is_empty cands_mask));
+      Candidates.choose cands_mask
+    in
+    build_shufflevector opd opd' mask "" builder
+
 (* result = select <selty> cond, <ty> val1, <ty> val2 *)
 let create_rand_select llctx loc opd =
   assert (match classify_value loc with Instruction _ -> true | _ -> false);

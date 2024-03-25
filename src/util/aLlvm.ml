@@ -340,7 +340,7 @@ module OpcodeClass = struct
       Xor;
     |]
 
-  let vec_arr = [| Opcode.ExtractElement; InsertElement |]
+  let vec_arr = [| Opcode.ExtractElement; InsertElement; ShuffleVector |]
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
   let other_arr = [| Opcode.ICmp; PHI; Select |]
@@ -357,7 +357,7 @@ module OpcodeClass = struct
     | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
     | Xor ->
         BINARY
-    | ExtractElement | InsertElement -> VEC opc
+    | ExtractElement | InsertElement | ShuffleVector -> VEC opc
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt -> CAST
     | ICmp | PHI | Select -> OTHER opc
