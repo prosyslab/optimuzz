@@ -224,7 +224,10 @@ let get_dst_tys opc ty_src =
   let pred = if opc = Trunc then ( < ) else ( > ) in
   List.filter (fun t -> pred (bw t) (bw ty_src)) tys_whole
 
+(* result = extractelement <n x <ty>> val, <ty2> idx *)
 let create_rand_extractelement llctx loc opd =
+  assert (match classify_value loc with Instruction _ -> true | _ -> false);
+  assert (not (is_constant opd));
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
   let tycls_opd = classify_type ty_opd in
@@ -261,8 +264,10 @@ let create_rand_extractelement llctx loc opd =
     let idx = Candidates.choose cands in
     build_extractelement opd idx "" builder
 
+(* result = insertelement <n x <ty>> val, <ty> elt, <ty2> idx *)
 let create_rand_insertelement llctx loc opd =
-  (* result = insertelement <n x <ty>> val, <ty> elt, <ty2> idx *)
+  assert (match classify_value loc with Instruction _ -> true | _ -> false);
+  assert (not (is_constant opd));
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
   let tycls_opd = classify_type ty_opd in
@@ -290,7 +295,10 @@ let create_rand_insertelement llctx loc opd =
     let idx = get_any_integer loc in
     build_insertelement opd el idx "" builder
 
+(* result = select <selty> cond, <ty> val1, <ty> val2 *)
 let create_rand_select llctx loc opd =
+  assert (match classify_value loc with Instruction _ -> true | _ -> false);
+  assert (not (is_constant opd));
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
   let tycls_opd = classify_type ty_opd in
