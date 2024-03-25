@@ -384,7 +384,7 @@ let invest_opd_alts instr =
 
 (** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
     another available one, randomly. *)
-let subst_rand_opd _llctx llm =
+let subst_rand_opd llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
@@ -397,11 +397,19 @@ let subst_rand_opd _llctx llm =
   if cands = [] then None
   else
     let instr, alts = AUtil.choose_random cands in
-    let alt = AUtil.choose_random alts in
-    L.debug "instr: %s" (string_of_llvalue instr);
-    L.debug "substitute %d to %s" (fst alt) (string_of_llvalue (snd alt));
-    set_operand instr (fst alt) (snd alt);
-    Some llm
+    if instr_opcode instr = ICmp && AUtil.rand_bool () then (
+      let icmp =
+        instr |> icmp_predicate |> Option.get |> OpCls.random_icmp_except
+      in
+      subst_icmp llctx instr icmp |> ignore;
+      Some llm)
+    else
+      let alt = AUtil.choose_random alts in
+      L.debug "instr: %s" (string_of_llvalue instr);
+      L.debug "substitute operand %d to %s" (fst alt)
+        (string_of_llvalue (snd alt));
+      set_operand instr (fst alt) (snd alt);
+      Some llm
 
 let edit_overflow instr =
   let open Flag in
