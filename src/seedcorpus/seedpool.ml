@@ -122,9 +122,10 @@ let rec clean_llm llctx wide llm =
   in
   List.iter (fun f -> ALlvm.delete_function f) (List.rev deleted_functions);
   try
-    if ALlvm.verify_module llm_clone then
+    if ALlvm.verify_module llm_clone then (
       let _ = ALlvm.choose_function llm_clone in
-      Some llm_clone
+      ALlvm.iter_functions ALlvm.reset_var_names llm_clone;
+      Some llm_clone)
     else if wide then clean_llm llctx false llm
     else None
   with _ -> if wide then clean_llm llctx false llm else None
