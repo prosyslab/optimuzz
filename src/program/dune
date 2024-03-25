@@ -12,3 +12,8 @@
  (name cov)
  (modules cov)
  (libraries oracle util))
+
+(executable
+ (name clean)
+ (modules clean)
+ (libraries seedcorpus util))
