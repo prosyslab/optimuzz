@@ -136,8 +136,7 @@ let get_rand_const ty =
   let v = AUtil.choose_random !Config.interesting_integers in
   match classify_type ty with
   | Integer -> const_int ty v
-  | Vector ->
-      const_vector (Array.make (vector_size ty) (const_int (element_type ty) v))
+  | Vector -> mk_const_vec ty v
   | Pointer -> const_null ty
   | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
 
@@ -171,6 +170,25 @@ let get_opd_cands_nonconst_allty loc : Candidates.t =
   let instrs = loc |> get_instrs_before ~wide:false in
   let params = loc |> get_function |> params |> Array.to_list in
   { instr = instrs; param = params; const = [] }
+
+let get_any_integer loc =
+  get_opd_cands_nonconst_allty loc
+  |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Integer)
+  |> Candidates.with_const
+       [
+         get_rand_const (AUtil.choose_random !Config.interesting_integer_types);
+       ]
+  |> Candidates.choose
+
+let get_all_vector_cands loc =
+  get_opd_cands_nonconst_allty loc
+  |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Vector)
+  |> Candidates.with_const
+       (List.map
+          (fun ty ->
+            List.map (fun v -> mk_const_vec ty v) !Config.interesting_integers)
+          !Config.interesting_vector_types
+       |> List.flatten)
 
 (** [get_rand_opd llctx loc instr_old] gets, or generates
     a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
@@ -243,6 +261,35 @@ let create_rand_extractelement llctx loc opd =
     let idx = Candidates.choose cands in
     build_extractelement opd idx "" builder
 
+let create_rand_insertelement llctx loc opd =
+  (* result = insertelement <n x <ty>> val, <ty> elt, <ty2> idx *)
+  let builder = builder_before llctx loc in
+  let ty_opd = type_of opd in
+  let tycls_opd = classify_type ty_opd in
+  assert (tycls_opd = Integer || tycls_opd = Vector);
+
+  if tycls_opd = Integer then
+    let cands_vec = get_all_vector_cands loc in
+    let cands_vec_same_ty =
+      Candidates.filter_each
+        (fun v -> v |> type_of |> element_type = ty_opd)
+        cands_vec
+    in
+    if Candidates.is_empty cands_vec_same_ty || AUtil.rand_bool () then
+      (* use opd as index *)
+      let vec = Candidates.choose cands_vec in
+      let el = get_rand_opd loc (vec |> type_of |> element_type) in
+      build_insertelement vec el opd "" builder
+    else
+      (* use opd as inserted value *)
+      let vec = Candidates.choose cands_vec_same_ty in
+      let idx = get_any_integer loc in
+      build_insertelement vec opd idx "" builder
+  else
+    let el = get_rand_opd loc (element_type ty_opd) in
+    let idx = get_any_integer loc in
+    build_insertelement opd el idx "" builder
+
 let create_rand_select llctx loc opd =
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
@@ -298,9 +345,9 @@ let create_rand_instr llctx llm =
   let f = choose_function llm in
 
   (* 1. the location must not precede PHI nodes
-     2. the location must have at least one available non-const llv,
-        note that void instrs cannot be operands,
-        and we will not create MEM instrs *)
+     2. the location must have at least one available non-const llv
+     3. void instrs cannot be operands
+     4. we will not create MEM instrs, so pointer operands are not needed *)
   let not_void_or_ptr llv =
     let tycls = llv |> type_of |> classify_type in
     tycls <> Void && tycls <> Pointer
@@ -320,7 +367,9 @@ let create_rand_instr llctx llm =
     let loc, cands_opd = AUtil.choose_random cands in
     L.debug "location: %s" (string_of_llvalue loc);
     let opd = Candidates.choose cands_opd in
+    assert (not (is_constant opd));
     L.debug "operand: %s" (string_of_llvalue opd);
+
     let ty_opd = type_of opd in
     let tycls_opd = classify_type ty_opd in
     assert (tycls_opd = Integer || tycls_opd = Vector);

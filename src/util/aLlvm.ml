@@ -156,6 +156,12 @@ let string_of_icmp = function
   | Slt -> "slt"
   | Sle -> "sle"
 
+(** [mk_const_vec vecty i] returns [<i, ..., i>] (vector of type [vecty]).
+    [i] is an integer (OCaml level), not [llvalue]. *)
+let mk_const_vec vecty i =
+  const_vector
+    (Array.make (vector_size vecty) (const_int (element_type vecty) i))
+
 (** [fold_left_all_instr f a m] returns [f (... f (f (f a i1) i2) i3 ...) iN],
     where [i1 ... iN] are the instructions in function [m]. *)
 let fold_left_all_instr f a m =
@@ -334,7 +340,7 @@ module OpcodeClass = struct
       Xor;
     |]
 
-  let vec_arr = [| Opcode.ExtractElement |]
+  let vec_arr = [| Opcode.ExtractElement; InsertElement |]
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
   let other_arr = [| Opcode.ICmp; PHI; Select |]
@@ -351,7 +357,7 @@ module OpcodeClass = struct
     | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
     | Xor ->
         BINARY
-    | ExtractElement -> VEC opc
+    | ExtractElement | InsertElement -> VEC opc
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt -> CAST
     | ICmp | PHI | Select -> OTHER opc
