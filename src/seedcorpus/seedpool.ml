@@ -46,12 +46,8 @@ let collect_instruction_types func =
 
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
-  (* Set var names *)
-  ALlvm.reset_var_names f_old;
 
   let extra_param = [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |] in
-
-  (* make param map to copy function. *)
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param
