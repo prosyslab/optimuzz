@@ -420,17 +420,18 @@ let create_rand_instr llctx llm =
     let ty_dst_ext = get_dst_tys ZExt ty_opd in
 
     (* choose proper opcode *)
+    let cons_if cond v l = if cond then v :: l else l in
     let opc =
-      let cands_opc =
-        List.flatten [ [ Opcode.ICmp; Select ]; Array.to_list OpCls.binary_arr ]
-      in
-      let cands_opc =
-        if ty_dst_trunc = [] then cands_opc else Trunc :: cands_opc
-      in
-      let cands_opc =
-        if ty_dst_ext = [] then cands_opc else ZExt :: SExt :: cands_opc
-      in
-      AUtil.choose_random cands_opc
+      List.flatten
+        [
+          [ Opcode.ICmp; Select ];
+          Array.to_list OpCls.binary_arr;
+          Array.to_list OpCls.vec_arr;
+        ]
+      |> cons_if (ty_dst_trunc <> []) Opcode.Trunc
+      |> cons_if (ty_dst_ext <> []) Opcode.ZExt
+      |> cons_if (ty_dst_ext <> []) Opcode.SExt
+      |> AUtil.choose_random
     in
     L.debug "opcode: %s" (string_of_opcode opc);
 
@@ -439,6 +440,16 @@ let create_rand_instr llctx llm =
     | BINARY ->
         let opd' = get_rand_opd loc ty_opd in
         create_binary llctx loc opc opd opd'
+    | VEC ExtractElement -> create_rand_extractelement llctx loc opd
+    | VEC InsertElement -> create_rand_extractelement llctx loc opd
+    | VEC ShuffleVector ->
+        if opd |> type_of |> classify_type = Vector then
+          create_rand_shufflevector llctx loc opd
+        else (
+          L.debug
+            "ShuffleVector instruction does not require non-vector operands.";
+          L.debug "This mutation will be ignored.";
+          loc)
     | CAST ->
         let ty_dst =
           AUtil.choose_random (if opc = Trunc then ty_dst_trunc else ty_dst_ext)
@@ -638,6 +649,17 @@ and trav_llvs_used_by_curr curr ty_new accu =
           accu
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 ty_new
+      | VEC ExtractElement ->
+          let opd0 = operand curr 0 in
+          collect_ty_changing_llvs opd0
+            (vector_type ty_new (opd0 |> type_of |> vector_size))
+            accu
+      | VEC InsertElement ->
+          let opd0 = operand curr 0 in
+          let opd1 = operand curr 1 in
+          accu
+          |> collect_ty_changing_llvs opd0 ty_new
+          |> collect_ty_changing_llvs opd1 (element_type ty_new)
       | OTHER PHI ->
           (* propagate over all incoming values *)
           List.fold_left
@@ -653,7 +675,9 @@ and trav_llvs_used_by_curr curr ty_new accu =
   | _ -> accu
 
 (** [trav_llvs_using_curr curr ty_new accu] propagates type inference to values
-    USING [curr] (users of curr). *)
+    USING [curr] (users of curr).
+    NOTE: Some of this work specially
+    if type inferrence (user) -> (opd of user) is impossible. *)
 and trav_llvs_using_curr curr ty_new accu =
   fold_left_uses
     (fun accu use ->
@@ -663,6 +687,18 @@ and trav_llvs_using_curr curr ty_new accu =
       | CAST -> trav_cast user ty_new accu
       | BINARY | OTHER PHI | OTHER Select ->
           collect_ty_changing_llvs user ty_new accu
+      | VEC ExtractElement ->
+          if operand user 0 = curr then
+            collect_ty_changing_llvs user (element_type ty_new) accu
+          else accu
+      | VEC InsertElement ->
+          if operand user 0 = curr then
+            collect_ty_changing_llvs user ty_new accu
+          else if operand user 1 = curr then
+            collect_ty_changing_llvs user
+              (vector_type ty_new (user |> type_of |> vector_size))
+              accu
+          else accu
       | OTHER ICmp ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
@@ -674,8 +710,7 @@ and trav_llvs_using_curr curr ty_new accu =
     accu curr
 
 (** [collect_ty_changing_llvs llv ty_new accu] recursively accumulates type
-    information to [accu] when [llv] changes to [ty_new].
-    The return is wrapped by [Option] to represent impossible cases. *)
+    information to [accu] when [llv] changes to [ty_new]. *)
 and collect_ty_changing_llvs llv ty_new accu =
   match accu with
   | Success accu_inner when LLVMap.mem llv accu_inner -> accu
@@ -685,11 +720,16 @@ and collect_ty_changing_llvs llv ty_new accu =
       match classify_value llv with
       | Instruction opc ->
           if opc = ICmp then Impossible
+          else if opc = ExtractElement && classify_type ty_new <> Integer then
+            Impossible
+          else if opc = InsertElement && classify_type ty_new <> Vector then
+            Impossible
           else
             Success accu
             |> trav_llvs_used_by_curr llv ty_new
             |> trav_llvs_using_curr llv ty_new
-      | _ -> Success accu |> trav_llvs_using_curr llv ty_new)
+      | Argument -> Success accu |> trav_llvs_using_curr llv ty_new
+      | _ -> failwith "collect_ty: llv is none of instr, param, or const")
   | _ -> accu
 
 let get_ty llv_old typemap =
@@ -818,6 +858,33 @@ let migrate_binary builder instr_old typemap link_v =
   in
   OpCls.build_binary opc opd0 opd1 builder
 
+let migrate_extractelement builder instr_old link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  build_extractelement (migrate_self opd0 link_v) (migrate_self opd1 link_v) ""
+    builder
+
+let migrate_insertelement builder instr_old typemap link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  let opd2 = operand instr_old 2 in
+
+  let opd0 =
+    match LLVMap.find_opt instr_old typemap with
+    | Some ty_new -> migrate_to_other_ty opd0 ty_new link_v
+    | None -> migrate_self opd0 link_v
+  in
+  build_insertelement opd0
+    (migrate_to_other_ty opd1 (opd0 |> type_of |> element_type) link_v)
+    (migrate_self opd2 link_v) "" builder
+
+let migrate_vec builder instr_old typemap link_v =
+  let opc = instr_opcode instr_old in
+  match opc with
+  | ExtractElement -> migrate_extractelement builder instr_old link_v
+  | InsertElement -> migrate_insertelement builder instr_old typemap link_v
+  | _ -> failwith "NEVER OCCUR"
+
 let migrate_mem builder instr_old typemap link_v =
   match instr_opcode instr_old with
   | Alloca -> build_alloca (get_allocated_type instr_old) "" builder
@@ -932,6 +999,7 @@ let migrate_instr builder instr_old typemap link_v link_b =
     match OpCls.opcls_of instr_old with
     | TER _ -> migrate_ter builder instr_old link_v link_b
     | BINARY -> migrate_binary builder instr_old typemap link_v
+    | VEC _ -> migrate_vec builder instr_old typemap link_v
     | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
     | OTHER ICmp -> migrate_icmp builder instr_old link_v
@@ -1028,52 +1096,55 @@ let verify_and_clean f_old f_new =
     set_value_name f_name f_new;
     Some f_new)
   else (
+    L.debug "Warning: this TYPE mutation result is invalid:\n%s"
+      (string_of_llvalue f_new);
     delete_function f_new;
     None)
 
+(* is it ok to change types of f, starting from target? *)
 let check_target_for_change_type target f =
   if
-    target |> type_of |> classify_type = Void
-    || target |> type_of |> classify_type = Pointer
-  then false
-  else if classify_value target = Argument then true
-  else if OpCls.opcls_of target = OTHER ICmp then false
-  else
     fold_left_all_instr
       (fun accu i ->
         accu
-        &&
-        match OpCls.opcls_of i with VEC _ | UNSUPPORTED -> false | _ -> true)
+        && OpCls.opcls_of i <> UNSUPPORTED
+        && OpCls.opcls_of i <> VEC ShuffleVector)
       true f
+  then
+    if target |> type_of |> classify_type = Void then false
+    else if target |> type_of |> classify_type = Pointer then false
+    else if classify_value target = Argument then true
+    else if OpCls.opcls_of target = OTHER ICmp then false
+    else true
+  else false
 
 (** [change_type llctx llm] changes type of a random instruction.
     All the other associated values are recursively changed. *)
 let change_type llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
-  let f_params =
-    f |> params |> Array.to_list
-    (* |> List.filter (fun param ->
-           match use_begin param with Some _ -> true | None -> false) *)
-  in
+  let f_params = f |> params |> Array.to_list in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let target = AUtil.choose_random (all_instrs @ f_params) in
-  L.debug "instr: %s" (string_of_llvalue target);
-  (* CONSIDER IMPOSSIBLE CASES *)
+  L.debug "target: %s" (string_of_llvalue target);
+
   if check_target_for_change_type target f then
     (* decide type *)
     let ty_old = type_of target in
-
     let rec loop () =
       let ty_new = AUtil.choose_random !Config.interesting_types in
+      L.debug "checking %s as new type..." (string_of_lltype ty_new);
       if ty_old = ty_new then loop ()
       else
         match collect_ty_changing_llvs target ty_new (Success LLVMap.empty) with
         | Impossible -> None
         | Retry -> loop ()
         | Success typemap ->
-            L.debug "ty_old: %s, ty_new: %s@." (string_of_lltype ty_old)
-              (string_of_lltype ty_new);
+            L.debug "Available! typemap:";
+            LLVMap.iter
+              (fun k v ->
+                L.debug "%s |-> %s" (string_of_llvalue k) (string_of_lltype v))
+              typemap;
             let f_new = redef_fn llctx f typemap in
             verify_and_clean f f_new |> ignore;
             Some llm
