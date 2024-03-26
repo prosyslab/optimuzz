@@ -4,39 +4,47 @@ let check_exist_ret func =
   let is_ret instr = ALlvm.instr_opcode instr = Ret in
   ALlvm.any_all_instr is_ret func
 
-(* this function add the type-changed function in the module *)
-let subst_ret llctx instr wide =
-  let f_old = ALlvm.get_function instr in
-
+let rec redef_fn llctx f_old wide instr =
   let extra_param = [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |] in
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param
   in
-
   (* target: new instruction will returned.*)
   let target = ALlvm.get_instr_before ~wide instr in
   match target with
   | Some i ->
-      let new_ret_ty = ALlvm.type_of i in
-      let f_new =
-        ALlvm.define_function ""
-          (ALlvm.function_type new_ret_ty param_tys)
-          (ALlvm.global_parent f_old)
-      in
-      (* Copy names of the parameters (other than the extra parameters)
-         to parameters of the newly created function, position-wise. *)
-      ALlvm.params f_new
-      |> Array.iteri (fun i param_new ->
-             if i >= Array.length params_old then ()
-             else
-               param_new
-               |> ALlvm.set_value_name (ALlvm.value_name params_old.(i)));
-      (* copy function with new return value (target).*)
-      ALlvm.ChangeRetVal.copy_function_with_new_retval llctx f_old f_new
-        new_ret_ty;
-      true
+      if ALlvm.ChangeRetVal.check_target i then (
+        let new_ret_ty = ALlvm.type_of i in
+        let f_new =
+          ALlvm.define_function ""
+            (ALlvm.function_type new_ret_ty param_tys)
+            (ALlvm.global_parent f_old)
+        in
+
+        (* TODO: Check this reset names *)
+        (* Copy names of the parameters (other than the extra parameters)
+           to parameters of the newly created function, position-wise. *)
+        (* ALlvm.params f_new
+           |> Array.iteri (fun i param_new ->
+                  if i >= Array.length params_old then ()
+                  else
+                    param_new
+                    |> ALlvm.set_value_name (ALlvm.value_name params_old.(i))); *)
+        (* copy function with new return value (target).*)
+        ALlvm.ChangeRetVal.copy_blocks llctx f_old f_new;
+        ALlvm.ChangeRetVal.migrate llctx f_old f_new i;
+
+        true)
+      else redef_fn llctx f_old wide i
   | None -> true
+
+(* this function add the type-changed function in the module *)
+let subst_ret llctx instr wide =
+  let f_old = ALlvm.get_function instr in
+  if ALlvm.ChangeRetVal.check_function f_old then
+    redef_fn llctx f_old wide instr
+  else true
 
 let rec clean_llm llctx wide llm =
   (* make llm clone*)
@@ -97,6 +105,7 @@ let rec clean_llm llctx wide llm =
         if res then f :: acc else acc)
       [] llm_clone
   in
+
   (* deletes subject functions after [subst_ret] *)
   List.iter
     (fun f -> ALlvm.delete_function f)

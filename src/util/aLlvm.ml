@@ -607,6 +607,224 @@ module ChangeRetVal = struct
     | Some block -> block
     | None -> failwith ("No block named " ^ name)
 
+  let check_function f =
+    if
+      fold_left_all_instr
+        (fun accu i -> accu || OpcodeClass.opcls_of i = UNSUPPORTED)
+        false f
+    then false
+    else true
+
+  let check_target target =
+    if
+      target |> type_of |> classify_type = Void
+      || target |> type_of |> classify_type = Pointer
+    then false
+    else true
+
+  let copy_blocks llctx f_old f_new =
+    assert (f_new |> basic_blocks |> Array.length = 1);
+    let entry_new = entry_block f_new in
+    let blocks_old = basic_blocks f_old in
+    let rec loop prev_block i =
+      if i >= Array.length blocks_old then ()
+      else
+        let block_old = Array.get blocks_old i in
+        let block_new = insert_block llctx (block_name block_old) entry_new in
+        move_block_after prev_block block_new;
+        loop block_new (i + 1)
+    in
+    loop entry_new 1
+
+  let migrate_const llv_old ty_new =
+    assert (is_constant llv_old);
+    if is_poison llv_old then poison ty_new
+    else if is_undef llv_old then undef ty_new
+    else
+      match (llv_old |> type_of |> classify_type, classify_type ty_new) with
+      | Pointer, _ -> const_null ty_new
+      | Integer, Integer ->
+          const_int ty_new
+            (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+      | Integer, Vector ->
+          let el_ty = element_type ty_new in
+          let vec_size = vector_size ty_new in
+          let llv_arr =
+            Array.make vec_size
+              (const_int el_ty
+                 (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
+          in
+          const_vector llv_arr
+      | Vector, Integer ->
+          const_int ty_new
+            (aggregate_element llv_old 0
+            |> Option.get
+            |> int64_of_const
+            |> Option.get
+            |> Int64.to_int)
+      | Vector, Vector ->
+          let el_ty = element_type ty_new in
+          let vec_size = vector_size ty_new in
+          let llv_arr =
+            Array.make vec_size
+              (const_int el_ty
+                 (aggregate_element llv_old 0
+                 |> Option.get
+                 |> int64_of_const
+                 |> Option.get
+                 |> Int64.to_int))
+          in
+          const_vector llv_arr
+      | _ -> failwith "Unsupported type migration"
+
+  let migrate_self llv link_v =
+    if is_constant llv then migrate_const llv (type_of llv)
+    else LLVMap.find llv link_v
+
+  let migrate_to_other_ty llv ty link_v =
+    if is_constant llv then migrate_const llv ty else LLVMap.find llv link_v
+
+  let migrate_ter builder instr_old link_v link_b target =
+    match instr_opcode instr_old with
+    | Ret ->
+        if num_operands target = 0 then
+          failwith "return type is void in subst_ret"
+        else build_ret (migrate_self target link_v) builder
+    | Br -> (
+        let find_block = Fun.flip LLBMap.find link_b in
+        match get_branch instr_old with
+        | Some (`Conditional (cond, tb, fb)) ->
+            build_cond_br (migrate_self cond link_v) (find_block tb)
+              (find_block fb) builder
+        | Some (`Unconditional dest) -> build_br (find_block dest) builder
+        | None -> failwith "Not supporting other kind of branches")
+    | _ -> failwith "NEVER OCCUR"
+
+  let migrate_binary builder instr_old link_v =
+    let opc = instr_opcode instr_old in
+    let opd0 = migrate_self (operand instr_old 0) link_v in
+    let opd1 = migrate_self (operand instr_old 1) link_v in
+    OpcodeClass.build_binary opc opd0 opd1 builder
+
+  let migrate_mem builder instr_old link_v =
+    match instr_opcode instr_old with
+    | Alloca -> build_alloca (get_allocated_type instr_old) "" builder
+    | Load ->
+        let opd = operand instr_old 0 in
+        build_load (type_of instr_old) (migrate_self opd link_v) "" builder
+    | Store ->
+        build_store
+          (migrate_self (operand instr_old 0) link_v)
+          (migrate_self (operand instr_old 1) link_v)
+          builder
+    | _ -> failwith "NEVER OCCUR"
+
+  let migrate_cast builder instr_old link_v =
+    let ty = type_of instr_old in
+    let opd = migrate_self (operand instr_old 0) link_v in
+    match instr_opcode instr_old with
+    | SExt -> build_sext opd ty "" builder
+    | ZExt -> build_zext opd ty "" builder
+    | Trunc -> build_trunc opd ty "" builder
+    | _ -> failwith "Opcode is not cast"
+
+  let migrate_icmp builder instr_old link_v =
+    let opd0 = migrate_self (operand instr_old 0) link_v in
+    let opd1 = migrate_self (operand instr_old 1) link_v in
+    let build_icmp o0 o1 =
+      OpcodeClass.build_icmp
+        (icmp_predicate instr_old |> Option.get)
+        o0 o1 builder
+    in
+    build_icmp opd0 opd1
+
+  let migrate_phi builder instr_old =
+    let ty = type_of instr_old in
+    build_empty_phi ty "" builder
+
+  let migrate_select builder instr_old link_v =
+    let opd0 = migrate_self (operand instr_old 0) link_v in
+    let opd1 = migrate_self (operand instr_old 1) link_v in
+    let opd2 = migrate_self (operand instr_old 2) link_v in
+
+    build_select opd0 opd1 opd2 "" builder
+
+  let migrate_instr builder instr_old link_v link_b target =
+    let instr_new =
+      match OpcodeClass.opcls_of instr_old with
+      | TER _ -> migrate_ter builder instr_old link_v link_b target
+      | BINARY -> migrate_binary builder instr_old link_v
+      | MEM _ -> migrate_mem builder instr_old link_v
+      | CAST -> migrate_cast builder instr_old link_v
+      | OTHER ICmp -> migrate_icmp builder instr_old link_v
+      | OTHER PHI -> migrate_phi builder instr_old
+      | OTHER Select -> migrate_select builder instr_old link_v
+      | _ -> failwith "Unsupported instruction"
+    in
+    if instr_old |> type_of |> classify_type <> Void then
+      set_value_name (value_name instr_old) instr_new;
+    LLVMap.add instr_old instr_new link_v
+
+  let migrate_block llctx b_old b_new link_v link_b target =
+    let builder = builder_at_end llctx b_new in
+    (* NOTE: Incomings of PHI nodes must be added later *)
+    let link_v =
+      fold_left_instrs
+        (fun link_v instr_old ->
+          migrate_instr builder instr_old link_v link_b target)
+        link_v b_old
+    in
+    let rec loop = function
+      | At_end _ -> ()
+      | Before phi_old ->
+          if instr_opcode phi_old <> PHI then ()
+          else
+            let phi_new = LLVMap.find phi_old link_v in
+            let incomings_old = incoming phi_old in
+            List.iter
+              (fun (v, b) ->
+                add_incoming
+                  ( (if is_constant v then v else LLVMap.find v link_v),
+                    LLBMap.find b link_b )
+                  phi_new)
+              incomings_old;
+            phi_old |> instr_succ |> loop
+    in
+    loop (instr_begin b_old);
+    link_v
+
+  let migrate llctx f_old f_new target =
+    let blocks_old = basic_blocks f_old in
+    let blocks_new = basic_blocks f_new in
+    let params_old = params f_old in
+    let params_new = params f_new in
+    let rec loop accu i =
+      if i >= Array.length params_old then accu
+      else
+        let accu' =
+          LLVMap.add (Array.get params_old i) (Array.get params_new i) accu
+        in
+        loop accu' (i + 1)
+    in
+    let link_v = loop LLVMap.empty 0 in
+    let link_b =
+      Array.map2 (fun b_old b_new -> (b_old, b_new)) blocks_old blocks_new
+      |> Array.to_seq
+      |> LLBMap.of_seq
+    in
+
+    (* migrate blocks *)
+    let rec loop accu i =
+      if i >= Array.length blocks_old then accu
+      else
+        let accu' =
+          migrate_block llctx (Array.get blocks_old i) (Array.get blocks_new i)
+            accu link_b target
+        in
+        loop accu' (i + 1)
+    in
+    loop link_v 0 |> ignore
+
   let migrate_llv llv_old ty_expected link_instr =
     if is_constant llv_old then
       match llv_old |> type_of |> classify_type with
