@@ -6,7 +6,6 @@ let main input_file =
   Format.printf "input file: %s@." input_file;
   let llm = ALlvm.read_ll llctx input_file in
   Format.printf "input module: %s@." (ALlvm.string_of_llmodule llm);
-  Format.printf "refactored cleaning@.";
   match Prep.clean_llm llctx true llm with
   | None ->
       Format.printf "clean failed@.";

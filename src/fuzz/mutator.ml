@@ -798,7 +798,12 @@ let migrate_instr builder instr_old typemap link_v link_b =
     | OTHER ICmp -> migrate_icmp builder instr_old link_v
     | OTHER PHI -> migrate_phi builder instr_old typemap
     | OTHER Select -> migrate_select builder instr_old typemap link_v
-    | _ -> failwith "Unsupported instruction"
+    | _ ->
+        let msg =
+          Format.asprintf "Unsupported instruction: %s"
+            (string_of_llvalue instr_old)
+        in
+        failwith msg
   in
   if instr_old |> type_of |> classify_type <> Void then
     set_value_name (value_name instr_old) instr_new;

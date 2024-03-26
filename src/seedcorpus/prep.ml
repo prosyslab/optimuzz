@@ -39,16 +39,25 @@ let rec redef_fn llctx f_old wide instr =
       else redef_fn llctx f_old wide i
   | None -> true
 
-(* this function add the type-changed function in the module *)
+(* this function add the type-changed function in the module.
+ * returns true if the original function should be deleted *)
 let subst_ret llctx instr wide =
   let f_old = ALlvm.get_function instr in
-  if ALlvm.ChangeRetVal.check_function f_old then
+  if ALlvm.ChangeRetVal.is_function_supported f_old then
     redef_fn llctx f_old wide instr
   else true
 
 let rec clean_llm llctx wide llm =
   (* make llm clone*)
   let llm_clone = Llvm_transform_utils.clone_module llm in
+
+  llm_clone
+  |> ALlvm.fold_left_functions
+       (fun accu f ->
+         if not @@ ALlvm.ChangeRetVal.is_function_supported f then f :: accu
+         else accu)
+       []
+  |> List.iter ALlvm.delete_function;
 
   (* delete functions which does not return *)
   let funcs_non_ret =
@@ -107,9 +116,7 @@ let rec clean_llm llctx wide llm =
   in
 
   (* deletes subject functions after [subst_ret] *)
-  List.iter
-    (fun f -> ALlvm.delete_function f)
-    (List.rev funcs_ret_const_or_void);
+  List.rev funcs_ret_const_or_void |> List.iter ALlvm.delete_function;
 
   try
     if ALlvm.verify_module llm_clone then (

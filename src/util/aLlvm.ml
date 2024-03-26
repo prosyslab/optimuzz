@@ -607,13 +607,12 @@ module ChangeRetVal = struct
     | Some block -> block
     | None -> failwith ("No block named " ^ name)
 
-  let check_function f =
-    if
-      fold_left_all_instr
-        (fun accu i -> accu || OpcodeClass.opcls_of i = UNSUPPORTED)
-        false f
-    then false
-    else true
+  let is_function_supported f =
+    for_all_instr
+      (fun i ->
+        Format.eprintf "%s@." (string_of_opcode (instr_opcode i));
+        OpcodeClass.opcls_of i <> UNSUPPORTED)
+      f
 
   let check_target target =
     if
