@@ -345,9 +345,13 @@ let subst_rand_instr llctx llm =
     let opc_old = instr_opcode instr in
     match OpCls.classify opc_old with
     | BINARY ->
-        let opc_new = OpCls.random_binary_except opc_old in
-        subst_binary llctx instr opc_new |> ignore;
-        Some llm
+        if is_noncommutative_binary instr && AUtil.rand_bool () then (
+          binary_exchange_operands llctx instr |> ignore;
+          Some llm)
+        else
+          let opc_new = OpCls.random_binary_except opc_old in
+          subst_binary llctx instr opc_new |> ignore;
+          Some llm
     | CAST ->
         subst_cast llctx instr |> ignore;
         Some llm
