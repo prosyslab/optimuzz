@@ -809,8 +809,6 @@ let migrate_instr builder instr_old typemap link_v link_b =
         in
         failwith msg
   in
-  if instr_old |> type_of |> classify_type <> Void then
-    set_value_name (value_name instr_old) instr_new;
   LLVMap.add instr_old instr_new link_v
 
 let migrate_block llctx b_old b_new typemap link_v link_b =
@@ -885,9 +883,6 @@ let redef_fn llctx f_old typemap =
   let f_new =
     define_function "" (function_type ret_ty param_tys) (global_parent f_old)
   in
-  Array.iteri
-    (fun i param_new -> set_value_name (value_name (param f_old i)) param_new)
-    (params f_new);
   copy_blocks llctx f_old f_new;
   migrate llctx f_old f_new typemap;
   f_new
@@ -930,13 +925,9 @@ let change_type llctx llm =
   let target = AUtil.choose_random (all_instrs @ f_params) in
   L.debug "instr: %s" (string_of_llvalue target);
   (* CONSIDER IMPOSSIBLE CASES *)
-  if check_target_for_change_type target f then (
+  if check_target_for_change_type target f then
     (* decide type *)
     let ty_old = type_of target in
-
-    (* Ensure each llvalue has its own name.
-       This is necessary because we will use value names as key *)
-    reset_var_names f;
 
     let rec loop () =
       let ty_new = AUtil.choose_random !Config.interesting_types in
@@ -952,7 +943,7 @@ let change_type llctx llm =
             verify_and_clean f f_new |> ignore;
             Some llm
     in
-    loop ())
+    loop ()
   else None
 
 let delete_empty_blocks func =

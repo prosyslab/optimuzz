@@ -550,21 +550,17 @@ end
 module LLVMap = Map.Make (struct
   type t = llvalue
 
-  (* same llvalues sometimes map to other key *)
   let compare = compare
 end)
+
+let block_name block = block |> value_of_block |> value_name
 
 module LLBMap = Map.Make (struct
   type t = llbasicblock
 
-  (* same llbasicblocks sometimes map to other key *)
-  let compare llb0 llb1 =
-    compare
-      (llb0 |> value_of_block |> value_name)
-      (llb1 |> value_of_block |> value_name)
+  (* use block name as key *)
+  let compare llb0 llb1 = compare (block_name llb0) (block_name llb1)
 end)
-
-let block_name block = block |> value_of_block |> value_name
 
 (** [reset_var_names f] sets names of all parameters and instructions in
     function [f]. This is specially useful when we have to assure all values
