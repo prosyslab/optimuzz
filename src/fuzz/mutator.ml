@@ -342,16 +342,13 @@ let subst_rand_instr llctx llm =
   if cands_instr = [] then None
   else
     let instr = AUtil.choose_random cands_instr in
+    L.debug "instr: %s" (string_of_llvalue instr);
     let opc_old = instr_opcode instr in
     match OpCls.classify opc_old with
     | BINARY ->
-        if is_noncommutative_binary instr && AUtil.rand_bool () then (
-          binary_exchange_operands llctx instr |> ignore;
-          Some llm)
-        else
-          let opc_new = OpCls.random_binary_except opc_old in
-          subst_binary llctx instr opc_new |> ignore;
-          Some llm
+        let opc_new = OpCls.random_binary_except opc_old in
+        subst_binary llctx instr opc_new |> ignore;
+        Some llm
     | CAST ->
         subst_cast llctx instr |> ignore;
         Some llm
@@ -401,15 +398,20 @@ let subst_rand_opd llctx llm =
   if cands = [] then None
   else
     let instr, alts = AUtil.choose_random cands in
+    L.debug "instr: %s" (string_of_llvalue instr);
     if instr_opcode instr = ICmp && AUtil.rand_bool () then (
       let icmp =
         instr |> icmp_predicate |> Option.get |> OpCls.random_icmp_except
       in
+      L.debug "change icmp predicate";
       subst_icmp llctx instr icmp |> ignore;
+      Some llm)
+    else if is_noncommutative_binary instr && AUtil.rand_bool () then (
+      L.debug "exchange two operands";
+      binary_exchange_operands llctx instr |> ignore;
       Some llm)
     else
       let alt = AUtil.choose_random alts in
-      L.debug "instr: %s" (string_of_llvalue instr);
       L.debug "substitute operand %d to %s" (fst alt)
         (string_of_llvalue (snd alt));
       set_operand instr (fst alt) (snd alt);
