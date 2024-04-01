@@ -609,7 +609,10 @@ module ChangeRetVal = struct
   let check_target target =
     if
       target |> type_of |> classify_type = Void
-      || target |> type_of |> classify_type = Pointer
+      || target
+         |> type_of
+         |> classify_type
+         = Pointer (*When getelementptr supported, revise this*)
     then false
     else true
 
