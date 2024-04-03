@@ -22,15 +22,6 @@ let rec redef_fn llctx f_old wide instr =
             (ALlvm.global_parent f_old)
         in
 
-        (* TODO: Check this reset names *)
-        (* Copy names of the parameters (other than the extra parameters)
-           to parameters of the newly created function, position-wise. *)
-        (* ALlvm.params f_new
-           |> Array.iteri (fun i param_new ->
-                  if i >= Array.length params_old then ()
-                  else
-                    param_new
-                    |> ALlvm.set_value_name (ALlvm.value_name params_old.(i))); *)
         (* copy function with new return value (target).*)
         ALlvm.ChangeRetVal.copy_blocks llctx f_old f_new;
         ALlvm.ChangeRetVal.migrate llctx f_old f_new i;

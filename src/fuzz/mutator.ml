@@ -815,31 +815,10 @@ let migrate_instr builder instr_old typemap link_v link_b =
 
 let migrate_block llctx b_old b_new typemap link_v link_b =
   let builder = builder_at_end llctx b_new in
-  (* NOTE: Incomings of PHI nodes must be added later *)
-  let link_v =
-    fold_left_instrs
-      (fun link_v instr_old ->
-        migrate_instr builder instr_old typemap link_v link_b)
-      link_v b_old
-  in
-  let rec loop = function
-    | At_end _ -> ()
-    | Before phi_old ->
-        if instr_opcode phi_old <> PHI then ()
-        else
-          let phi_new = LLVMap.find phi_old link_v in
-          let incomings_old = incoming phi_old in
-          List.iter
-            (fun (v, b) ->
-              add_incoming
-                ( (if is_constant v then v else LLVMap.find v link_v),
-                  LLBMap.find b link_b )
-                phi_new)
-            incomings_old;
-          phi_old |> instr_succ |> loop
-  in
-  loop (instr_begin b_old);
-  link_v
+  fold_left_instrs
+    (fun link_v instr_old ->
+      migrate_instr builder instr_old typemap link_v link_b)
+    link_v b_old
 
 (** [migrate llctx f_old f_new typemap] migrates contents of [f_old] to [f_new].
     [typemap] must be provided. *)
@@ -866,6 +845,7 @@ let migrate llctx f_old f_new typemap =
     |> LLBMap.of_seq
   in
 
+  (* NOTE: Incomings of PHI nodes must be added later *)
   (* migrate blocks *)
   let rec loop accu i =
     if i >= Array.length blocks_old then accu
@@ -876,7 +856,26 @@ let migrate llctx f_old f_new typemap =
       in
       loop accu' (i + 1)
   in
-  loop link_v 0 |> ignore
+  let link_v = loop link_v 0 in
+
+  (* (really) migrate PHI nodes for each block *)
+  let rec migrate_phi = function
+    | Before phi_old when instr_opcode phi_old = PHI ->
+        let phi_new = LLVMap.find phi_old link_v in
+        let incomings_old = incoming phi_old in
+        List.iter
+          (fun (v, b) ->
+            add_incoming
+              ( migrate_to_other_ty v (type_of phi_new) link_v,
+                LLBMap.find b link_b )
+              phi_new)
+          incomings_old;
+        phi_old |> instr_succ |> migrate_phi
+    | _ -> ()
+  in
+  Array.iter
+    (fun block_old -> block_old |> instr_begin |> migrate_phi)
+    blocks_old
 
 (** [redef_fn llctx f_old typemap] redefines and returns new version of [f_old]
     according to [typemap]. *)
