@@ -972,63 +972,67 @@ let cut_below llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let instr_tgt = AUtil.choose_random all_instrs in
 
-  let f_old = ALlvm.get_function instr_tgt in
-  let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
+  (* issue #127 *)
+  if List.exists (fun i -> instr_opcode i = PHI) all_instrs then None
+  else
+    let instr_tgt = AUtil.choose_random all_instrs in
 
-  match instrs with
-  | [] | [ _ ] | [ _; _ ] -> None
-  | _ -> (
-      (* target: new instruction will returned.*)
-      let target = ALlvm.get_instr_before ~wide:true instr_tgt in
-      match target with
-      | Some tgt when ALlvm.is_assignment (ALlvm.instr_opcode tgt) ->
-          let rec succ_instrs accu curr =
-            match ALlvm.instr_succ curr with
-            | ALlvm.At_end _ -> accu
-            | ALlvm.Before next -> succ_instrs (next :: accu) next
-          in
+    let f_old = ALlvm.get_function instr_tgt in
+    let instrs = ALlvm.fold_left_all_instr (fun accu i -> i :: accu) [] f_old in
 
-          let rec succ_blocks accu curr =
-            match ALlvm.block_succ curr with
-            | ALlvm.At_end _ -> accu
-            | ALlvm.Before next -> succ_blocks (next :: accu) next
-          in
+    match instrs with
+    | [] | [ _ ] | [ _; _ ] -> None
+    | _ -> (
+        (* target: new instruction will returned.*)
+        let target = ALlvm.get_instr_before ~wide:true instr_tgt in
+        match target with
+        | Some tgt when ALlvm.is_assignment (ALlvm.instr_opcode tgt) ->
+            let rec succ_instrs accu curr =
+              match ALlvm.instr_succ curr with
+              | ALlvm.At_end _ -> accu
+              | ALlvm.Before next -> succ_instrs (next :: accu) next
+            in
 
-          (* delete all succeeding instructions and blocks*)
-          succ_instrs [] tgt |> List.iter ALlvm.delete_instruction;
-          succ_blocks [] (ALlvm.instr_parent tgt)
-          |> List.iter ALlvm.delete_block;
+            let rec succ_blocks accu curr =
+              match ALlvm.block_succ curr with
+              | ALlvm.At_end _ -> accu
+              | ALlvm.Before next -> succ_blocks (next :: accu) next
+            in
 
-          (* delete all remaining terminating instructions *)
-          func_terminators f_old |> List.iter ALlvm.delete_instruction;
-          delete_empty_blocks f_old;
+            (* delete all succeeding instructions and blocks*)
+            succ_instrs [] tgt |> List.iter ALlvm.delete_instruction;
+            succ_blocks [] (ALlvm.instr_parent tgt)
+            |> List.iter ALlvm.delete_block;
 
-          (* move instructions in other blocks to the entry block *)
-          let entry = ALlvm.entry_block f_old in
-          let other_blocks =
-            ALlvm.fold_left_blocks
-              (fun accu blk -> if blk = entry then accu else blk :: accu)
-              [] f_old
-          in
-          List.iter (ALlvm.transfer_instructions entry) other_blocks;
+            (* delete all remaining terminating instructions *)
+            func_terminators f_old |> List.iter ALlvm.delete_instruction;
+            delete_empty_blocks f_old;
 
-          (* add ret which returns tgt *)
-          ALlvm.builder_at_end llctx (ALlvm.instr_parent tgt)
-          |> ALlvm.build_ret tgt
-          |> ignore;
+            (* move instructions in other blocks to the entry block *)
+            let entry = ALlvm.entry_block f_old in
+            let other_blocks =
+              ALlvm.fold_left_blocks
+                (fun accu blk -> if blk = entry then accu else blk :: accu)
+                [] f_old
+            in
+            List.iter (ALlvm.transfer_instructions entry) other_blocks;
 
-          (* transferring could leave some blocks empty *)
-          (* delete empty blocks *)
-          delete_empty_blocks f_old;
+            (* add ret which returns tgt *)
+            ALlvm.builder_at_end llctx (ALlvm.instr_parent tgt)
+            |> ALlvm.build_ret tgt
+            |> ignore;
 
-          let new_ret_ty = ALlvm.type_of tgt in
-          let _f_new = ALlvm.clone_function f_old new_ret_ty in
-          ALlvm.delete_function f_old;
+            (* transferring could leave some blocks empty *)
+            (* delete empty blocks *)
+            delete_empty_blocks f_old;
 
-          Some llm
-      | _ -> None)
+            let new_ret_ty = ALlvm.type_of tgt in
+            let _f_new = ALlvm.clone_function f_old new_ret_ty in
+            ALlvm.delete_function f_old;
+
+            Some llm
+        | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
 let rec mutate_inner_bb llctx mode llm score =
