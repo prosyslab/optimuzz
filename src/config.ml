@@ -47,6 +47,8 @@ let set_interesting_types llctx =
   interesting_integer_types :=
     [
       integer_type llctx 1;
+      integer_type llctx 4;
+      (* 72911 *)
       integer_type llctx 8;
       integer_type llctx 10;
       integer_type llctx 32;
