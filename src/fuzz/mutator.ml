@@ -660,6 +660,18 @@ and trav_llvs_used_by_curr curr ty_new accu =
           accu
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 (element_type ty_new)
+      | VEC ShuffleVector ->
+          let opd0 = operand curr 0 in
+          let opd1 = operand curr 1 in
+          let mask = operand curr 2 in
+          assert (type_of opd0 = type_of opd1);
+          accu
+          |> collect_ty_changing_llvs opd0
+               (vector_type (element_type ty_new) (vector_size (type_of opd0)))
+          |> collect_ty_changing_llvs opd1
+               (vector_type (element_type ty_new) (vector_size (type_of opd0)))
+          |> collect_ty_changing_llvs mask
+               (vector_type (element_type (type_of mask)) (vector_size ty_new))
       | OTHER PHI ->
           (* propagate over all incoming values *)
           List.fold_left
@@ -699,6 +711,27 @@ and trav_llvs_using_curr curr ty_new accu =
               (vector_type ty_new (user |> type_of |> vector_size))
               accu
           else accu
+      | VEC ShuffleVector ->
+          let opd0 = operand user 0 in
+          let opd1 = operand user 1 in
+          if opd0 = curr then
+            accu
+            |> collect_ty_changing_llvs opd1 ty_new
+            |> collect_ty_changing_llvs user
+                 (vector_type (element_type ty_new)
+                    (user |> type_of |> vector_size))
+          else if opd1 = curr then
+            accu
+            |> collect_ty_changing_llvs opd0 ty_new
+            |> collect_ty_changing_llvs user
+                 (vector_type (element_type ty_new)
+                    (user |> type_of |> vector_size))
+          else
+            collect_ty_changing_llvs user
+              (vector_type
+                 (user |> type_of |> element_type)
+                 (vector_size ty_new))
+              accu
       | OTHER ICmp ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
@@ -723,6 +756,8 @@ and collect_ty_changing_llvs llv ty_new accu =
           else if opc = ExtractElement && classify_type ty_new <> Integer then
             Impossible
           else if opc = InsertElement && classify_type ty_new <> Vector then
+            Impossible
+          else if opc = ShuffleVector && classify_type ty_new <> Vector then
             Impossible
           else
             Success accu
