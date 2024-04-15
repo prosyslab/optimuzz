@@ -590,6 +590,15 @@ let reset_var_names f =
      we have to call this twice. *)
   () |> aux |> aux
 
+let reset_fun_names llm =
+  let name i = "fun" ^ string_of_int i in
+  fold_left_functions
+    (fun accu f ->
+      set_value_name (name accu) f;
+      accu + 1)
+    0 llm
+  |> ignore
+
 module ChangeRetVal = struct
   let find_block_by_name f name =
     match

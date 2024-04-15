@@ -116,6 +116,7 @@ let rec clean_llm llctx wide llm =
     if num_functions = List.length funcs_ret_const_or_void then None
     else if ALlvm.verify_module llm_clone then (
       let _ = ALlvm.choose_function llm_clone in
+      ALlvm.reset_fun_names llm_clone;
       ALlvm.iter_functions ALlvm.reset_var_names llm_clone;
       Some llm_clone)
     else if wide then clean_llm llctx false llm
