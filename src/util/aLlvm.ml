@@ -156,6 +156,29 @@ let string_of_icmp = function
   | Slt -> "slt"
   | Sle -> "sle"
 
+external get_shufflevector_mask_inner : llvalue -> llvalue
+  = "llvm_get_shufflevector_mask"
+(** [transfer_instructions src dst] moves all instructions
+    from [src] to the end of [dst] *)
+
+external set_shufflevector_mask_inner : llvalue -> llvalue -> unit
+  = "llvm_set_shufflevector_mask"
+(** [transfer_instructions src dst] moves all instructions
+  from [src] to the end of [dst] *)
+
+let get_shufflevector_mask instr =
+  match classify_value instr with
+  | Instruction opc when opc = ShuffleVector ->
+      get_shufflevector_mask_inner instr
+  | _ -> invalid_arg ("Not a shufflevector: " ^ string_of_llvalue instr)
+
+let set_shufflevector_mask mask instr =
+  assert (is_constant mask && mask |> type_of |> classify_type = Vector);
+  match classify_value instr with
+  | Instruction opc when opc = ShuffleVector ->
+      set_shufflevector_mask_inner mask instr
+  | _ -> invalid_arg ("Not a shufflevector: " ^ string_of_llvalue instr)
+
 (** [mk_const_vec vecty i] returns [<i, ..., i>] (vector of type [vecty]).
     [i] is an integer (OCaml level), not [llvalue]. *)
 let mk_const_vec vecty i =

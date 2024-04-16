@@ -198,4 +198,50 @@ extern "C"
 
     CAMLreturn(Val_unit);
   }
+
+  /* llvalue -> llvalue */
+  value llvm_get_shufflevector_mask(value instr) {
+    CAMLparam1(instr);
+    LLVMValueRef value_ref = Value_val(instr);
+    Value *v = unwrap<Value>(value_ref);
+
+    ShuffleVectorInst *svi = cast<ShuffleVectorInst>(v);
+    IntegerType *i32ty = Type::getInt32Ty(svi->getContext());
+
+    ArrayRef<int> mask = svi->getShuffleMask();
+    std::vector<Constant *> foo;
+    for (auto elem : mask)
+      foo.push_back(ConstantInt::get(i32ty, elem));
+
+    Constant *ret = ConstantVector::get(ArrayRef<Constant *>(foo));
+    CAMLreturn(to_val(ret));
+  }
+
+  /* llvalue -> llvalue -> unit */
+  value llvm_set_shufflevector_mask(value mask, value instr) {
+    CAMLparam2(mask, instr);
+    LLVMValueRef mask_ref = Value_val(mask);
+    LLVMValueRef instr_ref = Value_val(instr);
+    Value *mask_value = unwrap<Value>(mask_ref);
+    Value *instr_value = unwrap<Value>(instr_ref);
+
+    ShuffleVectorInst *svi = cast<ShuffleVectorInst>(instr_value);
+    std::vector<int> new_mask_vec;
+
+    if (auto m = dyn_cast<ConstantDataVector>(mask_value)) {
+      unsigned int num_elements = m->getNumElements();
+      for (auto i = 0; i < num_elements; i += 1)
+        new_mask_vec.push_back(m->getElementAsInteger(i));
+    } else {
+      // zero initializer
+      auto zeros = dyn_cast<ConstantAggregateZero>(mask_value);
+      assert(zeros != NULL);
+      unsigned int num_elements =
+        dyn_cast<FixedVectorType>(zeros->getType())->getNumElements();
+      new_mask_vec = std::vector<int>(num_elements, 0);
+    }
+    svi->setShuffleMask(ArrayRef<int>(new_mask_vec));
+
+    CAMLreturn(Val_unit);
+  }
 }
