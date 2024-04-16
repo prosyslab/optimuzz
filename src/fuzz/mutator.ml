@@ -113,6 +113,8 @@ module Candidates = struct
   let is_empty cands = cands.instr = [] && cands.param = [] && cands.const = []
   let no_const cands = { cands with const = [] }
   let with_const const cands = { cands with const }
+  let of_const const = { instr = []; param = []; const }
+  let const_of cands = cands.const
 
   let filter_each pred cands =
     let filter = List.filter pred in
@@ -171,6 +173,9 @@ let get_opd_cands_nonconst_allty loc : Candidates.t =
   let params = loc |> get_function |> params |> Array.to_list in
   { instr = instrs; param = params; const = [] }
 
+let get_opd_cands_const_intty () = failwith "No need to implement"
+let get_opd_cands_intty _loc = failwith "No need to implement"
+
 let get_any_integer loc =
   get_opd_cands_nonconst_allty loc
   |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Integer)
@@ -180,15 +185,18 @@ let get_any_integer loc =
        ]
   |> Candidates.choose
 
-let get_all_vector_cands loc =
+let get_opd_cands_const_vecty () =
+  List.map
+    (fun ty ->
+      List.map (fun v -> mk_const_vec ty v) !Config.interesting_integers)
+    !Config.interesting_vector_types
+  |> List.flatten
+  |> Candidates.of_const
+
+let get_opd_cands_vecty loc =
   get_opd_cands_nonconst_allty loc
   |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Vector)
-  |> Candidates.with_const
-       (List.map
-          (fun ty ->
-            List.map (fun v -> mk_const_vec ty v) !Config.interesting_integers)
-          !Config.interesting_vector_types
-       |> List.flatten)
+  |> Candidates.with_const (get_opd_cands_const_vecty () |> Candidates.const_of)
 
 (** [get_rand_opd llctx loc instr_old] gets, or generates
     a llvalue as an operand, of type of [instr_old], valid at [loc]. *)
@@ -224,78 +232,76 @@ let get_dst_tys opc ty_src =
   let pred = if opc = Trunc then ( < ) else ( > ) in
   List.filter (fun t -> pred (bw t) (bw ty_src)) tys_whole
 
+(* %0 = extractelement %VEC, %opd *)
+let create_rand_extractelement_int llctx loc opd =
+  let builder = builder_before llctx loc in
+  assert (opd |> type_of |> classify_type = Integer);
+  let cands_vec = get_opd_cands_vecty loc in
+  assert (not (Candidates.is_empty cands_vec));
+  let vec = Candidates.choose cands_vec in
+  build_extractelement vec opd "" builder
+
+(* %0 = extractelement %opd, %IDX *)
+let create_rand_extractelement_vec llctx loc opd =
+  let builder = builder_before llctx loc in
+  assert (opd |> type_of |> classify_type = Vector);
+  let idx = get_any_integer loc in
+  build_extractelement opd idx "" builder
+
 (* result = extractelement <n x <ty>> val, <ty2> idx *)
 let create_rand_extractelement llctx loc opd =
   assert (match classify_value loc with Instruction _ -> true | _ -> false);
   assert (not (is_constant opd));
+
+  match opd |> type_of |> classify_type with
+  | Integer -> create_rand_extractelement_int llctx loc opd
+  | Vector -> create_rand_extractelement_vec llctx loc opd
+  | _ ->
+      failwith
+        ("Assertion failure! opd of create_rand_extractelement must be an \
+          integer or a vector, given: "
+        ^ string_of_llvalue opd)
+
+let create_rand_insertelement_int llctx loc opd =
   let builder = builder_before llctx loc in
-  let ty_opd = type_of opd in
-  let tycls_opd = classify_type ty_opd in
-  assert (tycls_opd = Integer || tycls_opd = Vector);
-
-  if tycls_opd = Integer then (
-    (* %0 = extractelement %VEC, %opd *)
-    let cands =
-      get_opd_cands_nonconst_allty loc
-      |> Candidates.with_const
-           [
-             get_rand_const
-               (AUtil.choose_random !Config.interesting_vector_types);
-           ]
-      |> Candidates.filter_each (fun v ->
-             v |> type_of |> classify_type = Vector)
-    in
-    assert (not (Candidates.is_empty cands));
-    let vec = Candidates.choose cands in
-    build_extractelement vec opd "" builder)
+  let cands_vec = get_opd_cands_vecty loc in
+  let cands_vec_same_ty =
+    Candidates.filter_each
+      (fun v -> v |> type_of |> element_type = type_of opd)
+      cands_vec
+  in
+  if Candidates.is_empty cands_vec_same_ty || AUtil.rand_bool () then
+    (* use opd as index *)
+    let vec = Candidates.choose cands_vec in
+    let el = vec |> type_of |> element_type |> get_rand_opd loc in
+    build_insertelement vec el opd "" builder
   else
-    (* %0 = extractelement %opd, %INT *)
-    let cands =
-      get_opd_cands_nonconst_allty loc
-      |> Candidates.with_const
-           [
-             get_rand_const
-               (AUtil.choose_random !Config.interesting_integer_types);
-           ]
-      |> Candidates.filter_each (fun v ->
-             v |> type_of |> classify_type = Integer)
-    in
-    assert (not (Candidates.is_empty cands));
-    let idx = Candidates.choose cands in
-    build_extractelement opd idx "" builder
+    (* use opd as inserted value *)
+    let vec = Candidates.choose cands_vec_same_ty in
+    let idx = get_any_integer loc in
+    build_insertelement vec opd idx "" builder
 
-(* result = insertelement <n x <ty>> val, <ty> elt, <ty2> idx *)
+let create_rand_insertelement_vec llctx loc opd =
+  let builder = builder_before llctx loc in
+  let el = opd |> type_of |> element_type |> get_rand_opd loc in
+  let idx = get_any_integer loc in
+  build_insertelement opd el idx "" builder
+
+(* result = insertelement <n x <ty>> val, <ty> el, <ty2> idx *)
 let create_rand_insertelement llctx loc opd =
   assert (match classify_value loc with Instruction _ -> true | _ -> false);
   assert (not (is_constant opd));
-  let builder = builder_before llctx loc in
-  let ty_opd = type_of opd in
-  let tycls_opd = classify_type ty_opd in
-  assert (tycls_opd = Integer || tycls_opd = Vector);
-
-  if tycls_opd = Integer then
-    let cands_vec = get_all_vector_cands loc in
-    let cands_vec_same_ty =
-      Candidates.filter_each
-        (fun v -> v |> type_of |> element_type = ty_opd)
-        cands_vec
-    in
-    if Candidates.is_empty cands_vec_same_ty || AUtil.rand_bool () then
-      (* use opd as index *)
-      let vec = Candidates.choose cands_vec in
-      let el = get_rand_opd loc (vec |> type_of |> element_type) in
-      build_insertelement vec el opd "" builder
-    else
-      (* use opd as inserted value *)
-      let vec = Candidates.choose cands_vec_same_ty in
-      let idx = get_any_integer loc in
-      build_insertelement vec opd idx "" builder
-  else
-    let el = get_rand_opd loc (element_type ty_opd) in
-    let idx = get_any_integer loc in
-    build_insertelement opd el idx "" builder
+  match opd |> type_of |> classify_type with
+  | Integer -> create_rand_insertelement_int llctx loc opd
+  | Vector -> create_rand_insertelement_vec llctx loc opd
+  | _ ->
+      failwith
+        ("Assertion failure! opd of create_rand_insertelement must be an \
+          integer or a vector, given: "
+        ^ string_of_llvalue opd)
 
 (* result = shufflevector <n x <ty>> v1, <n x <ty>> v2, <m x i32> mask
+   ; mask must be constant
    ; yields <m x <ty>> *)
 let create_rand_shufflevector llctx loc opd =
   assert (match classify_value loc with Instruction _ -> true | _ -> false);
@@ -305,29 +311,20 @@ let create_rand_shufflevector llctx loc opd =
   let tycls_opd = classify_type ty_opd in
   assert (tycls_opd = Vector);
 
-  let is_elty_i32 ty =
-    assert (classify_type ty = Vector);
-    ty |> element_type |> integer_bitwidth = 32
-  in
-  if is_elty_i32 ty_opd && AUtil.rand_bool () then
-    (* use opd as mask *)
-    let vec_a = loc |> get_all_vector_cands |> Candidates.choose in
-    let vec_b = get_rand_opd loc (type_of vec_a) in
-    build_shufflevector vec_a vec_b opd "" builder
-  else
-    (* use opd as one of input vectors *)
-    let opd' = get_rand_opd loc ty_opd in
-    let mask =
-      let cands_mask =
-        loc
-        |> get_all_vector_cands
-        |> Candidates.filter_each (fun v -> v |> type_of |> is_elty_i32)
-      in
-      (* constants exist *)
-      assert (not (Candidates.is_empty cands_mask));
-      Candidates.choose cands_mask
+  (* use opd as one of input vectors *)
+  let opd' = get_rand_opd loc ty_opd in
+  let mask =
+    let cands_mask =
+      get_opd_cands_const_vecty ()
+      |> Candidates.const_of
+      |> List.filter (fun v ->
+             v |> type_of |> element_type |> integer_bitwidth = 32)
     in
-    build_shufflevector opd opd' mask "" builder
+    (* constants must exist *)
+    assert (cands_mask <> []);
+    AUtil.choose_random cands_mask
+  in
+  build_shufflevector opd opd' mask "" builder
 
 (* result = select <selty> cond, <ty> val1, <ty> val2 *)
 let create_rand_select llctx loc opd =
@@ -441,7 +438,7 @@ let create_rand_instr llctx llm =
         let opd' = get_rand_opd loc ty_opd in
         create_binary llctx loc opc opd opd'
     | VEC ExtractElement -> create_rand_extractelement llctx loc opd
-    | VEC InsertElement -> create_rand_extractelement llctx loc opd
+    | VEC InsertElement -> create_rand_insertelement llctx loc opd
     | VEC ShuffleVector ->
         if opd |> type_of |> classify_type = Vector then
           create_rand_shufflevector llctx loc opd
@@ -661,17 +658,15 @@ and trav_llvs_used_by_curr curr ty_new accu =
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 (element_type ty_new)
       | VEC ShuffleVector ->
+          (* mask is surely constant, we can infer it later *)
           let opd0 = operand curr 0 in
           let opd1 = operand curr 1 in
-          let mask = operand curr 2 in
           assert (type_of opd0 = type_of opd1);
           accu
           |> collect_ty_changing_llvs opd0
                (vector_type (element_type ty_new) (vector_size (type_of opd0)))
           |> collect_ty_changing_llvs opd1
                (vector_type (element_type ty_new) (vector_size (type_of opd0)))
-          |> collect_ty_changing_llvs mask
-               (vector_type (element_type (type_of mask)) (vector_size ty_new))
       | OTHER PHI ->
           (* propagate over all incoming values *)
           List.fold_left
@@ -712,26 +707,16 @@ and trav_llvs_using_curr curr ty_new accu =
               accu
           else accu
       | VEC ShuffleVector ->
+          (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
           let opd1 = operand user 1 in
-          if opd0 = curr then
-            accu
-            |> collect_ty_changing_llvs opd1 ty_new
-            |> collect_ty_changing_llvs user
-                 (vector_type (element_type ty_new)
-                    (user |> type_of |> vector_size))
-          else if opd1 = curr then
-            accu
-            |> collect_ty_changing_llvs opd0 ty_new
-            |> collect_ty_changing_llvs user
-                 (vector_type (element_type ty_new)
-                    (user |> type_of |> vector_size))
-          else
-            collect_ty_changing_llvs user
-              (vector_type
-                 (user |> type_of |> element_type)
-                 (vector_size ty_new))
-              accu
+          accu
+          |> collect_ty_changing_llvs
+               (if opd0 = curr then opd1 else opd0)
+               ty_new
+          |> collect_ty_changing_llvs user
+               (vector_type (element_type ty_new)
+                  (user |> type_of |> vector_size))
       | OTHER ICmp ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
