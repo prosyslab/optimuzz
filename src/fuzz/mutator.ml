@@ -683,9 +683,11 @@ and trav_llvs_used_by_curr curr ty_new accu =
 
 (** [trav_llvs_using_curr curr ty_new accu] propagates type inference to values
     USING [curr] (users of curr).
-    NOTE: Some of this work specially
-    if type inferrence (user) -> (opd of user) is impossible. *)
+    Handle exceptional cases:
+    1. LHS type = RHS type <> user type (icmp, shufflevector)
+    2. Certain operand position requires certain type class (vector instrs) *)
 and trav_llvs_using_curr curr ty_new accu =
+  let tycls = classify_type ty_new in
   fold_left_uses
     (fun accu use ->
       let user = user use in
@@ -696,27 +698,33 @@ and trav_llvs_using_curr curr ty_new accu =
           collect_ty_changing_llvs user ty_new accu
       | VEC ExtractElement ->
           if operand user 0 = curr then
-            collect_ty_changing_llvs user (element_type ty_new) accu
+            if tycls <> Vector then Impossible
+            else collect_ty_changing_llvs user (element_type ty_new) accu
           else accu
       | VEC InsertElement ->
           if operand user 0 = curr then
-            collect_ty_changing_llvs user ty_new accu
+            if tycls <> Vector then Impossible
+            else collect_ty_changing_llvs user ty_new accu
           else if operand user 1 = curr then
-            collect_ty_changing_llvs user
-              (vector_type ty_new (user |> type_of |> vector_size))
-              accu
+            if tycls <> Integer then Impossible
+            else
+              collect_ty_changing_llvs user
+                (vector_type ty_new (user |> type_of |> vector_size))
+                accu
           else accu
       | VEC ShuffleVector ->
-          (* preserve type equality of both operands *)
-          let opd0 = operand user 0 in
-          let opd1 = operand user 1 in
-          accu
-          |> collect_ty_changing_llvs
-               (if opd0 = curr then opd1 else opd0)
-               ty_new
-          |> collect_ty_changing_llvs user
-               (vector_type (element_type ty_new)
-                  (user |> type_of |> vector_size))
+          if tycls <> Vector then Impossible
+          else
+            (* preserve type equality of both operands *)
+            let opd0 = operand user 0 in
+            let opd1 = operand user 1 in
+            accu
+            |> collect_ty_changing_llvs
+                 (if opd0 = curr then opd1 else opd0)
+                 ty_new
+            |> collect_ty_changing_llvs user
+                 (vector_type (element_type ty_new)
+                    (user |> type_of |> vector_size))
       | OTHER ICmp ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
@@ -783,46 +791,37 @@ let copy_blocks llctx f_old f_new =
   in
   loop entry_new 1
 
+let migrate_const_int llv_old ty_new =
+  assert (is_constant llv_old);
+  let ty_old = type_of llv_old in
+  assert (classify_type ty_old = Integer);
+  assert (classify_type ty_new = Integer);
+
+  if is_undef llv_old then undef ty_new
+  else if is_poison llv_old then poison ty_new
+  else const_int ty_new (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+
 let migrate_const llv_old ty_new =
   assert (is_constant llv_old);
-  if is_poison llv_old then poison ty_new
-  else if is_undef llv_old then undef ty_new
-  else
-    match (llv_old |> type_of |> classify_type, classify_type ty_new) with
-    | Pointer, _ -> const_null ty_new
-    | Integer, Integer ->
-        const_int ty_new
-          (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
-    | Integer, Vector ->
-        let el_ty = element_type ty_new in
-        let vec_size = vector_size ty_new in
-        let llv_arr =
-          Array.make vec_size
-            (const_int el_ty
-               (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
-        in
-        const_vector llv_arr
-    | Vector, Integer ->
-        const_int ty_new
-          (aggregate_element llv_old 0
-          |> Option.get
-          |> int64_of_const
-          |> Option.get
-          |> Int64.to_int)
-    | Vector, Vector ->
-        let el_ty = element_type ty_new in
-        let vec_size = vector_size ty_new in
-        let llv_arr =
-          Array.make vec_size
-            (const_int el_ty
-               (aggregate_element llv_old 0
-               |> Option.get
-               |> int64_of_const
-               |> Option.get
-               |> Int64.to_int))
-        in
-        const_vector llv_arr
-    | _ -> failwith "Unsupported type migration"
+  match (llv_old |> type_of |> classify_type, classify_type ty_new) with
+  | Pointer, Pointer -> const_null ty_new
+  | Integer, Integer -> migrate_const_int llv_old ty_new
+  | Integer, Vector ->
+      let el_ty = element_type ty_new in
+      let vec_size = vector_size ty_new in
+      let llv_arr = Array.make vec_size (migrate_const_int llv_old el_ty) in
+      const_vector llv_arr
+  | Vector, Integer ->
+      migrate_const_int (aggregate_element llv_old 0 |> Option.get) ty_new
+  | Vector, Vector ->
+      let el_ty = element_type ty_new in
+      let vec_size = vector_size ty_new in
+      let llv_arr =
+        Array.make vec_size
+          (migrate_const_int (aggregate_element llv_old 0 |> Option.get) el_ty)
+      in
+      const_vector llv_arr
+  | _ -> failwith "Unsupported type migration"
 
 let migrate_self llv link_v =
   if is_constant llv then migrate_const llv (type_of llv)
@@ -898,11 +897,43 @@ let migrate_insertelement builder instr_old typemap link_v =
     (migrate_to_other_ty opd1 (opd0 |> type_of |> element_type) link_v)
     (migrate_self opd2 link_v) "" builder
 
+let migrate_shufflevector builder instr_old typemap link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  let mask = get_shufflevector_mask instr_old in
+
+  let ty_new = get_ty instr_old typemap in
+  let mask_new =
+    if ty_new = type_of instr_old then mask
+    else
+      migrate_const mask
+        (vector_type (element_type (type_of mask)) (vector_size ty_new))
+  in
+
+  let opd0, opd1 =
+    match (is_constant opd0, is_constant opd1) with
+    | true, true -> failwith "Both operands of ShuffleVector are constants."
+    | true, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd0 = migrate_to_other_ty opd0 (type_of opd1) link_v in
+        (opd0, opd1)
+    | false, true ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
+        (opd0, opd1)
+    | false, false ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_self opd1 link_v in
+        (opd0, opd1)
+  in
+  build_shufflevector opd0 opd1 mask_new "" builder
+
 let migrate_vec builder instr_old typemap link_v =
   let opc = instr_opcode instr_old in
   match opc with
   | ExtractElement -> migrate_extractelement builder instr_old link_v
   | InsertElement -> migrate_insertelement builder instr_old typemap link_v
+  | ShuffleVector -> migrate_shufflevector builder instr_old typemap link_v
   | _ -> failwith "NEVER OCCUR"
 
 let migrate_mem builder instr_old typemap link_v =
@@ -1125,10 +1156,7 @@ let verify_and_clean f_old f_new =
 let check_target_for_change_type target f =
   if
     fold_left_all_instr
-      (fun accu i ->
-        accu
-        && OpCls.opcls_of i <> UNSUPPORTED
-        && OpCls.opcls_of i <> VEC ShuffleVector)
+      (fun accu i -> accu && OpCls.opcls_of i <> UNSUPPORTED)
       true f
   then
     if target |> type_of |> classify_type = Void then false
