@@ -37,6 +37,7 @@ let check_transformation llfile =
 let args = ref []
 let ntasks = ref 12
 let re = ref None
+let tv_bin = ref "./alive-tv"
 
 let speclist =
   [
@@ -44,6 +45,7 @@ let speclist =
     ( "-re",
       Arg.String (fun s -> re := Some (Str.regexp s)),
       "regular expression to filter files" );
+    ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary")
   ]
 
 let bar ~total =
@@ -75,6 +77,8 @@ let _ =
    with Sys_error _ ->
      Sys.command "rm -rf tmp" |> ignore;
      Sys.mkdir "tmp" 0o777);
+
+  Config.alive_tv_bin := !tv_bin;
 
   let out_dir = !args |> List.hd in
   let corpus_dir = Filename.concat out_dir "corpus" in
