@@ -42,9 +42,6 @@ let rec clean_llm llctx wide llm =
   (* make llm clone*)
   let llm_clone = Llvm_transform_utils.clone_module llm in
 
-  let num_functions =
-    ALlvm.fold_left_functions (fun num _ -> num + 1) 0 llm_clone
-  in
   llm_clone
   |> ALlvm.fold_left_functions
        (fun accu f ->
@@ -113,8 +110,7 @@ let rec clean_llm llctx wide llm =
   List.rev funcs_ret_const_or_void |> List.iter ALlvm.delete_function;
 
   try
-    if num_functions = List.length funcs_ret_const_or_void then None
-    else if ALlvm.verify_module llm_clone then (
+    if ALlvm.verify_module llm_clone then (
       let _ = ALlvm.choose_function llm_clone in
       ALlvm.reset_fun_names llm_clone;
       ALlvm.iter_functions ALlvm.reset_var_names llm_clone;
