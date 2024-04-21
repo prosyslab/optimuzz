@@ -149,6 +149,7 @@ let unwrap_interest_vec ty v =
     let elty = element_type ty in
     v |> Array.map (unwrap_interest_int elty) |> const_vector
 
+(** [get_rand_const ty] returns a random constant of type [ty]. *)
 let get_rand_const ty =
   match classify_type ty with
   | Integer ->
@@ -166,6 +167,8 @@ let get_rand_const ty =
   | Pointer -> const_null ty
   | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
 
+(** [get_opd_cands loc ty] returns operand candidates of type [ty],
+    valid at [loc]. *)
 let get_opd_cands loc ty : Candidates.t =
   let cands_instr =
     loc
@@ -193,14 +196,21 @@ let get_opd_cands loc ty : Candidates.t =
   in
   { instr = cands_instr; const = cands_const; param = cands_param }
 
+(** [get_opd_cands_nonconst_allty loc] returns operand candidates valid at [loc].
+    Returned candidates include all non-const llvalues, regardless of types. *)
 let get_opd_cands_nonconst_allty loc : Candidates.t =
   let instrs = loc |> get_instrs_before ~wide:false in
   let params = loc |> get_function |> params |> Array.to_list in
   { instr = instrs; param = params; const = [] }
 
+(** @deprecated "NOT IMPLEMENTED" *)
 let get_opd_cands_const_intty () = failwith "No need to implement"
+
+(** @deprecated "NOT IMPLEMENTED" *)
 let get_opd_cands_intty _loc = failwith "No need to implement"
 
+(** [get_any_integer loc] returns all valid integers at [loc],
+    regardless of types. *)
 let get_any_integer loc =
   get_opd_cands_nonconst_allty loc
   |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Integer)
@@ -211,6 +221,8 @@ let get_any_integer loc =
        ]
   |> Candidates.choose
 
+(** [get_opd_cands_const_vecty ()] returns all constant vector operand
+    candidates. *)
 let get_opd_cands_const_vecty () =
   List.map
     (fun ty ->
@@ -219,6 +231,8 @@ let get_opd_cands_const_vecty () =
   |> List.flatten
   |> Candidates.of_const
 
+(** [get_opd_cands_vecty loc] returns all vector typed operand candidates,
+    valid at [loc]. *)
 let get_opd_cands_vecty loc =
   get_opd_cands_nonconst_allty loc
   |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Vector)
