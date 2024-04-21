@@ -4,7 +4,7 @@ let main () =
   let llctx = ALlvm.create_context () in
   let llm = ALlvm.read_ll llctx Sys.argv.(1) in
 
-  Config.set_interesting_types llctx;
+  Config.Interests.set_interesting_types llctx;
 
   Logger.from_file "debug.log";
   Logger.set_level Logger.DEBUG;

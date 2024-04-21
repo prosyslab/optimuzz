@@ -134,11 +134,35 @@ module Candidates = struct
     |> AUtil.choose_random
 end
 
+let unwrap_interest_int ty v =
+  assert (classify_type ty = Integer);
+  match v with
+  | Config.Interests.Normal i -> const_int ty i
+  | Undef -> undef ty
+  | Poison -> poison ty
+
+let unwrap_interest_vec ty v =
+  assert (classify_type ty = Vector);
+  if vector_size ty <> Array.length v then
+    invalid_arg "cannot unwrap to unmatched size of vector."
+  else
+    let elty = element_type ty in
+    v |> Array.map (unwrap_interest_int elty) |> const_vector
+
 let get_rand_const ty =
-  let v = AUtil.choose_random !Config.interesting_integers in
   match classify_type ty with
-  | Integer -> const_int ty v
-  | Vector -> mk_const_vec ty v
+  | Integer ->
+      !Config.Interests.interesting_integers
+      |> AUtil.choose_random
+      |> unwrap_interest_int ty
+  | Vector ->
+      let l =
+        List.filter
+          (fun v -> Array.length v = vector_size ty)
+          !Config.Interests.interesting_vectors
+      in
+      assert (l <> []);
+      l |> AUtil.choose_random |> unwrap_interest_vec ty
   | Pointer -> const_null ty
   | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
 
@@ -150,12 +174,13 @@ let get_opd_cands loc ty : Candidates.t =
   in
   let cands_const =
     match classify_type ty with
-    | Integer -> List.map (const_int ty) !Config.interesting_integers
+    | Integer ->
+        List.map (unwrap_interest_int ty) !Config.Interests.interesting_integers
     | Vector ->
-        let el_ty = element_type ty in
-        let vec_size = vector_size ty in
-        let mk_vec i = const_vector (Array.make vec_size (const_int el_ty i)) in
-        List.map mk_vec !Config.interesting_integers
+        List.filter
+          (fun v -> Array.length v = vector_size ty)
+          !Config.Interests.interesting_vectors
+        |> List.map (unwrap_interest_vec ty)
     | Pointer -> [ ty |> type_context |> pointer_type |> const_null ]
     | _ -> []
   in
@@ -181,15 +206,16 @@ let get_any_integer loc =
   |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Integer)
   |> Candidates.with_const
        [
-         get_rand_const (AUtil.choose_random !Config.interesting_integer_types);
+         get_rand_const
+           (AUtil.choose_random !Config.Interests.interesting_integer_types);
        ]
   |> Candidates.choose
 
 let get_opd_cands_const_vecty () =
   List.map
     (fun ty ->
-      List.map (fun v -> mk_const_vec ty v) !Config.interesting_integers)
-    !Config.interesting_vector_types
+      List.map (unwrap_interest_vec ty) !Config.Interests.interesting_vectors)
+    !Config.Interests.interesting_vector_types
   |> List.flatten
   |> Candidates.of_const
 
@@ -220,9 +246,9 @@ let get_dst_tys opc ty_src =
   assert (tycls_src = Integer || tycls_src = Vector);
 
   let tys_whole =
-    if tycls_src = Integer then !Config.interesting_integer_types
+    if tycls_src = Integer then !Config.Interests.interesting_integer_types
     else
-      !Config.interesting_vector_types
+      !Config.Interests.interesting_vector_types
       |> List.filter (fun t -> vector_size t = vector_size ty_src)
   in
   let bw =
@@ -1180,7 +1206,7 @@ let change_type llctx llm =
     (* decide type *)
     let ty_old = type_of target in
     let rec loop () =
-      let ty_new = AUtil.choose_random !Config.interesting_types in
+      let ty_new = AUtil.choose_random !Config.Interests.interesting_types in
       L.debug "checking %s as new type..." (string_of_lltype ty_new);
       if ty_old = ty_new then loop ()
       else

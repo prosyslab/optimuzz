@@ -36,33 +36,65 @@ let metric = ref "avg"
 let log_level = ref "error"
 
 (* mutation options *)
-let interesting_integers =
-  ref [ 0; 1; 2; 255 (*0xFF*); 65535 (*0xFFFF*); 4294967295 (* 0xFFFFFFFF *) ]
 
-let interesting_integer_types = ref []
-let interesting_vector_types = ref []
-let interesting_types = ref []
+module Interests = struct
+  type t = Normal of int | Undef | Poison
 
-let set_interesting_types llctx =
-  interesting_integer_types :=
-    [
-      integer_type llctx 1;
-      integer_type llctx 8;
-      integer_type llctx 10;
-      integer_type llctx 32;
-      integer_type llctx 34;
-      integer_type llctx 64;
-    ];
-  interesting_vector_types :=
-    [
-      vector_type (i1_type llctx) 1;
-      vector_type (i1_type llctx) 4;
-      vector_type (i8_type llctx) 1;
-      vector_type (i8_type llctx) 4;
-      vector_type (i32_type llctx) 1;
-      vector_type (i32_type llctx) 4;
-    ];
-  interesting_types := !interesting_integer_types @ !interesting_vector_types
+  (* mutation options *)
+  let interesting_integers =
+    ref
+      [
+        Normal 0;
+        Normal 1;
+        Normal 2;
+        Normal 255 (*0xFF*);
+        Normal 65535 (*0xFFFF*);
+        Normal 4294967295 (* 0xFFFFFFFF *);
+        Undef;
+        Poison;
+      ]
+
+  let interesting_vectors =
+    ref
+      [
+        [| Normal 0 |];
+        [| Normal 1 |];
+        [| Normal ~-1 |];
+        [| Normal 0; Normal 1 |];
+        [| Poison; Normal 0 |];
+        [| Normal 0; Undef; Undef |];
+        [| Normal 0; Normal 0; Normal 0; Normal 0 |];
+        [| Normal 0; Normal 1; Normal 2; Normal 3 |];
+        [| Normal 0; Undef; Undef; Normal 3 |];
+      ]
+
+  let interesting_integer_types = ref []
+  let interesting_vector_types = ref []
+  let interesting_types = ref []
+
+  let set_interesting_types llctx =
+    interesting_integer_types :=
+      [
+        integer_type llctx 1;
+        integer_type llctx 8;
+        integer_type llctx 10;
+        integer_type llctx 32;
+        integer_type llctx 34;
+        integer_type llctx 64;
+      ];
+    interesting_vector_types :=
+      [
+        vector_type (i1_type llctx) 1;
+        vector_type (i1_type llctx) 4;
+        vector_type (i8_type llctx) 1;
+        vector_type (i8_type llctx) 4;
+        vector_type (i16_type llctx) 2;
+        vector_type (i16_type llctx) 3;
+        vector_type (i32_type llctx) 1;
+        vector_type (i32_type llctx) 4;
+      ];
+    interesting_types := !interesting_integer_types @ !interesting_vector_types
+end
 
 (* logging options *)
 let log_time = ref 30
@@ -226,7 +258,7 @@ let initialize llctx () =
 
   L.flush ();
 
-  set_interesting_types llctx;
+  Interests.set_interesting_types llctx;
 
   if !dry_run then (
     opts
