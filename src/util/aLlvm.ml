@@ -216,8 +216,10 @@ let is_llvm_intrinsic instr =
   else false
 
 let read_ll llctx filepath =
-  let buf = Llvm.MemoryBuffer.of_file filepath in
-  Llvm_irreader.parse_ir llctx buf
+  try
+    let buf = Llvm.MemoryBuffer.of_file filepath in
+    Llvm_irreader.parse_ir llctx buf |> Result.ok
+  with Llvm_irreader.Error msg -> Result.Error msg
 
 (** [save_ll target_dir output filename llmodule] saves [llmodule]
  *  under [target_dir], named as [filename].
