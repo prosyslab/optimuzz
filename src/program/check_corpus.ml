@@ -45,7 +45,7 @@ let speclist =
     ( "-re",
       Arg.String (fun s -> re := Some (Str.regexp s)),
       "regular expression to filter files" );
-    ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary")
+    ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary");
   ]
 
 let bar ~total =
