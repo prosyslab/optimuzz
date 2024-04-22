@@ -2,7 +2,7 @@ open Util
 
 let main () =
   let llctx = ALlvm.create_context () in
-  let llm = ALlvm.read_ll llctx Sys.argv.(1) in
+  let llm = ALlvm.read_ll llctx Sys.argv.(1) |> Result.get_ok in
 
   Config.set_interesting_types llctx;
 
