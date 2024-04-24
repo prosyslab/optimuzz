@@ -42,11 +42,7 @@ let make llctx =
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   assert (Sys.file_exists dir && Sys.is_directory dir);
 
-  let seed_files =
-    Sys.readdir dir
-    |> Array.to_list
-    |> List.filter (fun file -> Filename.extension file = ".ll")
-  in
+  let seed_files = Sys.readdir dir |> Array.to_list in
 
   let can_optimize file =
     let path = Filename.concat dir file in
@@ -75,45 +71,48 @@ let make llctx =
            let path = Filename.concat dir file in
            if can_optimize file |> not then (pool_first, other_seeds)
            else
-             let llm =
-               ALlvm.MemoryBuffer.of_file path
-               |> Llvm_irreader.parse_ir llctx
-               |> (fun llm ->
-                    ALlvm.clean_module_data llm;
-                    llm)
-               |> Prep.clean_llm llctx true
-             in
+             let llm = ALlvm.read_ll llctx path in
              match llm with
-             | None -> (pool_first, other_seeds)
-             | Some llm -> (
-                 let h = ALlvm.hash_llm llm in
-                 let filename = Format.sprintf "id:%010d.ll" h in
-                 let filename = ALlvm.save_ll !Config.out_dir filename llm in
-                 let res =
-                   Oracle.Optimizer.run ~passes:[ "instcombine" ] filename
-                 in
-                 AUtil.clean filename;
-                 match res with
-                 | CRASH | INVALID -> (pool_first, other_seeds)
-                 | VALID cov ->
-                     let covers = CD.Coverage.cover_target target_path cov in
-                     let score = score_func target_path cov in
-                     let score_int =
-                       match score with
-                       | None -> !Config.max_distance |> float_of_int
-                       | Some x -> x
+             | Error msg ->
+                 Format.eprintf "Error while parsing a seed (%s): %s@." path msg;
+                 (pool_first, other_seeds)
+             | Ok llm -> (
+                 ALlvm.clean_module_data llm;
+                 match Prep.clean_llm llctx true llm with
+                 | None -> (pool_first, other_seeds)
+                 | Some llm -> (
+                     let h = ALlvm.hash_llm llm in
+                     let filename = Format.sprintf "id:%010d.ll" h in
+                     let filename =
+                       ALlvm.save_ll !Config.out_dir filename llm
                      in
-                     let seed =
-                       {
-                         priority = get_prio covers score_int;
-                         llm;
-                         covers;
-                         score = score_int;
-                       }
+                     let res =
+                       Oracle.Optimizer.run ~passes:[ "instcombine" ] filename
                      in
-                     L.info "seed: %s, %a@." file pp_seed seed;
-                     if covers then (seed :: pool_first, other_seeds)
-                     else (pool_first, seed :: other_seeds)))
+                     AUtil.clean filename;
+                     match res with
+                     | CRASH | INVALID -> (pool_first, other_seeds)
+                     | VALID cov ->
+                         let covers =
+                           CD.Coverage.cover_target target_path cov
+                         in
+                         let score = score_func target_path cov in
+                         let score_int =
+                           match score with
+                           | None -> !Config.max_distance |> float_of_int
+                           | Some x -> x
+                         in
+                         let seed =
+                           {
+                             priority = get_prio covers score_int;
+                             llm;
+                             covers;
+                             score = score_int;
+                           }
+                         in
+                         L.info "seed: %s, %a" file pp_seed seed;
+                         if covers then (seed :: pool_first, other_seeds)
+                         else (pool_first, seed :: other_seeds))))
          ([], [])
   in
 

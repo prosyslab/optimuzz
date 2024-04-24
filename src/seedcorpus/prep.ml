@@ -24,7 +24,8 @@ let rec redef_fn llctx f_old wide instr =
 
         (* copy function with new return value (target).*)
         ALlvm.ChangeRetVal.copy_blocks llctx f_old f_new;
-        ALlvm.ChangeRetVal.migrate llctx f_old f_new i;
+        (try ALlvm.ChangeRetVal.migrate llctx f_old f_new i
+         with _ -> ALlvm.delete_function f_new);
 
         true)
       else redef_fn llctx f_old wide i

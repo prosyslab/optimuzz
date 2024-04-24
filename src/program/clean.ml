@@ -4,7 +4,7 @@ open Util
 let main input_file =
   let llctx = ALlvm.create_context () in
   Format.printf "input file: %s@." input_file;
-  let llm = ALlvm.read_ll llctx input_file in
+  let llm = ALlvm.read_ll llctx input_file |> Result.get_ok in
   Format.printf "input module: %s@." (ALlvm.string_of_llmodule llm);
   match Prep.clean_llm llctx true llm with
   | None ->

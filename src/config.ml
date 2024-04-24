@@ -76,6 +76,7 @@ module Interests = struct
     interesting_integer_types :=
       [
         integer_type llctx 1;
+        integer_type llctx 4;
         integer_type llctx 8;
         integer_type llctx 10;
         integer_type llctx 32;
@@ -230,10 +231,13 @@ let initialize llctx () =
   (* make directories first *)
   (try Sys.mkdir !out_dir 0o755
    with Sys_error msg ->
-     F.eprintf "%s@." msg;
-     F.eprintf "It seems like the output directory already exists.@.";
-     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
-     exit 0);
+     (* Check if corpus and crash directory are there already *)
+     if Sys.file_exists !corpus_dir && Sys.file_exists !crash_dir then (
+       F.eprintf "%s@." msg;
+       F.eprintf "It seems like the output directory already exists.@.";
+       F.eprintf "We don't want to mess up with existing files. Exiting...@.";
+       exit 0)
+     else ());
   (try Sys.mkdir !crash_dir 0o755 with _ -> ());
   (try Sys.mkdir !corpus_dir 0o755 with _ -> ());
 
@@ -260,12 +264,11 @@ let initialize llctx () =
 
   Interests.set_interesting_types llctx;
 
-  if !dry_run then (
+  if !dry_run then
     opts
     |> List.iter (fun (name, spec, _) ->
            match spec with
            | Arg.Set b -> Format.printf "%s: %b\n" name !b
            | Arg.Set_string s -> Format.printf "%s: %s\n" name !s
            | Arg.Set_int i -> Format.printf "%s: %d\n" name !i
-           | _ -> failwith "not implemented");
-    exit 0)
+           | _ -> failwith "not implemented")
