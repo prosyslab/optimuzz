@@ -1,7 +1,9 @@
 #include <assert.h>
 
 #include "llvm-c/Analysis.h"
-
+#include "llvm-c/Core.h"
+#include "llvm-c/Support.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -13,6 +15,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+#include "caml/alloc.h"
 #include "caml/mlvalues.h"
 #include "caml/memory.h"
 
@@ -244,4 +247,20 @@ extern "C"
 
     CAMLreturn(Val_unit);
   }
+
+  /* llvalue -> string */
+  value llvm_string_of_constantint(value C){
+    LLVMValueRef c_ref = Value_val(C);
+    Value *V = unwrap<Value>(c_ref);
+    SmallVector<char,100> Str;
+    std::string result;
+    if (auto c = dyn_cast<ConstantInt>(V)){
+      c->getValue().toStringUnsigned(Str);
+      for (int i =0; i < Str.size(); i++){
+        result+=Str[i];
+      }
+    }
+    return caml_copy_string(result.c_str());
+  }
+
 }

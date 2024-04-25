@@ -137,7 +137,7 @@ end
 let unwrap_interest_int ty v =
   assert (classify_type ty = Integer);
   match v with
-  | Config.Interests.Normal i -> const_int ty i
+  | Config.Interests.Normal i -> const_int_of_string ty i 10
   | Undef -> undef ty
   | Poison -> poison ty
 
@@ -839,7 +839,7 @@ let migrate_const_int llv_old ty_new =
 
   if is_undef llv_old then undef ty_new
   else if is_poison llv_old then poison ty_new
-  else const_int ty_new (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+  else const_int_of_string ty_new (llv_old |> string_of_constint) 10
 
 let migrate_const llv_old ty_new =
   assert (is_constant llv_old);

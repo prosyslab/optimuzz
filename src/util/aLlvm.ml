@@ -19,6 +19,9 @@ external transfer_instructions : llbasicblock -> llbasicblock -> unit
 external clean_module_data : llmodule -> unit = "llvm_clean_module_data"
 (** [clean_module_data m] removes all metadata from [m] *)
 
+external string_of_constint : llvalue -> string = "llvm_string_of_constantint"
+(** [string_of_constint v] get value as string from [v] *)
+
 let string_of_opcode = function
   | Opcode.Invalid -> "Invalid"
   | Ret -> "Ret"
@@ -183,7 +186,8 @@ let set_shufflevector_mask mask instr =
     [i] is an integer (OCaml level), not [llvalue]. *)
 let mk_const_vec vecty i =
   const_vector
-    (Array.make (vector_size vecty) (const_int (element_type vecty) i))
+    (Array.make (vector_size vecty)
+       (const_int_of_string (element_type vecty) i 10))
 
 (** [fold_left_all_instr f a m] returns [f (... f (f (f a i1) i2) i3 ...) iN],
     where [i1 ... iN] are the instructions in function [m]. *)
@@ -682,35 +686,29 @@ module ChangeRetVal = struct
       match (llv_old |> type_of |> classify_type, classify_type ty_new) with
       | Pointer, _ -> const_null ty_new
       | Integer, Integer ->
-          const_int ty_new
-            (llv_old |> int64_of_const |> Option.get |> Int64.to_int)
+          const_int_of_string ty_new (llv_old |> string_of_constint) 10
       | Integer, Vector ->
           let el_ty = element_type ty_new in
           let vec_size = vector_size ty_new in
           let llv_arr =
             Array.make vec_size
-              (const_int el_ty
-                 (llv_old |> int64_of_const |> Option.get |> Int64.to_int))
+              (const_int_of_string el_ty (llv_old |> string_of_constint) 10)
           in
           const_vector llv_arr
       | Vector, Integer ->
-          const_int ty_new
-            (aggregate_element llv_old 0
-            |> Option.get
-            |> int64_of_const
-            |> Option.get
-            |> Int64.to_int)
+          const_int_of_string ty_new
+            (aggregate_element llv_old 0 |> Option.get |> string_of_constint)
+            10
       | Vector, Vector ->
           let el_ty = element_type ty_new in
           let vec_size = vector_size ty_new in
           let llv_arr =
             Array.make vec_size
-              (const_int el_ty
+              (const_int_of_string el_ty
                  (aggregate_element llv_old 0
                  |> Option.get
-                 |> int64_of_const
-                 |> Option.get
-                 |> Int64.to_int))
+                 |> string_of_constint)
+                 10)
           in
           const_vector llv_arr
       | _ -> failwith "Unsupported type migration"

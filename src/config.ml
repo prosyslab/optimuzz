@@ -38,18 +38,18 @@ let log_level = ref "error"
 (* mutation options *)
 
 module Interests = struct
-  type t = Normal of int | Undef | Poison
+  type t = Normal of string | Undef | Poison
 
   (* mutation options *)
   let interesting_integers =
     ref
       [
-        Normal 0;
-        Normal 1;
-        Normal 2;
-        Normal 255 (*0xFF*);
-        Normal 65535 (*0xFFFF*);
-        Normal 4294967295 (* 0xFFFFFFFF *);
+        Normal "0";
+        Normal "1";
+        Normal "2";
+        Normal "255" (*0xFF*);
+        Normal "65535" (*0xFFFF*);
+        Normal "4294967295" (* 0xFFFFFFFF *);
         Undef;
         Poison;
       ]
@@ -57,15 +57,15 @@ module Interests = struct
   let interesting_vectors =
     ref
       [
-        [| Normal 0 |];
-        [| Normal 1 |];
-        [| Normal ~-1 |];
-        [| Normal 0; Normal 1 |];
-        [| Poison; Normal 0 |];
-        [| Normal 0; Undef; Undef |];
-        [| Normal 0; Normal 0; Normal 0; Normal 0 |];
-        [| Normal 0; Normal 1; Normal 2; Normal 3 |];
-        [| Normal 0; Undef; Undef; Normal 3 |];
+        [| Normal "0" |];
+        [| Normal "1" |];
+        [| Normal "-1" |];
+        [| Normal "0"; Normal "1" |];
+        [| Poison; Normal "0" |];
+        [| Normal "0"; Undef; Undef |];
+        [| Normal "0"; Normal "0"; Normal "0"; Normal "0" |];
+        [| Normal "0"; Normal "1"; Normal "2"; Normal "3" |];
+        [| Normal "0"; Undef; Undef; Normal "3" |];
       ]
 
   let interesting_integer_types = ref []
@@ -82,6 +82,7 @@ module Interests = struct
         integer_type llctx 32;
         integer_type llctx 34;
         integer_type llctx 64;
+        integer_type llctx 128;
       ];
     interesting_vector_types :=
       [
