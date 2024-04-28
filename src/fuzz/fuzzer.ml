@@ -21,6 +21,12 @@ type res_t =
   | Interesting of bool * SeedPool.seed_t * Progress.t
   | Not_interesting of bool * SeedPool.seed_t
 
+let mut_tbl = ref Domain.ScoreMutationWeightMap.empty
+
+let update_mut_tbl path mut w =
+  let new_tbl = Domain.ScoreMutationWeightMap.update path mut w !mut_tbl in
+  mut_tbl := new_tbl
+
 (** runs optimizer with an input file
     and measure its coverage.
     Returns the results *)
@@ -92,12 +98,17 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     =
   assert (if not @@ seed.covers then seed.score > 0.0 else true);
 
+  L.debug "TABLE:";
+  L.debug "%a" Domain.ScoreMutationWeightMap.pp !mut_tbl;
   let rec traverse times (src : SeedPool.seed_t) progress =
     if times = 0 then (
       ALlvm.LLModuleSet.add llset src.llm ();
       None)
     else
-      let dst = Mutator.run llctx src in
+      (* find table to use *)
+      let tbl = Domain.ScoreMutationWeightMap.get src.score !mut_tbl in
+
+      let mutation_used, dst = Mutator.run llctx tbl src in
       match ALlvm.LLModuleSet.find_opt llset dst with
       | Some _ ->
           (* duplicate seed *)
@@ -106,6 +117,13 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
           match check_mutant dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
+
+              (* update mutation table *)
+              if not src.covers then (
+                L.debug "Reached closer: update mutation table";
+                L.debug "%a +5" Domain.pp_mutation mutation_used;
+                update_mut_tbl src.score mutation_used 5);
+
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               if is_crash then
                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
@@ -118,6 +136,12 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
                  let seed_name = SeedPool.name_seed ~parent:seed new_seed in
                  ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
                  |> ignore);
+
+              (* update mutation table *)
+              if src.covers then (
+                L.debug "Mutation was not helpful: update mutation table";
+                L.debug "%a -1" Domain.pp_mutation mutation_used;
+                update_mut_tbl src.score mutation_used ~-1);
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in
