@@ -3,47 +3,7 @@ module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 module L = Logger
 
-type mode_t = EXPAND | FOCUS
-type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
-
-let pp_mode fmt m =
-  match m with
-  | EXPAND -> Format.fprintf fmt "EXPAND"
-  | FOCUS -> Format.fprintf fmt "FOCUS"
-
-let pp_mutation fmt m =
-  match m with
-  | CREATE -> Format.fprintf fmt "CREATE"
-  | OPCODE -> Format.fprintf fmt "OPCODE"
-  | OPERAND -> Format.fprintf fmt "OPERAND"
-  | FLAG -> Format.fprintf fmt "FLAG"
-  | TYPE -> Format.fprintf fmt "TYPE"
-  | CUT -> Format.fprintf fmt "CUT"
-
-let expand_mutations =
-  [ (CREATE, 3); (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
-  |> List.map (fun (m, p) -> List.init p (Fun.const m))
-  |> List.flatten
-  |> Array.of_list
-
-let focus_mutations =
-  [ (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
-  |> List.map (fun (m, p) -> List.init p (Fun.const m))
-  |> List.flatten
-  |> Array.of_list
-
-(* choose mutation *)
-let choose_mutation mode score =
-  match mode with
-  | EXPAND ->
-      let mutations = expand_mutations in
-      let r = Random.int (score + Array.length mutations) in
-      if r <= score then mutations.(0) else mutations.(r - score)
-  | FOCUS ->
-      let mutations = focus_mutations in
-      let r = Random.int (Array.length mutations) in
-      mutations.(r)
 
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
    right before instruction [loc], without any extra keywords.
@@ -1329,15 +1289,13 @@ let cut_below llctx llm =
         | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx mode llm score =
-  let mutation = choose_mutation mode score in
-  L.info "mutation(%a): %a" pp_mode mode pp_mutation mutation;
+let rec mutate_inner_bb llctx mw_map llm score =
+  let mutation = Domain.MutationWeightMap.choose mw_map in
+  L.info "mutation: %a" Domain.pp_mutation mutation;
   (* L.debug "before:\n%s" (string_of_llmodule llm); *)
   let mutation_result =
     match mutation with
-    | CREATE ->
-        (* create_rand_instr llctx llm *)
-        None
+    | CREATE -> create_rand_instr llctx llm
     | OPCODE -> subst_rand_instr llctx llm
     | OPERAND -> subst_rand_opd llctx llm
     | FLAG -> modify_flag llctx llm
@@ -1349,12 +1307,11 @@ let rec mutate_inner_bb llctx mode llm score =
       L.debug "mutant: %s" (string_of_llmodule llm);
       let f = choose_function llm in
       reset_var_names f;
-      llm
+      (mutation, llm)
   | None ->
       L.debug "None";
-      mutate_inner_bb llctx mode llm score
+      mutate_inner_bb llctx mw_map llm score
 
-let run llctx (seed : Seedcorpus.Seedpool.seed_t) =
-  let mode = if seed.covers then FOCUS else EXPAND in
-  mutate_inner_bb llctx mode seed.llm (int_of_float seed.score)
+let run llctx mw_map (seed : Seedcorpus.Seedpool.seed_t) =
+  mutate_inner_bb llctx mw_map seed.llm (int_of_float seed.score)
 (* |> mutate_CFG |> check_retval llctx *)

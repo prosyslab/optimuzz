@@ -1,6 +1,6 @@
 (library
  (name fuzz)
- (modules mutator fuzzer)
+ (modules mutator fuzzer domain)
  (libraries
   llvm
   llvm.analysis
