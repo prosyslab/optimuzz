@@ -17,11 +17,11 @@ let collect_module_files ?predicate dir =
 
 (** [check_transformation llfile] returns
  *  if optimized module of [llfile] refines the module of [llfile]*)
-let check_transformation llfile =
+let check_transformation tmp_dir llfile =
   let llfile_opt =
     let basename = Filename.basename llfile in
     let filename_opt = Filename.chop_suffix basename "ll" ^ "opt.ll" in
-    "tmp" ^ Filename.dir_sep ^ filename_opt
+    tmp_dir ^ Filename.dir_sep ^ filename_opt
   in
 
   match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
@@ -69,20 +69,19 @@ let grep re filename =
 let mv src dir = Sys.rename src (dir ^ Filename.dir_sep ^ Filename.basename src)
 
 let _ =
+  Printexc.record_backtrace true;
   Arg.parse speclist
     (fun arg -> args := arg :: !args)
     "usage: check-corpus <out-dir> [options]";
-
-  (try Sys.mkdir "tmp" 0o777
-   with Sys_error _ ->
-     Sys.command "rm -rf tmp" |> ignore;
-     Sys.mkdir "tmp" 0o777);
 
   Config.alive_tv_bin := !tv_bin;
 
   let out_dir = !args |> List.hd in
   let corpus_dir = Filename.concat out_dir "corpus" in
   let crash_dir = Filename.concat out_dir "crash" in
+  let tmp_dir = Filename.concat out_dir "tmp" in
+
+  Sys.command ("mkdir -p " ^ tmp_dir) |> ignore;
 
   let log_file = Filename.concat out_dir "check-corpus.log" in
   L.from_file log_file;
@@ -108,7 +107,7 @@ let _ =
           Task.parallel_for pool ~start:0 ~finish:(num_files - 1)
             ~body:(fun i ->
               let llfile = llfiles.(i) in
-              let verify = check_transformation llfile in
+              let verify = check_transformation tmp_dir llfile in
               Chan.send report_chan ();
               if not verify then mv llfile crash_dir);
 
