@@ -772,6 +772,7 @@ and trav_llvs_using_curr curr ty_new accu =
           accu
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 ty_new
+          |> collect_ty_changing_llvs user (type_of user)
       | _ -> failwith "NEVER OCCUR")
     accu curr
 
