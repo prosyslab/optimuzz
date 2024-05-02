@@ -18,10 +18,13 @@ let name_seed ?(parent : seed_t option) (seed : seed_t) =
   let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
   match parent with
   | None ->
-      Format.sprintf "id:%010d,score:%f,covers:%b.ll" hash seed.score
-        seed.covers
+      Format.sprintf "date:%s,id:%010d,score:%f,covers:%b.ll"
+        (AUtil.get_current_time ())
+        hash seed.score seed.covers
   | Some { llm = src; _ } ->
-      Format.sprintf "id:%010d,src:%010d,score:%f,covers:%b.ll" hash
+      Format.sprintf "date:%s,id:%010d,src:%010d,score:%f,covers:%b.ll"
+        (AUtil.get_current_time ())
+        hash
         (ALlvm.string_of_llmodule src |> Hashtbl.hash)
         seed.score seed.covers
 
@@ -116,19 +119,20 @@ let make llctx =
          ([], [])
   in
 
-  let hash llm = ALlvm.string_of_llmodule llm |> Hashtbl.hash in
   (* if we have covering seeds, we use covering seeds only. *)
   if pool_covers = [] then (
     L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
     let _pool_cnt, pool_closest =
       other_seeds
-      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
+      |> List.sort_uniq (fun a b ->
+             compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
       |> List.sort (fun a b -> compare a.score b.score)
       |> List.fold_left
            (fun (cnt, pool) seed ->
              if cnt >= !Config.max_initial_seed then (cnt, pool)
-             else (cnt + 1, push seed pool))
+             else (
+               (cnt + 1, push seed pool)))
            (0, AUtil.PrioQueue.empty)
     in
     pool_closest)
@@ -137,6 +141,7 @@ let make llctx =
     L.info "Covering seeds found. Using them only.";
     let pool_covers =
       pool_covers
-      |> List.sort_uniq (fun a b -> compare (hash a.llm) (hash b.llm))
+      |> List.sort_uniq (fun a b ->
+             compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
     in
     push_list pool_covers AUtil.PrioQueue.empty)
