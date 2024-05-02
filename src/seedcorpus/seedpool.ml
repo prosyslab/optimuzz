@@ -131,8 +131,7 @@ let make llctx =
       |> List.fold_left
            (fun (cnt, pool) seed ->
              if cnt >= !Config.max_initial_seed then (cnt, pool)
-             else (
-               (cnt + 1, push seed pool)))
+             else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
     pool_closest)
