@@ -29,7 +29,9 @@ let name_seed ?(parent : seed_t option) (seed : seed_t) =
         seed.score seed.covers
 
 let get_prio covers score =
-  if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
+  match !Config.queue with
+  | PQueue -> if covers then 0 else score |> Float.mul 10.0 |> Float.to_int
+  | FIFO -> 0 (* ignore score *)
 
 let push s pool = AUtil.PrioQueue.insert pool s.priority s
 let pop pool = AUtil.PrioQueue.extract pool
@@ -60,9 +62,8 @@ let make llctx =
 
   let score_func =
     match !Config.metric with
-    | "avg" -> CD.Coverage.avg_score
-    | "min" -> CD.Coverage.min_score
-    | _ -> failwith "invalid metric"
+    | Avg -> CD.Coverage.avg_score
+    | Min -> CD.Coverage.min_score
   in
 
   (* pool_covers contains seeds which cover the target *)
@@ -131,8 +132,7 @@ let make llctx =
       |> List.fold_left
            (fun (cnt, pool) seed ->
              if cnt >= !Config.max_initial_seed then (cnt, pool)
-             else (
-               (cnt + 1, push seed pool)))
+             else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
     pool_closest)

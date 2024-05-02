@@ -27,13 +27,18 @@ let random_seed = ref 0
 let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 
 (* fuzzing options *)
+
+type metric = Min | Avg
+type queue_type = PQueue | FIFO
+
 let time_budget = ref (-1)
 let cov_directed = ref ""
 let num_mutation = ref 10
 let num_mutant = ref 1
 let no_tv = ref false
-let metric = ref "avg"
-let log_level = ref "error"
+let metric = ref Min
+let queue = ref PQueue
+let log_level = ref L.ERROR
 
 (* mutation options *)
 
@@ -126,10 +131,31 @@ let opts =
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
-    ("-metric", Arg.Set_string metric, "Metric to give a score to a coverage");
+    ( "-metric",
+      Arg.String
+        (function
+        | "min" -> metric := Min
+        | "avg" -> metric := Avg
+        | _ -> failwith "Invalid metric"),
+      "Metric to give a score to a coverage" );
+    ( "-queue",
+      Arg.String
+        (function
+        | "priority" -> queue := PQueue
+        | "fifo" -> queue := FIFO
+        | _ -> failwith "Invalid queue"),
+      "Queue type for fuzzing" );
     (* logging options *)
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
-    ("-log-level", Arg.Set_string log_level, "Set log level. Defaults to info. ");
+    ( "-log-level",
+      Arg.String
+        (function
+        | "info" -> log_level := L.INFO
+        | "warn" -> log_level := L.WARN
+        | "error" -> log_level := L.ERROR
+        | "debug" -> log_level := L.DEBUG
+        | _ -> failwith "Invalid log level"),
+      "Set log level. Defaults to info. " );
     ( "-dry-run",
       Arg.Set dry_run,
       "Do not run fuzzing. (for testing configuration)" );
@@ -246,12 +272,6 @@ let initialize llctx () =
     failwith "Coverage target is not set. Please set -direct option.";
 
   L.from_file (Filename.concat !out_dir "fuzz.log");
-  (match !log_level with
-  | "debug" -> L.set_level L.DEBUG
-  | "info" -> L.set_level L.INFO
-  | "warn" -> L.set_level L.WARN
-  | "error" -> L.set_level L.ERROR
-  | _ -> failwith "Invalid log level");
 
   opts
   |> List.iter (fun (name, spec, _) ->
