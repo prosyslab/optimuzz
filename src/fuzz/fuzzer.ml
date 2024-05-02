@@ -56,9 +56,8 @@ let record_timestamp cov =
 let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
   let score_func =
     match !Config.metric with
-    | "avg" -> CD.Coverage.avg_score
-    | "min" -> CD.Coverage.min_score
-    | _ -> invalid_arg "Invalid metric"
+    | Avg -> CD.Coverage.avg_score
+    | Min -> CD.Coverage.min_score
   in
   let optim_res, valid_res = measure_optimizer_coverage mutant in
   match optim_res with
