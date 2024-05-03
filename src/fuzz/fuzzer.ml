@@ -97,16 +97,23 @@ let save_seed is_crash parent seed =
 let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
     =
   assert (if not @@ seed.covers then seed.score > 0.0 else true);
+  let learning = not !Config.no_learn in
 
-  L.debug "TABLE:";
-  L.debug "%a" Domain.ScoreMutationWeightMap.pp !mut_tbl;
+  if learning then (
+    L.debug "TABLE:";
+    L.debug "%a" Domain.ScoreMutationWeightMap.pp !mut_tbl);
+
   let rec traverse times (src : SeedPool.seed_t) progress =
     if times = 0 then (
       ALlvm.LLModuleSet.add llset src.llm ();
       None)
     else
       (* find table to use *)
-      let tbl = Domain.ScoreMutationWeightMap.get src.score !mut_tbl in
+      let tbl =
+        if learning then Domain.ScoreMutationWeightMap.get src.score !mut_tbl
+        else if src.covers then Domain.MutationWeightMap.focus_tbl
+        else Domain.MutationWeightMap.expand_tbl
+      in
 
       let mutation_used, dst = Mutator.run llctx tbl src in
       match ALlvm.LLModuleSet.find_opt llset dst with
@@ -119,10 +126,11 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               ALlvm.LLModuleSet.add llset new_seed.llm ();
 
               (* update mutation table *)
-              if not src.covers then (
+              if learning && not src.covers then (
+                let reward = !Config.learn_inc in
                 L.debug "Reached closer: update mutation table";
-                L.debug "%a +5" Domain.pp_mutation mutation_used;
-                update_mut_tbl src.score mutation_used 5);
+                L.debug "%a +%d" Domain.pp_mutation mutation_used reward;
+                update_mut_tbl src.score mutation_used reward);
 
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               if is_crash then
@@ -138,10 +146,11 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
                  |> ignore);
 
               (* update mutation table *)
-              if src.covers then (
+              if learning && src.covers then (
+                let penalty = !Config.learn_dec in
                 L.debug "Mutation was not helpful: update mutation table";
-                L.debug "%a -1" Domain.pp_mutation mutation_used;
-                update_mut_tbl src.score mutation_used ~-1);
+                L.debug "%a -%d" Domain.pp_mutation mutation_used penalty;
+                update_mut_tbl src.score mutation_used ~-penalty);
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in
