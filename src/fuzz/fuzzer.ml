@@ -155,7 +155,14 @@ let rec run pool llctx llset progress =
   let new_pool =
     pool_popped
     |> SeedPool.push_list new_seeds
-    |> SeedPool.push { seed with priority = seed.priority + 1 }
+    |> SeedPool.push
+         {
+           seed with
+           priority =
+             (match !Config.queue with
+             | PQueue -> seed.priority + 1
+             | FIFO -> 0);
+         }
   in
 
   (* repeat until the time budget or seed pool exhausts *)
