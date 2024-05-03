@@ -19,6 +19,12 @@ let default_mutation_tbl =
     (CUT, 100);
   |]
 
+let default_expand_mutation_tbl =
+  [| (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1) |]
+
+let default_focus_mutation_tbl =
+  [| (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) |]
+
 module MutationWeightMap = struct
   module MutMap = Map.Make (struct
     type t = mutation_t
@@ -29,6 +35,8 @@ module MutationWeightMap = struct
   type t = int MutMap.t
 
   let default = default_mutation_tbl |> Array.to_seq |> MutMap.of_seq
+  let expand_tbl = default_expand_mutation_tbl |> Array.to_seq |> MutMap.of_seq
+  let focus_tbl = default_focus_mutation_tbl |> Array.to_seq |> MutMap.of_seq
 
   let choose m =
     let sum = MutMap.fold (fun _ v accu -> accu + v) m 0 in

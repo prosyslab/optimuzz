@@ -54,6 +54,9 @@ let num_mutant = ref 1
 let no_tv = ref false
 let metric = ref Min
 let queue = ref PQueue
+let no_learn = ref false
+let learn_inc = ref 1
+let learn_dec = ref 5
 let log_level = ref L.ERROR
 
 (* mutation options *)
@@ -153,6 +156,13 @@ let opts =
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
+    ( "-learn-inc",
+      Arg.Set_int learn_inc,
+      "Reward for correct mutation during learning" );
+    ( "-learn-dec",
+      Arg.Set_int learn_dec,
+      "Penalty for incorrect mutation during learning" );
     ( "-metric",
       Arg.String
         (function
