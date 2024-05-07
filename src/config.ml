@@ -82,6 +82,7 @@ module Interests = struct
         [| Normal "1" |];
         [| Normal "-1" |];
         [| Normal "0"; Normal "1" |];
+        [| Undef; Normal "-1" |];
         [| Poison; Normal "0" |];
         [| Normal "0"; Undef; Undef |];
         [| Normal "0"; Normal "0"; Normal "0"; Normal "0" |];
@@ -114,6 +115,7 @@ module Interests = struct
         vector_type (i16_type llctx) 2;
         vector_type (i16_type llctx) 3;
         vector_type (i32_type llctx) 1;
+        vector_type (i32_type llctx) 2;
         vector_type (i32_type llctx) 4;
       ];
     interesting_types := !interesting_integer_types @ !interesting_vector_types
