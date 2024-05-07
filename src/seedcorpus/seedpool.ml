@@ -51,7 +51,7 @@ let make llctx =
 
   let can_optimize file =
     let path = Filename.concat dir file in
-    match Oracle.Optimizer.run ~passes:Oracle.optimizer_passes path with
+    match Oracle.Optimizer.run ~passes:!Config.optimizer_passes path with
     | CRASH | INVALID ->
         AUtil.name_opted_ver path |> AUtil.clean;
         false
@@ -91,7 +91,7 @@ let make llctx =
                        ALlvm.save_ll !Config.out_dir filename llm
                      in
                      let res =
-                       Oracle.Optimizer.run ~passes:Oracle.optimizer_passes
+                       Oracle.Optimizer.run ~passes:!Config.optimizer_passes
                          filename
                      in
                      AUtil.clean filename;

@@ -63,10 +63,6 @@ module Validator = struct
       Errors)
 end
 
-let optimizer_passes =
-  (* [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
-  [ "instcombine" ]
-
 (** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
     The input can be a file or LLVM module. *)
 module Optimizer = struct

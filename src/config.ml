@@ -44,6 +44,11 @@ let string_of_level = function
 (* default *)
 let time_budget = ref (-1)
 let cov_directed = ref ""
+
+let optimizer_passes =
+  (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
+  ref [ "instcombine" ]
+
 let num_mutation = ref 10
 let num_mutant = ref 1
 let no_tv = ref false
@@ -135,6 +140,10 @@ let opts =
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
     ("-tv-bin", Arg.Set_string alive_tv_bin, "Path to alive-tv executable");
+    ( "-passes",
+      Arg.String
+        (function s -> optimizer_passes := String.split_on_char ',' s),
+      "Set opt passes" );
     (* fuzzing options *)
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
@@ -296,6 +305,8 @@ let initialize llctx () =
              L.info "%s: %s" name (string_of_queue_type !queue)
          | Arg.String _ when name = "-log-level" ->
              L.info "%s: %s" name (string_of_level !log_level)
+         | Arg.String _ when name = "-passes" ->
+             L.info "%s: %s " name (String.concat "," !optimizer_passes)
          | _ -> failwith "not implemented");
 
   L.flush ();
@@ -309,5 +320,12 @@ let initialize llctx () =
            | Arg.Set b -> Format.printf "%s: %b\n" name !b
            | Arg.Set_string s -> Format.printf "%s: %s\n" name !s
            | Arg.Set_int i -> Format.printf "%s: %d\n" name !i
-           | Arg.String _ -> ()
+           | Arg.String _ when name = "-metric" ->
+               L.info "%s: %s" name (string_of_metric !metric)
+           | Arg.String _ when name = "-queue" ->
+               L.info "%s: %s" name (string_of_queue_type !queue)
+           | Arg.String _ when name = "-log-level" ->
+               L.info "%s: %s" name (string_of_level !log_level)
+           | Arg.String _ when name = "-passes" ->
+               L.info "%s: %s " name (String.concat "," !optimizer_passes)
            | _ -> failwith "not implemented")

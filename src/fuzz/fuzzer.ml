@@ -31,7 +31,7 @@ let measure_optimizer_coverage llm =
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res =
-    Optimizer.run ~passes:optimizer_passes ~output:optimized_ir_filename
+    Optimizer.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
       filename
   in
 

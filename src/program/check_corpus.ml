@@ -3,6 +3,28 @@ open Util
 open Domainslib
 module L = Logger
 
+let args = ref []
+let ntasks = ref 12
+let re = ref None
+let tv_bin = ref "./alive-tv"
+
+let optimizer_passes =
+  (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
+  ref [ "instcombine" ]
+
+let speclist =
+  [
+    ("-ntasks", Arg.Int (fun n -> ntasks := n), "the degree of parallelism");
+    ( "-re",
+      Arg.String (fun s -> re := Some (Str.regexp s)),
+      "regular expression to filter files" );
+    ( "-passes",
+      Arg.String
+        (function s -> optimizer_passes := String.split_on_char ',' s),
+      "Set opt passes" );
+    ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary");
+  ]
+
 let collect_module_files ?predicate dir =
   let predicate = match predicate with Some f -> f | None -> fun _ -> true in
   Sys.readdir dir
@@ -24,7 +46,7 @@ let check_transformation tmp_dir llfile =
     tmp_dir ^ Filename.dir_sep ^ filename_opt
   in
 
-  match Optimizer.run ~passes:optimizer_passes ~output:llfile_opt llfile with
+  match Optimizer.run ~passes:!optimizer_passes ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (
       try
@@ -33,20 +55,6 @@ let check_transformation tmp_dir llfile =
         | Correct | Failed | Errors -> true
         | Incorrect -> false
       with Unix.Unix_error _ -> true)
-
-let args = ref []
-let ntasks = ref 12
-let re = ref None
-let tv_bin = ref "./alive-tv"
-
-let speclist =
-  [
-    ("-ntasks", Arg.Int (fun n -> ntasks := n), "the degree of parallelism");
-    ( "-re",
-      Arg.String (fun s -> re := Some (Str.regexp s)),
-      "regular expression to filter files" );
-    ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary");
-  ]
 
 let bar ~total =
   let open Progress.Line in
