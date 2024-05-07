@@ -28,7 +28,7 @@ let expand_mutations =
   |> Array.of_list
 
 let focus_mutations =
-  [ (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
+  [ (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
   |> List.map (fun (m, p) -> List.init p (Fun.const m))
   |> List.flatten
   |> Array.of_list
