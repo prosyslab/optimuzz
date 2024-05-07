@@ -24,7 +24,7 @@ let check_transformation tmp_dir llfile =
     tmp_dir ^ Filename.dir_sep ^ filename_opt
   in
 
-  match Optimizer.run ~passes:[ "instcombine" ] ~output:llfile_opt llfile with
+  match Optimizer.run ~passes:optimizer_passes ~output:llfile_opt llfile with
   | CRASH -> failwith ("Crashing module:" ^ llfile)
   | INVALID | VALID _ -> (
       try
