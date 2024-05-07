@@ -31,6 +31,17 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 type metric = Min | Avg
 type queue_type = PQueue | FIFO
 
+(* string_of_types *)
+let string_of_metric = function Min -> "min" | Avg -> "avg"
+let string_of_queue_type = function PQueue -> "priority" | FIFO -> "fifo"
+
+let string_of_level = function
+  | L.DEBUG -> "DEBUG"
+  | L.INFO -> "INFO"
+  | L.WARN -> "WARN"
+  | L.ERROR -> "ERROR"
+
+(* default *)
 let time_budget = ref (-1)
 let cov_directed = ref ""
 let num_mutation = ref 10
@@ -279,6 +290,12 @@ let initialize llctx () =
          | Arg.Set b -> L.info "%s: %b" name !b
          | Arg.Set_string s -> L.info "%s: %s" name !s
          | Arg.Set_int i -> L.info "%s: %d" name !i
+         | Arg.String _ when name = "-metric" ->
+             L.info "%s: %s" name (string_of_metric !metric)
+         | Arg.String _ when name = "-queue" ->
+             L.info "%s: %s" name (string_of_queue_type !queue)
+         | Arg.String _ when name = "-log-level" ->
+             L.info "%s: %s" name (string_of_level !log_level)
          | _ -> failwith "not implemented");
 
   L.flush ();
@@ -292,4 +309,5 @@ let initialize llctx () =
            | Arg.Set b -> Format.printf "%s: %b\n" name !b
            | Arg.Set_string s -> Format.printf "%s: %s\n" name !s
            | Arg.Set_int i -> Format.printf "%s: %d\n" name !i
+           | Arg.String _ -> ()
            | _ -> failwith "not implemented")
