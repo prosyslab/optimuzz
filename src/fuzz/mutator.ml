@@ -1292,6 +1292,7 @@ let cut_below llctx llm =
 let rec mutate_inner_bb llctx mw_map llm score =
   let mutation = Domain.MutationWeightMap.choose mw_map in
   L.info "mutation: %a" Domain.pp_mutation mutation;
+  (* L.debug "before:\n%s" (string_of_llmodule llm); *)
   let mutation_result =
     match mutation with
     | CREATE -> create_rand_instr llctx llm
@@ -1308,9 +1309,8 @@ let rec mutate_inner_bb llctx mw_map llm score =
       reset_var_names f;
       (mutation, llm)
   | None ->
-      L.debug "Impossible mutation; exclude %a" Domain.pp_mutation mutation;
-      let mw_map_masked = Domain.MutationWeightMap.mask mutation mw_map in
-      mutate_inner_bb llctx mw_map_masked llm score
+      L.debug "None";
+      mutate_inner_bb llctx mw_map llm score
 
 let run llctx mw_map (seed : Seedcorpus.Seedpool.seed_t) =
   mutate_inner_bb llctx mw_map seed.llm (int_of_float seed.score)
