@@ -59,6 +59,8 @@ module MutationWeightMap = struct
     let w_new = if w_new > 1 then w_new else 1 in
     MutMap.add mut w_new m
 
+  let mask mut = MutMap.add mut 0
+
   let pp fmt m =
     MutMap.iter
       (fun k v ->
