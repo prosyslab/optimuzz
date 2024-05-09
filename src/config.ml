@@ -304,6 +304,7 @@ let initialize llctx () =
     failwith "Coverage target is not set. Please set -direct option.";
 
   L.from_file (Filename.concat !out_dir "fuzz.log");
+  L.set_level !log_level;
 
   opts
   |> List.iter (fun (name, spec, _) ->
