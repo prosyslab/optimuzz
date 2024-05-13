@@ -49,14 +49,14 @@ let optimizer_passes =
   (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
   ref [ "instcombine" ]
 
-let num_mutation = ref 10
+let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
 let metric = ref Min
 let queue = ref PQueue
 let no_learn = ref false
-let learn_inc = ref 1
-let learn_dec = ref 5
+let learn_inc = ref 25
+let learn_dec = ref 2
 let log_level = ref L.ERROR
 
 (* mutation options *)
