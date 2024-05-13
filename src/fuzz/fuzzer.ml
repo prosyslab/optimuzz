@@ -126,7 +126,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
               ALlvm.LLModuleSet.add llset new_seed.llm ();
 
               (* update mutation table *)
-              if learning && not src.covers then (
+              if learning then (
                 let reward = !Config.learn_inc in
                 L.debug "Reached closer: update mutation table";
                 L.debug "%a +%d" Domain.pp_mutation mutation_used reward;
