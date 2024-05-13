@@ -1282,8 +1282,10 @@ let cut_below llctx llm =
             delete_empty_blocks f_old;
 
             let new_ret_ty = ALlvm.type_of tgt in
-            let _f_new = ALlvm.clone_function f_old new_ret_ty in
+            let name = value_name f_old in
+            let f_new = ALlvm.clone_function f_old new_ret_ty in
             ALlvm.delete_function f_old;
+            set_value_name name f_new;
 
             Some llm
         | _ -> None)
