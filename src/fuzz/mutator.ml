@@ -612,11 +612,13 @@ type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 (* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
   match classify_value llv with
+  | _ when type_of llv = ty_new -> Retry
   | Instruction opc
-    when (OpcodeClass.classify opc = CAST && type_of llv = ty_new)
-         || operand llv 0 |> type_of = ty_new ->
-      Retry
-  | _ when llv |> type_of = ty_new -> Retry
+    when OpcodeClass.classify opc = CAST && operand llv 0 |> type_of = ty_new
+    -> (
+      match operand llv 0 |> classify_value with
+      | Instruction opc when OpcodeClass.classify opc = OTHER ICmp -> accu
+      | _ -> Retry)
   | _ -> (
       match (llv |> type_of |> classify_type, classify_type ty_new) with
       | Integer, Integer -> accu
@@ -732,7 +734,7 @@ and trav_llvs_using_curr curr ty_new accu =
           accu
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 ty_new
-          |> collect_ty_changing_llvs user (type_of user)
+          |> trav_llvs_using_curr user (type_of user)
       | _ -> failwith "NEVER OCCUR")
     accu curr
 
