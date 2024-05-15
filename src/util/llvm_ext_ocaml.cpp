@@ -255,7 +255,7 @@ extern "C"
     SmallVector<char,100> Str;
     std::string result;
     if (auto c = dyn_cast<ConstantInt>(V)){
-      c->getValue().toStringUnsigned(Str);
+      c->getValue().toStringSigned(Str);
       for (int i =0; i < Str.size(); i++){
         result+=Str[i];
       }
