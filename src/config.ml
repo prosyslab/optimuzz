@@ -68,9 +68,11 @@ module Interests = struct
   let interesting_integers =
     ref
       [
+        Normal "-1";
         Normal "0";
         Normal "1";
         Normal "2";
+        Normal "16";
         Normal "255" (*0xFF*);
         Normal "65535" (*0xFFFF*);
         Normal "4294967295" (* 0xFFFFFFFF *);
@@ -86,8 +88,10 @@ module Interests = struct
         [| Normal "-1" |];
         [| Normal "0"; Normal "1" |];
         [| Undef; Normal "-1" |];
+        [| Normal "-1"; Poison; |];
         [| Poison; Normal "0" |];
         [| Normal "0"; Undef; Undef |];
+        [| Normal "-1"; Normal "-1"; Normal "-1"; Poison |];
         [| Normal "0"; Normal "0"; Normal "0"; Normal "0" |];
         [| Normal "0"; Normal "1"; Normal "2"; Normal "3" |];
         [| Normal "0"; Undef; Undef; Normal "3" |];
