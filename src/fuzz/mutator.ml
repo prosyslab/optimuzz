@@ -3,7 +3,19 @@ module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 module L = Logger
 
+type mode_t = EXPAND | FOCUS
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
+
+let choose_mutation mode score =
+  match mode with
+  | EXPAND ->
+      let mutations = Domain.expand_mutations in
+      let r = Random.int (score + Array.length mutations) in
+      if r <= score then mutations.(0) else mutations.(r - score)
+  | FOCUS ->
+      let mutations = Domain.focus_mutations in
+      let r = Random.int (Array.length mutations) in
+      mutations.(r)
 
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
    right before instruction [loc], without any extra keywords.
@@ -41,24 +53,14 @@ let subst_binary llctx instr opcode =
   replace_hard instr new_instr;
   new_instr
 
-let subst_cast llctx instr =
+let subst_cast llctx instr opc_new =
   assert (OpCls.opcls_of instr = CAST);
   (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None) *)
-  match instr_opcode instr with
-  | ZExt ->
-      let new_instr =
-        create_cast llctx instr Opcode.SExt (operand instr 0) (type_of instr)
-      in
-      replace_hard instr new_instr;
-      Some new_instr
-  | SExt ->
-      let new_instr =
-        create_cast llctx instr Opcode.ZExt (operand instr 0) (type_of instr)
-      in
-      replace_hard instr new_instr;
-      Some new_instr
-  | Trunc -> None
-  | _ -> failwith "NEVER OCCUR"
+  let new_instr =
+    create_cast llctx instr opc_new (operand instr 0) (type_of instr)
+  in
+  replace_hard instr new_instr;
+  Some new_instr
 
 let subst_icmp llctx instr cond =
   let left = operand instr 0 in
@@ -184,9 +186,12 @@ let get_any_integer loc =
 (** [get_opd_cands_const_vecty ()] returns all constant vector operand
     candidates. *)
 let get_opd_cands_const_vecty () =
+  L.debug "hello";
   List.map
     (fun ty ->
-      List.map (unwrap_interest_vec ty) !Config.Interests.interesting_vectors)
+      !Config.Interests.interesting_vectors
+      |> List.filter (fun v -> vector_size ty = Array.length v)
+      |> List.map (unwrap_interest_vec ty))
     !Config.Interests.interesting_vector_types
   |> List.flatten
   |> Candidates.of_const
@@ -452,7 +457,7 @@ let create_rand_instr llctx llm =
           AUtil.choose_random (if opc = Trunc then ty_dst_trunc else ty_dst_ext)
         in
         create_cast llctx loc opc opd ty_dst
-    | OTHER ICmp ->
+    | ICMP ->
         let cond = OpCls.random_icmp () in
         let opd' = get_rand_opd loc ty_opd in
         create_icmp llctx loc cond opd opd'
@@ -461,43 +466,71 @@ let create_rand_instr llctx llm =
     |> ignore;
     Some llm
 
-(** [subst_rand_instr llctx llm] substitutes a random instruction into another
+(** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
       Note: flags are not preserved. *)
-let subst_rand_instr llctx llm =
+let subst_rand_instr llctx learning opc_tbl llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
 
   (* choose target instruction, possible opcls are:
-     BINARY, CAST(Ext), OTHER(ICmp) *)
+     BINARY, CAST(Ext), ICMP *)
   let is_tgt i =
     match OpCls.opcls_of i with
     | BINARY -> true
     | CAST -> instr_opcode i <> Trunc
-    | OTHER ICmp -> true
+    | ICMP -> true
     | _ -> false
   in
   let cands_instr = List.filter is_tgt all_instrs in
 
-  if cands_instr = [] then None
+  if cands_instr = [] then (None, None, None)
   else
     let instr = AUtil.choose_random cands_instr in
     L.debug "instr: %s" (string_of_llvalue instr);
     let opc_old = instr_opcode instr in
     match OpCls.classify opc_old with
     | BINARY ->
-        let opc_new = OpCls.random_binary_except opc_old in
-        subst_binary llctx instr opc_new |> ignore;
-        Some llm
+        let opc_new =
+          if learning then
+            let w_map = Domain.OpcodeMap.get (Domain.OTHER opc_old) opc_tbl in
+            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
+          else OpCls.random_binary_except opc_old
+        in
+        if opc_old = opc_new then (None, None, None)
+        else (
+          L.debug "opc_new: %s" (string_of_opcode opc_new);
+          subst_binary llctx instr opc_new |> ignore;
+          (Some (Domain.OTHER opc_old), Some (Domain.OTHER opc_new), Some llm))
     | CAST ->
-        subst_cast llctx instr |> ignore;
-        Some llm
-    | OTHER ICmp ->
+        let opc_new =
+          if learning then
+            let w_map = Domain.OpcodeMap.get (OTHER opc_old) opc_tbl in
+            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
+          else
+            match opc_old with
+            | ZExt -> Opcode.SExt
+            | SExt -> ZExt
+            | Trunc -> Trunc
+            | _ -> failwith "NEVER OCCUR"
+        in
+        if opc_old = opc_new then (None, None, None)
+        else (
+          subst_cast llctx instr opc_new |> ignore;
+          (Some (Domain.OTHER opc_old), Some (OTHER opc_new), Some llm))
+    | ICMP ->
         let pred_old = icmp_predicate instr |> Option.get in
-        let pred_new = OpCls.random_icmp_except pred_old in
-        subst_icmp llctx instr pred_new |> ignore;
-        Some llm
+        let pred_new =
+          if learning then
+            let w_map = Domain.OpcodeMap.get (ICMP pred_old) opc_tbl in
+            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_icmp
+          else OpCls.random_icmp_except pred_old
+        in
+        if pred_old = pred_new then (None, None, None)
+        else (
+          subst_icmp llctx instr pred_new |> ignore;
+          (Some (Domain.ICMP pred_old), Some (ICMP pred_new), Some llm))
     | _ -> failwith "NEVER OCCUR"
 
 let count_const_opds instr =
@@ -531,8 +564,13 @@ let subst_rand_opd llctx llm =
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
 
+  (* choose target instruction, possible opcls are:
+     BINARY, CAST(Ext), ICMP *)
+  let is_tgt i = match OpCls.opcls_of i with TER _ -> false | _ -> true in
+  let cands_instr = List.filter is_tgt all_instrs in
+
   let cands =
-    all_instrs
+    cands_instr
     |> List.map (fun instr -> (instr, invest_opd_alts instr))
     |> List.filter (fun (_, alts) -> alts <> [])
   in
@@ -540,14 +578,7 @@ let subst_rand_opd llctx llm =
   else
     let instr, alts = AUtil.choose_random cands in
     L.debug "instr: %s" (string_of_llvalue instr);
-    if instr_opcode instr = ICmp && AUtil.rand_bool () then (
-      let icmp =
-        instr |> icmp_predicate |> Option.get |> OpCls.random_icmp_except
-      in
-      L.debug "change icmp predicate";
-      subst_icmp llctx instr icmp |> ignore;
-      Some llm)
-    else if is_noncommutative_binary instr && AUtil.rand_bool () then (
+    if is_noncommutative_binary instr && AUtil.rand_bool () then (
       L.debug "exchange two operands";
       binary_exchange_operands llctx instr |> ignore;
       Some llm)
@@ -612,13 +643,13 @@ type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 (* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
   match classify_value llv with
-  | _ when type_of llv = ty_new -> Retry
   | Instruction opc
     when OpcodeClass.classify opc = CAST && operand llv 0 |> type_of = ty_new
     -> (
       match operand llv 0 |> classify_value with
-      | Instruction opc when OpcodeClass.classify opc = OTHER ICmp -> accu
+      | Instruction opc when OpcodeClass.classify opc = ICMP -> accu
       | _ -> Retry)
+  | _ when type_of llv = ty_new -> Retry
   | _ -> (
       match (llv |> type_of |> classify_type, classify_type ty_new) with
       | Integer, Integer -> accu
@@ -727,7 +758,7 @@ and trav_llvs_using_curr curr ty_new accu =
             |> collect_ty_changing_llvs user
                  (vector_type (element_type ty_new)
                     (user |> type_of |> vector_size))
-      | OTHER ICmp ->
+      | ICMP ->
           (* preserve type equality of both operands *)
           let opd0 = operand user 0 in
           let opd1 = operand user 1 in
@@ -1056,7 +1087,7 @@ let migrate_instr builder instr_old typemap link_v link_b =
     | VEC _ -> migrate_vec builder instr_old typemap link_v
     | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
-    | OTHER ICmp -> migrate_icmp builder instr_old link_v
+    | ICMP -> migrate_icmp builder instr_old link_v
     | OTHER PHI -> migrate_phi builder instr_old typemap
     | OTHER Select -> migrate_select builder instr_old typemap link_v
     | _ ->
@@ -1165,7 +1196,7 @@ let check_target_for_change_type target f =
     if target |> type_of |> classify_type = Void then false
     else if target |> type_of |> classify_type = Pointer then false
     else if classify_value target = Argument then true
-    else if OpCls.opcls_of target = OTHER ICmp then false
+    else if OpCls.opcls_of target = ICMP then false
     else true
   else false
 
@@ -1293,29 +1324,35 @@ let cut_below llctx llm =
         | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx mw_map llm score =
-  let mutation = Domain.MutationWeightMap.choose mw_map in
+let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
+  let mutation = choose_mutation mode score in
   L.info "mutation: %a" Domain.pp_mutation mutation;
   (* L.debug "before:\n%s" (string_of_llmodule llm); *)
   let mutation_result =
     match mutation with
-    | CREATE -> create_rand_instr llctx llm
-    | OPCODE -> subst_rand_instr llctx llm
-    | OPERAND -> subst_rand_opd llctx llm
-    | FLAG -> modify_flag llctx llm
-    | TYPE -> change_type llctx llm
-    | CUT -> cut_below llctx llm
+    | CREATE -> (None, None, create_rand_instr llctx llm)
+    | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
+    | OPERAND -> (None, None, subst_rand_opd llctx llm)
+    | FLAG -> (None, None, modify_flag llctx llm)
+    | TYPE -> (None, None, change_type llctx llm)
+    | CUT -> (None, None, cut_below llctx llm)
   in
   match mutation_result with
-  | Some llm ->
+  | Some opc_old, Some opc_new, Some llm ->
       L.debug "mutant: %s" (string_of_llmodule llm);
       let f = choose_function llm in
       reset_var_names f;
-      (mutation, llm)
-  | None ->
+      (Some opc_old, Some opc_new, llm)
+  | _, _, Some llm ->
+      L.debug "mutant: %s" (string_of_llmodule llm);
+      let f = choose_function llm in
+      reset_var_names f;
+      (None, None, llm)
+  | _, _, None ->
       L.debug "None";
-      mutate_inner_bb llctx mw_map llm score
+      mutate_inner_bb llctx learning opc_tbl mode llm score
 
-let run llctx mw_map (seed : Seedcorpus.Seedpool.seed_t) =
-  mutate_inner_bb llctx mw_map seed.llm (int_of_float seed.score)
+let run llctx learning opc_tbl (seed : Seedcorpus.Seedpool.seed_t) =
+  let mode = if seed.covers then FOCUS else EXPAND in
+  mutate_inner_bb llctx learning opc_tbl mode seed.llm (int_of_float seed.score)
 (* |> mutate_CFG |> check_retval llctx *)

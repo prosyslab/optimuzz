@@ -348,6 +348,7 @@ module OpcodeClass = struct
     | MEM of Opcode.t
     | CAST
     | OTHER of Opcode.t
+    | ICMP
     | UNSUPPORTED
 
   let ter_arr = [| Opcode.Ret; Br |]
@@ -372,13 +373,15 @@ module OpcodeClass = struct
   let vec_arr = [| Opcode.ExtractElement; InsertElement; ShuffleVector |]
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
-  let other_arr = [| Opcode.ICmp; PHI; Select |]
+  let icmp_arr = [| Opcode.ICmp |]
+  let other_arr = [| Opcode.PHI; Select |]
 
   (* helper for cmp instruction *)
   let icmp_kind = [| Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle |]
 
   let total_arr =
-    Array.concat [ ter_arr; binary_arr; vec_arr; mem_arr; cast_arr; other_arr ]
+    Array.concat
+      [ ter_arr; binary_arr; vec_arr; mem_arr; cast_arr; icmp_arr; other_arr ]
 
   let classify opc =
     match opc with
@@ -389,7 +392,8 @@ module OpcodeClass = struct
     | ExtractElement | InsertElement | ShuffleVector -> VEC opc
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt -> CAST
-    | ICmp | PHI | Select -> OTHER opc
+    | ICmp -> ICMP
+    | PHI | Select -> OTHER opc
     | _ -> UNSUPPORTED
 
   let opcls_of instr = instr |> instr_opcode |> classify
@@ -438,6 +442,7 @@ module OpcodeClass = struct
     | VEC opc -> Printf.sprintf "VEC (%s)" (string_of_opcode opc)
     | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
+    | ICMP -> "ICMP"
     | OTHER opc -> Printf.sprintf "OTHER (%s)" (string_of_opcode opc)
     | UNSUPPORTED -> "UNSUPPORTED"
 end
@@ -446,7 +451,7 @@ module Flag = struct
   exception Unsupported_Flag
 
   let can_overflow = function
-    | Opcode.Add | Sub | Mul | Shl -> true
+    | Opcode.Add | Sub | Mul | Shl | Trunc -> true
     | _ -> false
 
   let can_be_exact = function

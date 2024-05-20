@@ -21,11 +21,19 @@ type res_t =
   | Interesting of bool * SeedPool.seed_t * Progress.t
   | Not_interesting of bool * SeedPool.seed_t
 
-let mut_tbl = ref Domain.ScoreMutationWeightMap.empty
+let opc_tbl = ref Domain.OpcodeMap.empty
 
-let update_mut_tbl path mut w =
-  let new_tbl = Domain.ScoreMutationWeightMap.update path mut w !mut_tbl in
-  mut_tbl := new_tbl
+let update_mut_tbl opcode_old opcode_new =
+  let reward = !Config.learn_inc in
+  match (opcode_old, opcode_new) with
+  | Some opcode_old, Some opcode_new ->
+      let new_tbl =
+        Domain.OpcodeMap.update opcode_old opcode_new reward !opc_tbl
+      in
+      opc_tbl := new_tbl;
+      L.info "Updated TABLE:";
+      L.info "%a" Domain.OpcodeMap.pp !opc_tbl
+  | _, _ -> ()
 
 (** runs optimizer with an input file
     and measure its coverage.
@@ -101,7 +109,7 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
 
   if learning then (
     L.debug "TABLE:";
-    L.debug "%a" Domain.ScoreMutationWeightMap.pp !mut_tbl);
+    L.debug "%a" Domain.OpcodeMap.pp !opc_tbl);
 
   let rec traverse times (src : SeedPool.seed_t) progress =
     if times = 0 then (
@@ -109,13 +117,9 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
       None)
     else
       (* find table to use *)
-      let tbl =
-        if learning then Domain.ScoreMutationWeightMap.get src.score !mut_tbl
-        else if src.covers then Domain.MutationWeightMap.focus_tbl
-        else Domain.MutationWeightMap.expand_tbl
+      let opcode_old, opcode_new, dst =
+        Mutator.run llctx learning !opc_tbl src
       in
-
-      let mutation_used, dst = Mutator.run llctx tbl src in
       match ALlvm.LLModuleSet.find_opt llset dst with
       | Some _ ->
           (* duplicate seed *)
@@ -124,14 +128,8 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
           match check_mutant dst target_path src progress with
           | Interesting (is_crash, new_seed, new_progress) ->
               ALlvm.LLModuleSet.add llset new_seed.llm ();
-
               (* update mutation table *)
-              if learning then (
-                let reward = !Config.learn_inc in
-                L.debug "Reached closer: update mutation table";
-                L.debug "%a +%d" Domain.pp_mutation mutation_used reward;
-                update_mut_tbl src.score mutation_used reward);
-
+              if learning then update_mut_tbl opcode_old opcode_new;
               let seed_name = SeedPool.name_seed ~parent:seed new_seed in
               if is_crash then
                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
@@ -144,13 +142,6 @@ let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
                  let seed_name = SeedPool.name_seed ~parent:seed new_seed in
                  ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
                  |> ignore);
-
-              (* update mutation table *)
-              if learning && src.covers then (
-                let penalty = !Config.learn_dec in
-                L.debug "Mutation was not helpful: update mutation table";
-                L.debug "%a -%d" Domain.pp_mutation mutation_used penalty;
-                update_mut_tbl src.score mutation_used ~-penalty);
               traverse (times - 1) { src with llm = dst } progress
           | Invalid -> traverse times src progress)
   in

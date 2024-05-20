@@ -55,8 +55,8 @@ let no_tv = ref false
 let metric = ref Min
 let queue = ref PQueue
 let no_learn = ref false
-let learn_inc = ref 25
-let learn_dec = ref 2
+let learn_inc = ref 20
+let learn_dec = ref 5
 let log_level = ref L.ERROR
 
 (* mutation options *)
@@ -88,7 +88,7 @@ module Interests = struct
         [| Normal "-1" |];
         [| Normal "0"; Normal "1" |];
         [| Undef; Normal "-1" |];
-        [| Normal "-1"; Poison; |];
+        [| Normal "-1"; Poison |];
         [| Poison; Normal "0" |];
         [| Normal "0"; Undef; Undef |];
         [| Normal "-1"; Normal "-1"; Normal "-1"; Poison |];
