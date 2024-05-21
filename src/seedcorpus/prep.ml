@@ -14,7 +14,8 @@ let rec redef_fn llctx f_old wide instr =
   let target = ALlvm.get_instr_before ~wide instr in
   match target with
   | Some i ->
-      if ALlvm.ChangeRetVal.check_target i then (
+      if i = instr then true
+      else if ALlvm.ChangeRetVal.check_target i then (
         let new_ret_ty = ALlvm.type_of i in
         let f_new =
           ALlvm.define_function ""
