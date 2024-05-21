@@ -566,11 +566,16 @@ let subst_rand_opd llctx llm =
 
   (* choose target instruction, possible opcls are:
      BINARY, CAST(Ext), ICMP *)
-  let is_tgt i = match OpCls.opcls_of i with TER _ -> false | _ -> true in
-  let cands_instr = List.filter is_tgt all_instrs in
+  (* let is_tgt i = match OpCls.opcls_of i with TER _ -> false | _ -> true in
+     let cands_instr = List.filter is_tgt all_instrs in
 
+     let cands =
+       cands_instr
+       |> List.map (fun instr -> (instr, invest_opd_alts instr))
+       |> List.filter (fun (_, alts) -> alts <> [])
+     in *)
   let cands =
-    cands_instr
+    all_instrs
     |> List.map (fun instr -> (instr, invest_opd_alts instr))
     |> List.filter (fun (_, alts) -> alts <> [])
   in
