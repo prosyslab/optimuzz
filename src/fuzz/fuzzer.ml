@@ -75,8 +75,8 @@ let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
   in
   let optim_res, valid_res = measure_optimizer_coverage mutant in
   match optim_res with
-  | INVALID | CRASH -> Invalid
-  | VALID cov_mutant ->
+  | Error _ -> Invalid
+  | Ok cov_mutant ->
       let new_seed : SeedPool.seed_t =
         let covers = CD.Coverage.cover_target target_path cov_mutant in
         let score =
