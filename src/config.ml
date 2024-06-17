@@ -16,10 +16,9 @@ let cov_file = ref "cov.cov"
 let gcov_dir = ref "gcov"
 let dry_run = ref false
 
-(* build/binaries *)
-(* let opt_bin = ref "llvm-project/build/bin/opt" *)
-let opt_bin = ref "./opt"
-let alive_tv_bin = ref "Alive2/alive2/build/alive-tv"
+(* binary dependencies *)
+let opt_bin = ref "opt"
+let alive_tv_bin = ref "alive-tv"
 
 (* seed options *)
 let max_initial_seed = ref 100
@@ -265,51 +264,40 @@ let init_gcov_list () =
   |> List.concat
   |> fun x -> gcov_list := x
 
-let initialize llctx () =
-  Arg.parse opts
-    (fun _ -> failwith "no anonymous arguments")
-    "Usage: llfuzz [options]";
+type dependencies = { opt : string; alive_tv : string }
+type output = { out : string; crash : string; corpus : string }
 
-  (* consider dune directory *)
-  project_home :=
-    Sys.argv.(0)
-    |> Unix.realpath
-    |> Filename.dirname
-    |> Filename.dirname
-    |> Filename.dirname
-    |> Filename.dirname;
+let lookup_dependencies cwd =
+  let opt = Filename.concat cwd !opt_bin in
+  let alive_tv = Filename.concat cwd !alive_tv_bin in
 
-  opt_bin := Filename.concat !project_home !opt_bin;
-  alive_tv_bin := Filename.concat !project_home !alive_tv_bin;
+  if Sys.file_exists opt |> not then failwith ("opt binary not found: " ^ opt);
 
-  if Sys.file_exists !opt_bin |> not then
-    failwith ("opt binary not found: " ^ !opt_bin);
-  if Sys.file_exists !alive_tv_bin |> not then
-    failwith ("alive-tv binary not found: " ^ !alive_tv_bin);
+  if Sys.file_exists alive_tv |> not then
+    failwith ("alive-tv binary not found: " ^ alive_tv);
 
-  out_dir := Filename.concat !project_home !out_dir;
-  crash_dir := Filename.concat !out_dir !crash_dir;
-  corpus_dir := Filename.concat !out_dir !corpus_dir;
+  { opt; alive_tv }
 
-  (* make directories first *)
-  (try Sys.mkdir !out_dir 0o755
-   with Sys_error msg ->
-     (* Check if corpus and crash directory are there already *)
-     if Sys.file_exists !corpus_dir && Sys.file_exists !crash_dir then (
-       F.eprintf "%s@." msg;
-       F.eprintf "It seems like the output directory already exists.@.";
-       F.eprintf "We don't want to mess up with existing files. Exiting...@.";
-       exit 0)
-     else ());
-  (try Sys.mkdir !crash_dir 0o755 with _ -> ());
-  (try Sys.mkdir !corpus_dir 0o755 with _ -> ());
+let setup_output cwd out_dir =
+  (* cwd / llfuzz-out *)
+  let out = Filename.concat cwd out_dir in
+  (* cwd / llfuzz-out / crash *)
+  let crash = Filename.concat out !crash_dir in
+  (* cwd / llfuzz-out / corpus *)
+  let corpus = Filename.concat out !corpus_dir in
 
-  if !cov_directed = "" then
-    failwith "Coverage target is not set. Please set -direct option.";
+  if Sys.file_exists crash || Sys.file_exists corpus then (
+    F.eprintf "It seems like the output directory already exists.@.";
+    F.eprintf "We don't want to mess up with existing files. Exiting...@.";
+    exit 0);
 
-  L.from_file (Filename.concat !out_dir "fuzz.log");
-  L.set_level !log_level;
+  (try Sys.mkdir out 0o755 with _ -> ());
+  (try Sys.mkdir crash 0o755 with _ -> ());
+  (try Sys.mkdir corpus 0o755 with _ -> ());
 
+  { out; crash; corpus }
+
+let log_options opts =
   opts
   |> List.iter (fun (name, spec, _) ->
          match spec with
@@ -324,25 +312,46 @@ let initialize llctx () =
              L.info "%s: %s" name (string_of_level !log_level)
          | Arg.String _ when name = "-passes" ->
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
-         | _ -> failwith "not implemented");
+         | _ -> failwith "not implemented")
+
+let initialize llctx () =
+  Arg.parse opts
+    (fun _ -> failwith "no anonymous arguments")
+    "Usage: llfuzz [options]";
+
+  (* consider dune directory *)
+  (* it locates the execution binary. not suitable for setting up for many running environment *)
+  project_home :=
+    Sys.argv.(0)
+    |> Unix.realpath
+    |> Filename.dirname
+    |> Filename.dirname
+    |> Filename.dirname
+    |> Filename.dirname;
+
+  let running_dir = Sys.getcwd () in
+  F.printf "running_dir: %s@." running_dir;
+
+  let { opt; alive_tv } = lookup_dependencies running_dir in
+  opt_bin := opt;
+  alive_tv_bin := alive_tv;
+
+  let { out; crash; corpus } = setup_output running_dir !out_dir in
+  out_dir := out;
+  crash_dir := crash;
+  corpus_dir := corpus;
+
+  if !cov_directed = "" then
+    failwith "Coverage target is not set. Please set -direct option.";
+
+  if Sys.file_exists !seed_dir |> not then
+    failwith ("Seed directory not found: " ^ !seed_dir);
+
+  L.from_file (Filename.concat !out_dir "fuzz.log");
+  L.set_level !log_level;
+
+  log_options opts;
 
   L.flush ();
 
-  Interests.set_interesting_types llctx;
-
-  if !dry_run then
-    opts
-    |> List.iter (fun (name, spec, _) ->
-           match spec with
-           | Arg.Set b -> Format.printf "%s: %b\n" name !b
-           | Arg.Set_string s -> Format.printf "%s: %s\n" name !s
-           | Arg.Set_int i -> Format.printf "%s: %d\n" name !i
-           | Arg.String _ when name = "-metric" ->
-               L.info "%s: %s" name (string_of_metric !metric)
-           | Arg.String _ when name = "-queue" ->
-               L.info "%s: %s" name (string_of_queue_type !queue)
-           | Arg.String _ when name = "-log-level" ->
-               L.info "%s: %s" name (string_of_level !log_level)
-           | Arg.String _ when name = "-passes" ->
-               L.info "%s: %s " name (String.concat "," !optimizer_passes)
-           | _ -> failwith "not implemented")
+  Interests.set_interesting_types llctx
