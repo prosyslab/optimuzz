@@ -45,7 +45,7 @@ let run_opt llm =
   let filename = ALlvm.save_ll !Config.out_dir filename llm in
   let res = Oracle.Optimizer.run ~passes:!Config.optimizer_passes filename in
   AUtil.clean filename;
-  match res with CRASH | INVALID -> None | VALID cov -> Some (h, cov)
+  match res with Error _ -> None | Ok cov -> Some (h, cov)
 
 let score_func target_path cov =
   let f =
@@ -61,21 +61,20 @@ let make_seed llm target_path cov =
   let score = score_func target_path cov in
   { priority = get_prio covers score; llm; covers; score }
 
-(** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-let make llctx =
-  let dir = !Config.seed_dir in
-  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  assert (Sys.file_exists dir && Sys.is_directory dir);
+let collect_cleaned_seeds llctx seed_dir =
+  assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
-  let seed_files = Sys.readdir dir |> Array.to_list in
+  let seed_files = Sys.readdir seed_dir |> Array.to_list in
 
   let can_optimize file =
-    let path = Filename.concat dir file in
+    let path = Filename.concat seed_dir file in
     match Oracle.Optimizer.run ~passes:!Config.optimizer_passes path with
-    | CRASH | INVALID ->
+    | Error Non_zero_exit | Error Hang ->
+        L.info "%s cannot be optimized" path;
         AUtil.name_opted_ver path |> AUtil.clean;
         false
-    | VALID _ ->
+    | Ok _ | Error Cov_not_generated ->
+        L.info "%s can be optimized" path;
         AUtil.name_opted_ver path |> AUtil.clean;
         true
   in
@@ -97,6 +96,50 @@ let make llctx =
            Prep.clean_llm llctx true llm)
   in
 
+  (* cleaned_seeds can be cached since the collection is independent of target_path *)
+  if cleaned_seeds = [] then (
+    L.info "No cleaned seeds found.";
+    exit 1);
+
+  cleaned_seeds
+
+(** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
+let make llctx =
+  let dir = !Config.seed_dir in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
+  assert (Sys.file_exists dir && Sys.is_directory dir);
+
+  let seed_files = Sys.readdir dir |> Array.to_list in
+
+  let can_optimize file =
+    let path = Filename.concat dir file in
+    match Oracle.Optimizer.run ~passes:!Config.optimizer_passes path with
+    | Error Non_zero_exit | Error Hang ->
+        AUtil.name_opted_ver path |> AUtil.clean;
+        false
+    | Ok _ | Error Cov_not_generated ->
+        AUtil.name_opted_ver path |> AUtil.clean;
+        true
+  in
+
+  let optimizable_seeds =
+    seed_files
+    |> List.filter can_optimize
+    |> List.filter_map (fun path ->
+           ALlvm.read_ll llctx path |> Result.to_option)
+  in
+  if optimizable_seeds = [] then (
+    L.info "No optimizable seeds found.";
+    exit 1);
+
+  let cleaned_seeds =
+    optimizable_seeds
+    |> List.filter_map (fun llm ->
+           ALlvm.clean_module_data llm;
+           Prep.clean_llm llctx true llm)
+  in
+
+  (* cleaned_seeds can be cached since the collection is independent of target_path *)
   if cleaned_seeds = [] then (
     L.info "No cleaned seeds found.";
     exit 1);

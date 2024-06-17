@@ -66,7 +66,13 @@ end
 (** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
     The input can be a file or LLVM module. *)
 module Optimizer = struct
-  type res_t = VALID of CD.Coverage.t | (* TODO: clearify *) INVALID | CRASH
+  type err_t =
+    (* coverage file (cov.cov) is not generated -- probably the LLVM version is not instrumented? *)
+    | Cov_not_generated
+    (* optimizer exited with non-zero exit code *)
+    | Non_zero_exit
+    (* optimizer hangs -- timeout expired *)
+    | Hang
 
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
@@ -80,9 +86,9 @@ module Optimizer = struct
     in
     try
       let cov = CD.Coverage.read !Config.cov_file in
-      if exit_state = 0 then VALID cov else CRASH
+      if exit_state = 0 then Ok cov else Error Non_zero_exit
     with Sys_error _ ->
       (* cov.cov is not generated : the file did not trigger [passes] *)
       (* prerr_endline "Optimizer: cov.cov is not generated"; *)
-      INVALID
+      Error Cov_not_generated
 end
