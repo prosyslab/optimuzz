@@ -14,6 +14,7 @@ let crash_dir = ref "crash"
 let corpus_dir = ref "corpus"
 let cov_file = ref "cov.cov"
 let gcov_dir = ref "gcov"
+let json_file = ref "cov.json"
 let dry_run = ref false
 
 (* binary dependencies *)
@@ -75,6 +76,7 @@ let optimizer_passes =
 let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
+let record_cov = ref false
 let metric = ref Min
 let queue = ref PQueue
 let no_learn = ref false
@@ -205,6 +207,7 @@ let opts =
         | "avg" -> metric := Avg
         | _ -> failwith "Invalid metric"),
       "Metric to give a score to a coverage" );
+    ("-record-cov", Arg.Set record_cov, "Recording all coverage");
     ( "-queue",
       Arg.String
         (function

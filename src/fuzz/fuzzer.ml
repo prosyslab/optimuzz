@@ -49,6 +49,12 @@ let measure_optimizer_coverage llm =
       filename
   in
 
+  (if !Config.record_cov then
+     try
+       let cov_strings = AUtil.read_lines !Config.cov_file in
+       AUtil.update_numbers_with_cov !Config.json_file cov_strings
+     with Sys_error _ -> ());
+
   if !Config.no_tv then (
     AUtil.clean filename;
     AUtil.clean optimized_ir_filename;
