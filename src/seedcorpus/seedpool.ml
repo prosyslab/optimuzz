@@ -61,26 +61,25 @@ let make_seed llm target_path cov =
   let score = score_func target_path cov in
   { priority = get_prio covers score; llm; covers; score }
 
+let can_optimize file =
+  match Oracle.Optimizer.run ~passes:!Config.optimizer_passes file with
+  | Error Non_zero_exit | Error Hang ->
+      L.info "%s cannot be optimized" file;
+      AUtil.name_opted_ver file |> AUtil.clean;
+      false
+  | Ok _ | Error Cov_not_generated ->
+      L.info "%s can be optimized" file;
+      AUtil.name_opted_ver file |> AUtil.clean;
+      true
+
 let collect_cleaned_seeds llctx seed_dir =
   assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
   let seed_files = Sys.readdir seed_dir |> Array.to_list in
 
-  let can_optimize file =
-    let path = Filename.concat seed_dir file in
-    match Oracle.Optimizer.run ~passes:!Config.optimizer_passes path with
-    | Error Non_zero_exit | Error Hang ->
-        L.info "%s cannot be optimized" path;
-        AUtil.name_opted_ver path |> AUtil.clean;
-        false
-    | Ok _ | Error Cov_not_generated ->
-        L.info "%s can be optimized" path;
-        AUtil.name_opted_ver path |> AUtil.clean;
-        true
-  in
-
   let optimizable_seeds =
     seed_files
+    |> List.map (Filename.concat seed_dir)
     |> List.filter can_optimize
     |> List.filter_map (fun path ->
            ALlvm.read_ll llctx path |> Result.to_option)
@@ -103,69 +102,56 @@ let collect_cleaned_seeds llctx seed_dir =
 
   cleaned_seeds
 
-(** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-let make llctx =
-  let dir = !Config.seed_dir in
-  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  assert (Sys.file_exists dir && Sys.is_directory dir);
-
-  let seed_files = Sys.readdir dir |> Array.to_list in
-
-  let can_optimize file =
-    let path = Filename.concat dir file in
-    match Oracle.Optimizer.run ~passes:!Config.optimizer_passes path with
-    | Error Non_zero_exit | Error Hang ->
-        AUtil.name_opted_ver path |> AUtil.clean;
-        false
-    | Ok _ | Error Cov_not_generated ->
-        AUtil.name_opted_ver path |> AUtil.clean;
-        true
+let resume_seedpool llctx dir seedpool =
+  let seedfiles = Sys.readdir dir |> Array.to_list in
+  let seeds =
+    seedfiles
+    |> List.filter_map (fun file ->
+           match ALlvm.read_ll llctx (Filename.concat dir file) with
+           | Ok llm -> (
+               (* parse the filename *)
+               match String.split_on_char ',' file with
+               | [ _date; _id; score; covers; _ext ] ->
+                   let covers = bool_of_string covers in
+                   let score = float_of_string score in
+                   Some { priority = get_prio covers score; llm; covers; score }
+               | [ _date; _id; _src; score; covers; _ext ] ->
+                   let covers = bool_of_string covers in
+                   let score = float_of_string score in
+                   Some { priority = get_prio covers score; llm; covers; score }
+               | _ ->
+                   Format.eprintf "Can't parse the filename: %s@." file;
+                   None)
+           | Error _ -> None)
   in
 
-  let optimizable_seeds =
-    seed_files
-    |> List.filter can_optimize
-    |> List.filter_map (fun path ->
-           ALlvm.read_ll llctx path |> Result.to_option)
-  in
-  if optimizable_seeds = [] then (
-    L.info "No optimizable seeds found.";
-    exit 1);
+  push_list seeds seedpool
 
-  let cleaned_seeds =
-    optimizable_seeds
-    |> List.filter_map (fun llm ->
-           ALlvm.clean_module_data llm;
-           Prep.clean_llm llctx true llm)
-  in
+let seed_from_llm llm target_path =
+  match run_opt llm with
+  | None -> None
+  | Some (id, cov) ->
+      let seed = make_seed llm target_path cov in
+      L.info "seed: %010d, %a" id pp_seed seed;
+      Some seed
 
-  (* cleaned_seeds can be cached since the collection is independent of target_path *)
-  if cleaned_seeds = [] then (
-    L.info "No cleaned seeds found.";
-    exit 1);
-
-  (* pool_covers contains seeds which cover the target *)
-  (* other_seeds contains seeds which do not *)
-  let pool_covers, other_seeds =
-    cleaned_seeds
-    |> List.fold_left
-         (fun (pool_first, other_seeds) llm ->
-           match run_opt llm with
-           | None -> (pool_first, other_seeds)
-           | Some (id, cov) ->
-               let seed = make_seed llm target_path cov in
-               L.info "seed: %010d, %a" id pp_seed seed;
-               if seed.covers then (seed :: pool_first, other_seeds)
-               else (pool_first, seed :: other_seeds))
-         ([], [])
+let construct_seedpool target_path llmodules =
+  let pool_covers, pool_noncovers =
+    List.fold_left
+      (fun (pool_first, other_seeds) llm ->
+        match seed_from_llm llm target_path with
+        | None -> (pool_first, other_seeds)
+        | Some seed ->
+            if seed.covers then (seed :: pool_first, other_seeds)
+            else (pool_first, seed :: other_seeds))
+      ([], []) llmodules
   in
 
-  (* if we have covering seeds, we use covering seeds only. *)
   if pool_covers = [] then (
     L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
     let _pool_cnt, pool_closest =
-      other_seeds
+      pool_noncovers
       |> List.sort_uniq (fun a b ->
              compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
       |> List.sort (fun a b -> compare a.score b.score)
@@ -185,3 +171,30 @@ let make llctx =
              compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
     in
     push_list pool_covers AUtil.PrioQueue.empty)
+
+let make_fresh llctx seed_dir target_path =
+  assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
+
+  collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
+
+let make_skip_clean llctx seed_dir target_path =
+  let seed_files = Sys.readdir seed_dir |> Array.to_list in
+  seed_files
+  |> List.map (Filename.concat seed_dir)
+  |> List.map (ALlvm.read_ll llctx)
+  |> List.filter_map Result.to_option
+  |> construct_seedpool target_path
+
+(** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
+let make llctx =
+  let seed_dir = !Config.seed_dir in
+  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
+  assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
+
+  match !Config.seedpool_option with
+  | Config.Fresh -> make_fresh llctx seed_dir target_path
+  | Config.SkipClean -> make_skip_clean llctx seed_dir target_path
+  | Config.Resume ->
+      AUtil.PrioQueue.empty
+      |> resume_seedpool llctx !Config.crash_dir
+      |> resume_seedpool llctx !Config.corpus_dir
