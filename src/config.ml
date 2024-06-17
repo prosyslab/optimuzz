@@ -30,9 +30,33 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 type metric = Min | Avg
 type queue_type = PQueue | FIFO
 
+(** seedpool construction configuration *)
+type seedpool_opt =
+  | Fresh
+      (** Start fuzzing campaign from scratch.
+     It will
+     (1) check if opt fails and run llmodule cleaning ([Seedcorpus.Prep.clean_llm])
+     (2) measure distances for each seed and construct seedpool.
+     It requires initial seed directory (-seed-dir) *)
+  | SkipClean
+      (** Start fuzzing campaign without checking if opt fails and llmodule cleaning.
+     it requires initial seed directory which contains preprocessed llmodules.
+     The fuzzing campaign will start after a seedpool is constructed from the initial seed directory.
+     Safety: one should ensure that the files are already preprocessed *)
+  | Resume
+      (** Resume fuzzing campaign with current corpus and crash directory.
+ The fuzzing campaign will start after a seedpool is constructed from the current corpus and crash directory. *)
+
+let seedpool_option = ref Fresh
+
 (* string_of_types *)
 let string_of_metric = function Min -> "min" | Avg -> "avg"
 let string_of_queue_type = function PQueue -> "priority" | FIFO -> "fifo"
+
+let string_of_start_option = function
+  | Fresh -> "fresh"
+  | SkipClean -> "skip-clean"
+  | Resume -> "resume"
 
 let string_of_level = function
   | L.DEBUG -> "DEBUG"
@@ -144,6 +168,14 @@ let opts =
       Arg.Set_string cov_tgt_path,
       "To measure opt coverage only over the file" );
     (* paths *)
+    ( "-seedpool",
+      Arg.String
+        (function
+        | "fresh" -> seedpool_option := Fresh
+        | "skip-clean" -> seedpool_option := SkipClean
+        | "resume" -> seedpool_option := Resume
+        | _ -> failwith "Invalid start option"),
+      "Start option" );
     ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
