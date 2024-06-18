@@ -155,9 +155,6 @@ let rec run pool llctx llset progress =
   let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
   let mutator = mutate_seed llctx target_path llset in
 
-  pool
-  |> SeedPool.iter (fun seed ->
-         L.debug "prio: %d, seed: %a" seed.priority SeedPool.pp_seed seed);
   L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
   L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
 
