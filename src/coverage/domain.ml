@@ -91,43 +91,18 @@ module Coverage = struct
     close_in ic;
     cov
 
-  (* TODO: improve algorithm *)
-  let avg_score target_path cov =
-    let distances : DistanceSet.t =
-      fold
-        (fun path accu ->
-          let ds = Path.distances path target_path |> List.to_seq in
-          accu |> DistanceSet.add_seq ds)
-        cov DistanceSet.empty
-    in
-    let total, cnt = DistanceSet.sum_cnt distances in
-    if cnt = 0 then None
-    else
-      let avg = float_of_int total /. float_of_int cnt in
-      Some avg
-
-  (* TODO: improve algorithm *)
-  let min_score target_path cov =
-    let module IntSet = Set.Make (Int) in
-    let distances =
-      fold
-        (fun path accu ->
-          let d = Path.diff path target_path in
-          accu |> IntSet.add d)
-        cov IntSet.empty
-    in
-    try
-      let min = IntSet.min_elt distances in
-      Some (float_of_int min)
-    with Not_found -> None
-
   let cover_target = mem
 end
 
 module type Distance = sig
   type t
 
-  val distance : Path.t -> Coverage.t -> t option
+  val distance : Path.t -> Coverage.t -> t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val to_int : t -> int
+  val to_priority : t -> int
+  val of_string : string -> t
 end
 
 module AverageDistance : Distance with type t = float = struct
@@ -142,10 +117,16 @@ module AverageDistance : Distance with type t = float = struct
         cov DistanceSet.empty
     in
     let total, cnt = DistanceSet.sum_cnt distances in
-    if cnt = 0 then None
+    if cnt = 0 then !Config.max_distance |> float_of_int
     else
       let avg = float_of_int total /. float_of_int cnt in
-      Some avg
+      avg
+
+  let pp fmt d = Format.fprintf fmt "%.3f" d
+  let compare = Float.compare
+  let to_priority dist = dist *. 10.0 |> int_of_float
+  let of_string = float_of_string
+  let to_int = int_of_float
 end
 
 module MinDistance : Distance with type t = int = struct
@@ -160,8 +141,11 @@ module MinDistance : Distance with type t = int = struct
           accu |> IntSet.add d)
         cov IntSet.empty
     in
-    try
-      let min = IntSet.min_elt distances in
-      Some min
-    with Not_found -> None
+    try IntSet.min_elt distances with Not_found -> !Config.max_distance
+
+  let pp fmt d = Format.fprintf fmt "%d" d
+  let compare = Int.compare
+  let to_priority dist = dist * 10
+  let of_string = int_of_string
+  let to_int = Fun.id
 end

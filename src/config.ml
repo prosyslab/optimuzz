@@ -28,7 +28,7 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 
 (* fuzzing options *)
 
-type metric = Min | Avg
+type metric = Min_metric | Avg_metric
 type queue_type = PQueue | FIFO
 
 (** seedpool construction configuration *)
@@ -51,7 +51,7 @@ type seedpool_opt =
 let seedpool_option = ref Fresh
 
 (* string_of_types *)
-let string_of_metric = function Min -> "min" | Avg -> "avg"
+let string_of_metric = function Min_metric -> "min" | Avg_metric -> "avg"
 let string_of_queue_type = function PQueue -> "priority" | FIFO -> "fifo"
 
 let string_of_seedpool_option = function
@@ -77,7 +77,7 @@ let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
 let record_cov = ref false
-let metric = ref Min
+let metric = ref Min_metric
 let queue = ref PQueue
 let no_learn = ref true
 let learn_inc = ref 20
@@ -203,8 +203,8 @@ let opts =
     ( "-metric",
       Arg.String
         (function
-        | "min" -> metric := Min
-        | "avg" -> metric := Avg
+        | "min" -> metric := Min_metric
+        | "avg" -> metric := Avg_metric
         | _ -> failwith "Invalid metric"),
       "Metric to give a score to a coverage" );
     ("-record-cov", Arg.Set record_cov, "Recording all coverage");

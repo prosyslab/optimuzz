@@ -16,11 +16,6 @@ module Progress = struct
       (CD.Coverage.cardinal progress.cov_sofar)
 end
 
-type res_t =
-  | Invalid
-  | Interesting of bool * SeedPool.seed_t * Progress.t
-  | Not_interesting of bool * SeedPool.seed_t
-
 let opc_tbl = ref Domain.OpcodeMap.empty
 
 let update_mut_tbl opcode_old opcode_new =
@@ -73,128 +68,132 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
-  let score_func =
-    match !Config.metric with
-    | Avg -> CD.Coverage.avg_score
-    | Min -> CD.Coverage.min_score
-  in
-  let optim_res, valid_res = measure_optimizer_coverage mutant in
-  match optim_res with
-  | Error _ -> Invalid
-  | Ok cov_mutant ->
-      let new_seed : SeedPool.seed_t =
-        let covers = CD.Coverage.cover_target target_path cov_mutant in
-        let score =
-          score_func target_path cov_mutant
-          |> Option.value ~default:(!Config.max_distance |> float_of_int)
+module Make (SeedPool : SeedPool.SeedPool) = struct
+  module Dist = SeedPool.Dist
+  module Mutator = Mutator.Make (SeedPool)
+
+  type res_t =
+    | Invalid
+    | Interesting of bool * SeedPool.seed_t * Progress.t
+    | Not_interesting of bool * SeedPool.seed_t
+
+  let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
+    let optim_res, valid_res = measure_optimizer_coverage mutant in
+    match optim_res with
+    | Error _ -> Invalid
+    | Ok cov_mutant ->
+        let new_seed : SeedPool.seed_t =
+          let covers = CD.Coverage.cover_target target_path cov_mutant in
+          let score = Dist.distance target_path cov_mutant in
+          let priority = SeedPool.get_prio covers score in
+          { priority; llm = mutant; covers; score }
         in
-        let priority = SeedPool.get_prio covers score in
-        { priority; llm = mutant; covers; score }
-      in
-      L.debug "mutant score: %f, covers: %b\n" new_seed.score new_seed.covers;
-      let is_crash = valid_res = Oracle.Validator.Incorrect in
-      if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
-      then
-        let progress =
-          progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
+        L.debug "mutant score: %a, covers: %b\n" Dist.pp new_seed.score
+          new_seed.covers;
+        let is_crash = valid_res = Oracle.Validator.Incorrect in
+        if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
+        then
+          let progress =
+            progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
+          in
+          Interesting (is_crash, new_seed, progress)
+        else Not_interesting (is_crash, new_seed)
+
+  let save_seed is_crash parent seed =
+    let seed_name = SeedPool.name_seed ~parent seed in
+    if is_crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm
+    else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
+
+  (* each mutant is mutated [Config.num_mutation] times *)
+  let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
+      limit =
+    (* assert (if not @@ seed.covers then seed.score > 0.0 else true); *)
+    let learning = not !Config.no_learn in
+
+    if learning then (
+      L.debug "TABLE:";
+      L.debug "%a" Domain.OpcodeMap.pp !opc_tbl);
+
+    let rec traverse times (src : SeedPool.seed_t) progress =
+      if times = 0 then (
+        ALlvm.LLModuleSet.add llset src.llm ();
+        None)
+      else
+        (* find table to use *)
+        let opcode_old, opcode_new, dst =
+          Mutator.run llctx learning !opc_tbl src
         in
-        Interesting (is_crash, new_seed, progress)
-      else Not_interesting (is_crash, new_seed)
+        match ALlvm.LLModuleSet.find_opt llset dst with
+        | Some _ ->
+            (* duplicate seed *)
+            None
+        | None -> (
+            match check_mutant dst target_path src progress with
+            | Interesting (is_crash, new_seed, new_progress) ->
+                ALlvm.LLModuleSet.add llset new_seed.llm ();
+                (* update mutation table *)
+                if learning then update_mut_tbl opcode_old opcode_new;
+                let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+                if is_crash then
+                  ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
+                  |> ignore
+                else
+                  ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
+                  |> ignore;
+                Some (new_seed, new_progress)
+            | Not_interesting (is_crash, new_seed) ->
+                (if is_crash then
+                   let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+                   ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
+                   |> ignore);
+                traverse (times - 1) { src with llm = dst } progress
+            | Invalid -> traverse times src progress)
+    in
 
-let save_seed is_crash parent seed =
-  let seed_name = SeedPool.name_seed ~parent seed in
-  if is_crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm
-  else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
+    traverse limit seed progress
 
-(* each mutant is mutated [Config.num_mutation] times *)
-let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress limit
-    =
-  assert (if not @@ seed.covers then seed.score > 0.0 else true);
-  let learning = not !Config.no_learn in
-
-  if learning then (
-    L.debug "TABLE:";
-    L.debug "%a" Domain.OpcodeMap.pp !opc_tbl);
-
-  let rec traverse times (src : SeedPool.seed_t) progress =
-    if times = 0 then (
-      ALlvm.LLModuleSet.add llset src.llm ();
-      None)
-    else
-      (* find table to use *)
-      let opcode_old, opcode_new, dst =
-        Mutator.run llctx learning !opc_tbl src
-      in
-      match ALlvm.LLModuleSet.find_opt llset dst with
-      | Some _ ->
-          (* duplicate seed *)
-          None
-      | None -> (
-          match check_mutant dst target_path src progress with
-          | Interesting (is_crash, new_seed, new_progress) ->
-              ALlvm.LLModuleSet.add llset new_seed.llm ();
-              (* update mutation table *)
-              if learning then update_mut_tbl opcode_old opcode_new;
-              let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-              if is_crash then
-                ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm |> ignore
-              else
-                ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
-                |> ignore;
-              Some (new_seed, new_progress)
-          | Not_interesting (is_crash, new_seed) ->
-              (if is_crash then
-                 let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-                 ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
-                 |> ignore);
-              traverse (times - 1) { src with llm = dst } progress
-          | Invalid -> traverse times src progress)
-  in
-
-  traverse limit seed progress
-
-(** [run pool llctx cov_set get_count] pops seed from [pool]
+  (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
-let rec run pool llctx llset progress =
-  let seed, pool_popped = SeedPool.pop pool in
-  let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
-  let mutator = mutate_seed llctx target_path llset in
+  let rec run pool llctx llset progress =
+    let seed, pool_popped = SeedPool.pop pool in
+    let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
+    let mutator = mutate_seed llctx target_path llset in
 
-  L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
-  L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
+    L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
+    L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
 
-  (* try generating interesting mutants *)
-  (* each seed gets mutated upto n times *)
-  let rec iter times (seeds, progress) =
-    if times = 0 then (seeds, progress)
-    else
-      match mutator seed progress !Config.num_mutation with
-      | Some (new_seed, new_progress) ->
-          iter (times - 1) (new_seed :: seeds, new_progress)
-      | None -> iter (times - 1) (seeds, progress)
-  in
+    (* try generating interesting mutants *)
+    (* each seed gets mutated upto n times *)
+    let rec iter times (seeds, progress) =
+      if times = 0 then (seeds, progress)
+      else
+        match mutator seed progress !Config.num_mutation with
+        | Some (new_seed, new_progress) ->
+            iter (times - 1) (new_seed :: seeds, new_progress)
+        | None -> iter (times - 1) (seeds, progress)
+    in
 
-  let new_seeds, progress = iter !Config.num_mutant ([], progress) in
-  F.printf "\r%a@?" Progress.pp progress;
+    let new_seeds, progress = iter !Config.num_mutant ([], progress) in
+    F.printf "\r%a@?" Progress.pp progress;
 
-  List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
-  let new_pool =
-    pool_popped
-    |> SeedPool.push_list new_seeds
-    |> SeedPool.push
-         {
-           seed with
-           priority =
-             (match !Config.queue with
-             | PQueue -> seed.priority + 1
-             | FIFO -> 0);
-         }
-  in
+    List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
+    let new_pool =
+      pool_popped
+      |> SeedPool.push_list new_seeds
+      |> SeedPool.push
+           {
+             seed with
+             priority =
+               (match !Config.queue with
+               | PQueue -> seed.priority + 1
+               | FIFO -> 0);
+           }
+    in
 
-  (* repeat until the time budget or seed pool exhausts *)
-  let exhausted =
-    !Config.time_budget > 0
-    && AUtil.now () - !AUtil.start_time > !Config.time_budget
-  in
-  if exhausted then progress.cov_sofar else run new_pool llctx llset progress
+    (* repeat until the time budget or seed pool exhausts *)
+    let exhausted =
+      !Config.time_budget > 0
+      && AUtil.now () - !AUtil.start_time > !Config.time_budget
+    in
+    if exhausted then progress.cov_sofar else run new_pool llctx llset progress
+end

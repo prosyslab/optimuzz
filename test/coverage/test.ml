@@ -7,8 +7,11 @@ let print_score = function
 let _ =
   let target_path = CD.Path.parse "A:B:C:D" |> Option.get in
   let cov = CD.Coverage.read Sys.argv.(1) in
-  CD.Coverage.avg_score target_path cov |> print_score;
-  CD.Coverage.min_score target_path cov |> print_score;
+  let avg_dist = CD.AverageDistance.distance target_path cov in
+  let min_dist = CD.MinDistance.distance target_path cov in
+
+  Format.printf "%a@." CD.AverageDistance.pp avg_dist;
+  Format.printf "%a@." CD.MinDistance.pp min_dist;
   CD.Coverage.cover_target target_path cov |> Printf.printf "%b\n";
 
   ()
