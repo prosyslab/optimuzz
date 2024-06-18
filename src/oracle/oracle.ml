@@ -10,9 +10,13 @@ module Validator = struct
 
   let run src optimized =
     if Sys.file_exists src && Sys.file_exists optimized then
+      (* let tv_process =
+           Unix.open_process_args_in !Config.alive_tv_bin
+             [| !Config.alive_tv_bin; src; optimized |]
+         in *)
       let tv_process =
-        Unix.open_process_args_in !Config.alive_tv_bin
-          [| !Config.alive_tv_bin; src; optimized |]
+        Unix.open_process_args_in "timeout"
+          [| "timeout"; "2m"; !Config.alive_tv_bin; src; optimized |]
       in
       let text = In_channel.input_all tv_process in
       (*AUtil.log "%s@." text;*)
