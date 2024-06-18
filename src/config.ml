@@ -53,7 +53,7 @@ let seedpool_option = ref Fresh
 let string_of_metric = function Min -> "min" | Avg -> "avg"
 let string_of_queue_type = function PQueue -> "priority" | FIFO -> "fifo"
 
-let string_of_start_option = function
+let string_of_seedpool_option = function
   | Fresh -> "fresh"
   | SkipClean -> "skip-clean"
   | Resume -> "resume"
@@ -318,7 +318,10 @@ let setup_output cwd out_dir =
   (* cwd / llfuzz-out / corpus *)
   let corpus = Filename.concat out !corpus_dir in
 
-  if Sys.file_exists crash || Sys.file_exists corpus then (
+  if
+    !seedpool_option <> Resume
+    && (Sys.file_exists crash || Sys.file_exists corpus)
+  then (
     F.eprintf "It seems like the output directory already exists.@.";
     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
     exit 0);
@@ -344,7 +347,11 @@ let log_options opts =
              L.info "%s: %s" name (string_of_level !log_level)
          | Arg.String _ when name = "-passes" ->
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
-         | _ -> failwith "not implemented")
+         | Arg.String _ when name = "-seedpool" ->
+             L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
+         | _ -> failwith "not implemented");
+
+  L.flush ()
 
 let initialize llctx () =
   Arg.parse opts
@@ -361,29 +368,25 @@ let initialize llctx () =
     |> Filename.dirname
     |> Filename.dirname;
 
-  let running_dir = Sys.getcwd () in
-  F.printf "running_dir: %s@." running_dir;
+  let cwd = Sys.getcwd () in
 
-  let { opt; alive_tv } = lookup_dependencies running_dir in
+  let { opt; alive_tv } = lookup_dependencies cwd in
   opt_bin := opt;
   alive_tv_bin := alive_tv;
 
-  let { out; crash; corpus } = setup_output running_dir !out_dir in
+  let { out; crash; corpus } = setup_output cwd !out_dir in
   out_dir := out;
   crash_dir := crash;
   corpus_dir := corpus;
+
+  L.from_file (Filename.concat !out_dir "fuzz.log");
+  L.set_level !log_level;
+  log_options opts;
 
   if !cov_directed = "" then
     failwith "Coverage target is not set. Please set -direct option.";
 
   if Sys.file_exists !seed_dir |> not then
     failwith ("Seed directory not found: " ^ !seed_dir);
-
-  L.from_file (Filename.concat !out_dir "fuzz.log");
-  L.set_level !log_level;
-
-  log_options opts;
-
-  L.flush ();
 
   Interests.set_interesting_types llctx
