@@ -159,3 +159,9 @@ module PrioQueue = struct
         iter f left;
         iter f right
 end
+
+let ( let+ ) = Result.bind
+let ( let* ) = Option.bind
+
+let filter_map_res f lst =
+  List.filter_map (fun x -> f x |> Result.to_option) lst

@@ -136,19 +136,14 @@ let parse_seed_filename filename =
       Format.asprintf "Can't parse the filename: %s@." filename |> Result.error
 
 let resume_seedpool llctx dir seedpool =
+  let open AUtil in
   let seedfiles = Sys.readdir dir |> Array.to_list in
   let seeds =
     seedfiles
-    |> List.filter_map (fun file ->
-           match ALlvm.read_ll llctx (Filename.concat dir file) with
-           | Ok llm -> (
-               (* parse the filename *)
-               Format.eprintf "file: %s@." file;
-               match parse_seed_filename file with
-               | Ok (covers, score) ->
-                   Some { priority = get_prio covers score; llm; covers; score }
-               | Error _ -> None)
-           | Error _ -> None)
+    |> filter_map_res (fun file ->
+           let+ llm = ALlvm.read_ll llctx (Filename.concat dir file) in
+           let+ covers, score = parse_seed_filename file in
+           Ok { priority = get_prio covers score; llm; covers; score })
   in
 
   Format.eprintf "Resuming %d seeds@." (List.length seeds);
