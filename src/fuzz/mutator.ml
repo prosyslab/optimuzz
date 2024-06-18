@@ -94,6 +94,13 @@ module Candidates = struct
     List.filter (( <> ) []) [ cands.const; cands.param; cands.instr ]
     |> AUtil.choose_random
     |> AUtil.choose_random
+
+  let pp cands =
+    let print = List.iter (fun llv -> L.debug "%s" (string_of_llvalue llv)) in
+    L.debug "candidates: ";
+    print cands.instr;
+    print cands.param;
+    print cands.const
 end
 
 let unwrap_interest_int ty v =
@@ -124,8 +131,17 @@ let get_rand_const ty =
           (fun v -> Array.length v = vector_size ty)
           !Config.Interests.interesting_vectors
       in
-      assert (l <> []);
-      l |> AUtil.choose_random |> unwrap_interest_vec ty
+
+      if l = [] then
+        let el_ty = element_type ty in
+        let vec_size = vector_size ty in
+        let llv =
+          !Config.Interests.interesting_integers
+          |> AUtil.choose_random
+          |> unwrap_interest_int el_ty
+        in
+        const_vector (Array.make vec_size llv)
+      else l |> AUtil.choose_random |> unwrap_interest_vec ty
   | Pointer -> const_null ty
   | _ -> failwith ("Unsupported type for get_rand_const: " ^ string_of_lltype ty)
 
@@ -158,8 +174,28 @@ let get_opd_cands loc ty : Candidates.t =
   in
   { instr = cands_instr; const = cands_const; param = cands_param }
 
+(** [get_opd_cands_nonconst_ty loc] returns operand candidates valid at [loc].
+    Returned candidates include non-const llvalues which have same type with [loc] *)
+let get_opd_cands_nonconst_ty loc ty : Candidates.t =
+  let tycls = ty |> classify_type in
+  if tycls <> Void && tycls <> Pointer then
+    let instrs =
+      loc
+      |> get_instrs_before ~wide:false
+      |> List.filter (fun i -> type_of i = ty)
+    in
+    let params =
+      loc
+      |> get_function
+      |> params
+      |> Array.to_list
+      |> List.filter (fun i -> type_of i = ty)
+    in
+    { instr = instrs; param = params; const = [] }
+  else { instr = []; param = []; const = [] }
+
 (** [get_opd_cands_nonconst_allty loc] returns operand candidates valid at [loc].
-    Returned candidates include all non-const llvalues, regardless of types. *)
+    Returned candidates include non-const llvalues, regardless of types. *)
 let get_opd_cands_nonconst_allty loc : Candidates.t =
   let instrs = loc |> get_instrs_before ~wide:false in
   let params = loc |> get_function |> params |> Array.to_list in
@@ -186,7 +222,6 @@ let get_any_integer loc =
 (** [get_opd_cands_const_vecty ()] returns all constant vector operand
     candidates. *)
 let get_opd_cands_const_vecty () =
-  L.debug "hello";
   List.map
     (fun ty ->
       !Config.Interests.interesting_vectors
@@ -218,6 +253,24 @@ let get_alternate loc ?(include_const = false) llv_old =
     |> Candidates.filter_each (( <> ) llv_old)
   in
   if Candidates.is_empty cands then None else Some (Candidates.choose cands)
+
+let not_void_or_ptr llv =
+  let tycls = llv |> type_of |> classify_type in
+  tycls <> Void && tycls <> Pointer
+
+let check_cast_ty opc ty_dst llv =
+  assert (OpCls.classify opc = CAST);
+  let ty_src = type_of llv in
+  let get_bw ty =
+    let tycls = classify_type ty in
+    assert (tycls = Integer || tycls = Vector);
+    if tycls = Integer then integer_bitwidth ty
+    else ty |> element_type |> integer_bitwidth
+  in
+  match opc with
+  | ZExt | SExt -> get_bw ty_dst > get_bw ty_src
+  | Trunc -> get_bw ty_dst < get_bw ty_src
+  | _ -> failwith "NEVER OCCUR"
 
 let get_dst_tys opc ty_src =
   assert (OpCls.classify opc = CAST);
@@ -383,88 +436,103 @@ let create_rand_select llctx loc opd =
     in
     build_select cond opd opd' "" builder
 
+let rec get_cands_for_create loc i cands =
+  if i = num_operands loc then cands
+  else if i |> operand loc |> type_of |> classify_type == Pointer then
+    get_cands_for_create loc (i + 1) cands
+  else
+    let dst = operand loc i in
+    let dst_ty = type_of dst in
+    let opc =
+      (if classify_type dst_ty = Vector then
+         List.flatten
+           [
+             [ Opcode.ICmp; Select ];
+             Array.to_list OpCls.binary_arr;
+             Array.to_list OpCls.vec_arr;
+             Array.to_list OpCls.cast_arr;
+           ]
+       else
+         List.flatten
+           [
+             [ Opcode.ICmp; Select ];
+             Array.to_list OpCls.binary_arr;
+             Array.to_list OpCls.cast_arr;
+           ])
+      |> AUtil.choose_random
+    in
+    let opds =
+      match OpCls.classify opc with
+      | ICMP ->
+          loc
+          |> get_opd_cands_nonconst_allty
+          |> Candidates.filter_each not_void_or_ptr
+      | CAST ->
+          loc
+          |> get_opd_cands_nonconst_allty
+          |> Candidates.filter_each not_void_or_ptr
+          |> Candidates.filter_each (check_cast_ty opc dst_ty)
+      | _ ->
+          get_opd_cands_nonconst_ty loc dst_ty
+          |> Candidates.filter_each not_void_or_ptr
+    in
+    let cands =
+      if Candidates.is_empty opds then cands else (i, opc, opds) :: cands
+    in
+    get_cands_for_create loc (i + 1) cands
+
 (** [create_rand_instr llctx llm] creates a random instruction. *)
 let create_rand_instr llctx llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
-
-  (* 1. the location must not precede PHI nodes
-     2. the location must have at least one available non-const llv
-     3. void instrs cannot be operands
-     4. we will not create MEM instrs, so pointer operands are not needed *)
-  let not_void_or_ptr llv =
-    let tycls = llv |> type_of |> classify_type in
-    tycls <> Void && tycls <> Pointer
+  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
+  let loc =
+    all_instrs
+    |> List.filter (fun i ->
+           let opc = instr_opcode i in
+           opc <> PHI && opc <> Call && opc <> Br)
+    |> AUtil.choose_random
   in
-  let cands =
-    fold_left_all_instr (fun accu instr -> instr :: accu) [] f
-    |> List.filter (fun i -> instr_opcode i <> PHI)
-    |> List.map (fun i ->
-           ( i,
-             i
-             |> get_opd_cands_nonconst_allty
-             |> Candidates.filter_each not_void_or_ptr ))
-    |> List.filter (fun (_, c) -> not (Candidates.is_empty c))
-  in
+  L.debug "location: %s" (string_of_llvalue loc);
+  let cands = get_cands_for_create loc 0 [] in
   if cands = [] then None
   else
-    let loc, cands_opd = AUtil.choose_random cands in
-    L.debug "location: %s" (string_of_llvalue loc);
-    let opd = Candidates.choose cands_opd in
-    assert (not (is_constant opd));
+    let idx, opc, opds = AUtil.choose_random cands in
+    L.debug "idx: %s" (string_of_int idx);
+    L.debug "opcode: %s" (string_of_opcode opc);
+    let opd = Candidates.choose opds in
     L.debug "operand: %s" (string_of_llvalue opd);
-
+    let ty_dst = type_of (operand loc idx) in
     let ty_opd = type_of opd in
     let tycls_opd = classify_type ty_opd in
     assert (tycls_opd = Integer || tycls_opd = Vector);
-
-    let ty_dst_trunc = get_dst_tys Trunc ty_opd in
-    let ty_dst_ext = get_dst_tys ZExt ty_opd in
-
-    (* choose proper opcode *)
-    let cons_if cond v l = if cond then v :: l else l in
-    let opc =
-      List.flatten
-        [
-          [ Opcode.ICmp; Select ];
-          Array.to_list OpCls.binary_arr;
-          Array.to_list OpCls.vec_arr;
-        ]
-      |> cons_if (ty_dst_trunc <> []) Opcode.Trunc
-      |> cons_if (ty_dst_ext <> []) Opcode.ZExt
-      |> cons_if (ty_dst_ext <> []) Opcode.SExt
-      |> AUtil.choose_random
+    let new_instr =
+      match OpCls.classify opc with
+      | BINARY ->
+          let opd' = get_rand_opd loc ty_opd in
+          create_binary llctx loc opc opd opd'
+      | VEC ExtractElement -> create_rand_extractelement llctx loc opd
+      | VEC InsertElement -> create_rand_insertelement llctx loc opd
+      | VEC ShuffleVector ->
+          if opd |> type_of |> classify_type = Vector then
+            create_rand_shufflevector llctx loc opd
+          else (
+            L.debug
+              "ShuffleVector instruction does not require non-vector operands.";
+            L.debug "This mutation will be ignored.";
+            loc)
+      | CAST -> create_cast llctx loc opc opd ty_dst
+      | ICMP ->
+          let cond = OpCls.random_icmp () in
+          let opd' = get_rand_opd loc ty_opd in
+          create_icmp llctx loc cond opd opd'
+      | OTHER Select -> create_rand_select llctx loc opd
+      | _ -> failwith "NEVER OCCUR"
     in
-    L.debug "opcode: %s" (string_of_opcode opc);
-
-    (* create instruction by opcls *)
-    (match OpCls.classify opc with
-    | BINARY ->
-        let opd' = get_rand_opd loc ty_opd in
-        create_binary llctx loc opc opd opd'
-    | VEC ExtractElement -> create_rand_extractelement llctx loc opd
-    | VEC InsertElement -> create_rand_insertelement llctx loc opd
-    | VEC ShuffleVector ->
-        if opd |> type_of |> classify_type = Vector then
-          create_rand_shufflevector llctx loc opd
-        else (
-          L.debug
-            "ShuffleVector instruction does not require non-vector operands.";
-          L.debug "This mutation will be ignored.";
-          loc)
-    | CAST ->
-        let ty_dst =
-          AUtil.choose_random (if opc = Trunc then ty_dst_trunc else ty_dst_ext)
-        in
-        create_cast llctx loc opc opd ty_dst
-    | ICMP ->
-        let cond = OpCls.random_icmp () in
-        let opd' = get_rand_opd loc ty_opd in
-        create_icmp llctx loc cond opd opd'
-    | OTHER Select -> create_rand_select llctx loc opd
-    | _ -> failwith "NEVER OCCUR")
-    |> ignore;
-    Some llm
+    if type_of new_instr == ty_dst then (
+      set_operand loc idx new_instr;
+      Some llm)
+    else None
 
 (** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
@@ -645,15 +713,28 @@ let modify_flag _llctx llm =
 
 type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 
+let rec check_const_flow llv res =
+  if res then res
+  else
+    match classify_value llv with
+    | Instruction opc when opc = ICmp -> true
+    | Instruction _ ->
+        let opd_num = num_operands llv in
+        let rec aux i res =
+          if i = opd_num || res then res
+          else
+            let res = check_const_flow (operand llv i) res in
+            aux (i + 1) res
+        in
+        aux 0 res
+    | _ -> false
+
 (* CAST instructions directly affects to types, need special caring *)
 let rec trav_cast llv ty_new accu =
   match classify_value llv with
   | Instruction opc
-    when OpcodeClass.classify opc = CAST && operand llv 0 |> type_of = ty_new
-    -> (
-      match operand llv 0 |> classify_value with
-      | Instruction opc when OpcodeClass.classify opc = ICMP -> accu
-      | _ -> Retry)
+    when OpcodeClass.classify opc = CAST && operand llv 0 |> type_of = ty_new ->
+      if check_const_flow (operand llv 0) false then accu else Retry
   | _ when type_of llv = ty_new -> Retry
   | _ -> (
       match (llv |> type_of |> classify_type, classify_type ty_new) with
@@ -732,8 +813,12 @@ and trav_llvs_using_curr curr ty_new accu =
       match OpCls.opcls_of user with
       | TER _ | MEM _ -> (* does not affect *) accu
       | CAST -> trav_cast user ty_new accu
-      | BINARY | OTHER PHI | OTHER Select ->
-          collect_ty_changing_llvs user ty_new accu
+      | BINARY | OTHER PHI -> collect_ty_changing_llvs user ty_new accu
+      | OTHER Select ->
+          let cond = operand user 0 in
+          if cond = curr && ty_new <> type_of cond then Impossible
+          else if user |> type_of |> classify_type = Pointer then Impossible
+          else collect_ty_changing_llvs user ty_new accu
       | VEC ExtractElement ->
           if operand user 0 = curr then
             if tycls <> Vector then Impossible

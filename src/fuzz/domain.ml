@@ -13,7 +13,7 @@ let pp_mutation fmt m =
   | CUT -> Format.fprintf fmt "CUT"
 
 let expand_mutations =
-  [ (CREATE, 0); (OPCODE, 3); (OPERAND, 3); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
+  [ (CREATE, 2); (OPCODE, 4); (OPERAND, 4); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
   |> List.map (fun (m, p) -> List.init p (Fun.const m))
   |> List.flatten
   |> Array.of_list
