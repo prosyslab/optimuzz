@@ -107,17 +107,32 @@ let collect_cleaned_seeds llctx seed_dir =
 
   cleaned_seeds
 
-(* covers:true -> true *)
-let parse_covers s =
-  let colon = String.index s ':' in
-  let s = String.sub s (colon + 1) (String.length s - colon - 1) in
-  bool_of_string s
-
-(* score:4.500 -> 4.500 *)
-let parse_score s =
-  let colon = String.index s ':' in
-  let s = String.sub s (colon + 1) (String.length s - colon - 1) in
-  float_of_string s
+let parse_seed_filename filename =
+  let filename = Filename.chop_extension filename in
+  (* covers:true -> true *)
+  let parse_covers s =
+    let colon = String.index s ':' in
+    let s = String.sub s (colon + 1) (String.length s - colon - 1) in
+    bool_of_string s
+  in
+  (* score:4.500 -> 4.500 *)
+  let parse_score s =
+    let colon = String.index s ':' in
+    let s = String.sub s (colon + 1) (String.length s - colon - 1) in
+    float_of_string s
+  in
+  match String.split_on_char ',' filename with
+  | [ _date; _id; score; covers ] ->
+      let covers = parse_covers covers in
+      let score = parse_score score in
+      Ok (covers, score)
+  | [ _date; _id; _src; score; covers ] ->
+      let covers = parse_covers covers in
+      let score = parse_score score in
+      Ok (covers, score)
+  | lst ->
+      List.iter (Format.eprintf "%s@.") lst;
+      Format.asprintf "Can't parse the filename: %s@." filename |> Result.error
 
 let resume_seedpool llctx dir seedpool =
   let seedfiles = Sys.readdir dir |> Array.to_list in
@@ -128,23 +143,10 @@ let resume_seedpool llctx dir seedpool =
            | Ok llm -> (
                (* parse the filename *)
                Format.eprintf "file: %s@." file;
-               let filename =
-                 (* remove extension *)
-                 Filename.chop_extension file
-               in
-               match String.split_on_char ',' filename with
-               | [ _date; _id; score; covers ] ->
-                   let covers = parse_covers covers in
-                   let score = parse_score score in
+               match parse_seed_filename file with
+               | Ok (covers, score) ->
                    Some { priority = get_prio covers score; llm; covers; score }
-               | [ _date; _id; _src; score; covers ] ->
-                   let covers = parse_covers covers in
-                   let score = parse_score score in
-                   Some { priority = get_prio covers score; llm; covers; score }
-               | lst ->
-                   List.iter (Format.eprintf "%s@.") lst;
-                   Format.eprintf "Can't parse the filename: %s@." file;
-                   None)
+               | Error _ -> None)
            | Error _ -> None)
   in
 
