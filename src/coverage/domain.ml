@@ -5,6 +5,7 @@ module Path : sig
   val compare : t -> t -> int
   val parse : string -> t option
   val length : t -> int
+  val diff : t -> t -> int
   val distance : t -> t -> int
   val distances : t -> t -> (t * int) list
 end = struct
@@ -27,8 +28,8 @@ end = struct
   let length = List.length
 
   (* how many same nodes along the path from the root
-   * src : file1 ; func1 ; path1  ; path2  ; ...
-   dst : file2 ; func2 ; path1' ; path2' ; ... *)
+     src : file1 ; func1 ; path1  ; path2  ; ...
+     dst : file2 ; func2 ; path1' ; path2' ; ... *)
   let equal_depth src dst =
     let rec fold acc l1 l2 =
       match (l1, l2) with
@@ -39,7 +40,17 @@ end = struct
     fold 0 src dst
 
   (** [distance src dst] returns the distance of two nodes in a tree *)
-  let distance src dst = length dst - equal_depth src dst
+  let distance src dst =
+    let p = equal_depth src dst in
+    length dst - p + (length src - p)
+
+  (** [diff src dst] returns the number of changes required from [src] path to [dst] path.
+      - [diff [A;B;C] [A;E;F] = 2].
+      - [diff [A;B;C] [A;B;C;D]] = 1.
+      - [diff [A;B;C] [A;B;C]] = 0.
+      - [diff [A;B;C] [A;B;C;D;E]] = 2.
+      *)
+  let diff src dst = length dst - equal_depth src dst
 
   let distances src dst =
     src (* [A; B; C] *)
@@ -63,17 +74,7 @@ module DistanceSet = struct
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
 end
 
-module Coverage : sig
-  type t
-
-  val empty : t
-  val cardinal : t -> int
-  val union : t -> t -> t
-  val read : string -> t
-  val avg_score : Path.t -> t -> float option
-  val min_score : Path.t -> t -> float option
-  val cover_target : Path.t -> t -> bool
-end = struct
+module Coverage = struct
   include Set.Make (Path)
 
   let read file =
@@ -111,7 +112,7 @@ end = struct
     let distances =
       fold
         (fun path accu ->
-          let d = Path.distance path target_path in
+          let d = Path.diff path target_path in
           accu |> IntSet.add d)
         cov IntSet.empty
     in
@@ -121,4 +122,46 @@ end = struct
     with Not_found -> None
 
   let cover_target = mem
+end
+
+module type Distance = sig
+  type t
+
+  val distance : Path.t -> Coverage.t -> t option
+end
+
+module AverageDistance : Distance with type t = float = struct
+  type t = float
+
+  let distance target cov =
+    let distances : DistanceSet.t =
+      Coverage.fold
+        (fun path accu ->
+          let ds = Path.distances path target |> List.to_seq in
+          accu |> DistanceSet.add_seq ds)
+        cov DistanceSet.empty
+    in
+    let total, cnt = DistanceSet.sum_cnt distances in
+    if cnt = 0 then None
+    else
+      let avg = float_of_int total /. float_of_int cnt in
+      Some avg
+end
+
+module MinDistance : Distance with type t = int = struct
+  type t = int
+
+  let distance target cov =
+    let module IntSet = Set.Make (Int) in
+    let distances =
+      Coverage.fold
+        (fun path accu ->
+          let d = Path.diff path target in
+          accu |> IntSet.add d)
+        cov IntSet.empty
+    in
+    try
+      let min = IntSet.min_elt distances in
+      Some min
+    with Not_found -> None
 end
