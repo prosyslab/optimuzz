@@ -39,9 +39,7 @@ end = struct
     fold 0 src dst
 
   (** [distance src dst] returns the distance of two nodes in a tree *)
-  let distance src dst =
-    let p = equal_depth src dst in
-    length src - p + (length dst - p)
+  let distance src dst = length dst - equal_depth src dst
 
   let distances src dst =
     src (* [A; B; C] *)
@@ -63,14 +61,6 @@ module DistanceSet = struct
 
   let sum_cnt s =
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
-end
-
-module DistanceSetMin = struct
-  include Set.Make (struct
-    type t = Path.t * int
-
-    let compare (_, d1) (_, d2) = compare d1 d2
-  end)
 end
 
 module Coverage : sig
@@ -117,17 +107,18 @@ end = struct
 
   (* TODO: improve algorithm *)
   let min_score target_path cov =
-    let distances : DistanceSetMin.t =
+    let module IntSet = Set.Make (Int) in
+    let distances =
       fold
         (fun path accu ->
-          let ds = Path.distances path target_path |> List.to_seq in
-          accu |> DistanceSetMin.add_seq ds)
-        cov DistanceSetMin.empty
+          let d = Path.distance path target_path in
+          accu |> IntSet.add d)
+        cov IntSet.empty
     in
-    if DistanceSetMin.is_empty distances then None
-    else
-      let _, min = DistanceSetMin.min_elt distances in
+    try
+      let min = IntSet.min_elt distances in
       Some (float_of_int min)
+    with Not_found -> None
 
   let cover_target = mem
 end
