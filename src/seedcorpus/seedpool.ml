@@ -45,7 +45,12 @@ let run_opt llm =
   let filename = ALlvm.save_ll !Config.out_dir filename llm in
   let res = Oracle.Optimizer.run ~passes:!Config.optimizer_passes filename in
   AUtil.clean filename;
-  match res with Error _ -> None | Ok cov -> Some (h, cov)
+  match res with
+  | Error Oracle.Optimizer.Cov_not_generated ->
+      Format.eprintf "Coverage not generated: %s@." filename;
+      None
+  | Error _ -> None
+  | Ok cov -> Some (h, cov)
 
 let score_func target_path cov =
   let f =
@@ -102,6 +107,18 @@ let collect_cleaned_seeds llctx seed_dir =
 
   cleaned_seeds
 
+(* covers:true -> true *)
+let parse_covers s =
+  let colon = String.index s ':' in
+  let s = String.sub s (colon + 1) (String.length s - colon - 1) in
+  bool_of_string s
+
+(* score:4.500 -> 4.500 *)
+let parse_score s =
+  let colon = String.index s ':' in
+  let s = String.sub s (colon + 1) (String.length s - colon - 1) in
+  float_of_string s
+
 let resume_seedpool llctx dir seedpool =
   let seedfiles = Sys.readdir dir |> Array.to_list in
   let seeds =
@@ -110,20 +127,28 @@ let resume_seedpool llctx dir seedpool =
            match ALlvm.read_ll llctx (Filename.concat dir file) with
            | Ok llm -> (
                (* parse the filename *)
-               match String.split_on_char ',' file with
-               | [ _date; _id; score; covers; _ext ] ->
-                   let covers = bool_of_string covers in
-                   let score = float_of_string score in
+               Format.eprintf "file: %s@." file;
+               let filename =
+                 (* remove extension *)
+                 Filename.chop_extension file
+               in
+               match String.split_on_char ',' filename with
+               | [ _date; _id; score; covers ] ->
+                   let covers = parse_covers covers in
+                   let score = parse_score score in
                    Some { priority = get_prio covers score; llm; covers; score }
-               | [ _date; _id; _src; score; covers; _ext ] ->
-                   let covers = bool_of_string covers in
-                   let score = float_of_string score in
+               | [ _date; _id; _src; score; covers ] ->
+                   let covers = parse_covers covers in
+                   let score = parse_score score in
                    Some { priority = get_prio covers score; llm; covers; score }
-               | _ ->
+               | lst ->
+                   List.iter (Format.eprintf "%s@.") lst;
                    Format.eprintf "Can't parse the filename: %s@." file;
                    None)
            | Error _ -> None)
   in
+
+  Format.eprintf "Resuming %d seeds@." (List.length seeds);
 
   push_list seeds seedpool
 
@@ -195,6 +220,8 @@ let make llctx =
   | Config.Fresh -> make_fresh llctx seed_dir target_path
   | Config.SkipClean -> make_skip_clean llctx seed_dir target_path
   | Config.Resume ->
+      assert (
+        Sys.file_exists !Config.crash_dir && Sys.is_directory !Config.crash_dir);
       AUtil.PrioQueue.empty
       |> resume_seedpool llctx !Config.crash_dir
       |> resume_seedpool llctx !Config.corpus_dir

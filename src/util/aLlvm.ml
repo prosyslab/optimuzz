@@ -252,7 +252,11 @@ let read_ll llctx filepath =
   try
     let buf = Llvm.MemoryBuffer.of_file filepath in
     Llvm_irreader.parse_ir llctx buf |> Result.ok
-  with Llvm_irreader.Error msg -> Result.Error msg
+  with
+  | Llvm_irreader.Error msg -> Result.Error msg
+  | Llvm.IoError msg ->
+      Format.eprintf "%s: %s" filepath msg;
+      Result.Error (Format.asprintf "%s: %s" filepath msg)
 
 (** [save_ll target_dir output filename llmodule] saves [llmodule]
  *  under [target_dir], named as [filename].

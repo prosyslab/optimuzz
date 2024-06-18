@@ -4,6 +4,8 @@ LN=@ln -sf
 RM=@rm
 EXE=llfuzz
 
+.PHONY: clean
+
 all: fmt
 	$(DUNE) build
 	$(LN) _build/default/src/main.exe $(EXE)
