@@ -1413,36 +1413,38 @@ let cut_below llctx llm =
             Some llm
         | _ -> None)
 
-(* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
-  let mutation = choose_mutation mode score in
-  L.info "mutation: %a" Domain.pp_mutation mutation;
-  (* L.debug "before:\n%s" (string_of_llmodule llm); *)
-  let mutation_result =
-    match mutation with
-    | CREATE -> (None, None, create_rand_instr llctx llm)
-    | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
-    | OPERAND -> (None, None, subst_rand_opd llctx llm)
-    | FLAG -> (None, None, modify_flag llctx llm)
-    | TYPE -> (None, None, change_type llctx llm)
-    | CUT -> (None, None, cut_below llctx llm)
-  in
-  match mutation_result with
-  | Some opc_old, Some opc_new, Some llm ->
-      L.debug "mutant: %s" (string_of_llmodule llm);
-      let f = choose_function llm in
-      reset_var_names f;
-      (Some opc_old, Some opc_new, llm)
-  | _, _, Some llm ->
-      L.debug "mutant: %s" (string_of_llmodule llm);
-      let f = choose_function llm in
-      reset_var_names f;
-      (None, None, llm)
-  | _, _, None ->
-      L.debug "None";
-      mutate_inner_bb llctx learning opc_tbl mode llm score
+module Make (SeedPool : Seedcorpus.Seedpool.SeedPool) = struct
+  (* inner-basicblock mutation (independent of block CFG) *)
+  let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
+    let mutation = choose_mutation mode score in
+    L.info "mutation: %a" Domain.pp_mutation mutation;
+    (* L.debug "before:\n%s" (string_of_llmodule llm); *)
+    let mutation_result =
+      match mutation with
+      | CREATE -> (None, None, create_rand_instr llctx llm)
+      | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
+      | OPERAND -> (None, None, subst_rand_opd llctx llm)
+      | FLAG -> (None, None, modify_flag llctx llm)
+      | TYPE -> (None, None, change_type llctx llm)
+      | CUT -> (None, None, cut_below llctx llm)
+    in
+    match mutation_result with
+    | Some opc_old, Some opc_new, Some llm ->
+        L.debug "mutant: %s" (string_of_llmodule llm);
+        let f = choose_function llm in
+        reset_var_names f;
+        (Some opc_old, Some opc_new, llm)
+    | _, _, Some llm ->
+        L.debug "mutant: %s" (string_of_llmodule llm);
+        let f = choose_function llm in
+        reset_var_names f;
+        (None, None, llm)
+    | _, _, None ->
+        L.debug "None";
+        mutate_inner_bb llctx learning opc_tbl mode llm score
 
-let run llctx learning opc_tbl (seed : Seedcorpus.Seedpool.seed_t) =
-  let mode = if seed.covers then FOCUS else EXPAND in
-  mutate_inner_bb llctx learning opc_tbl mode seed.llm (int_of_float seed.score)
-(* |> mutate_CFG |> check_retval llctx *)
+  let run llctx learning opc_tbl (seed : SeedPool.seed_t) =
+    let mode = if seed.covers then FOCUS else EXPAND in
+    mutate_inner_bb llctx learning opc_tbl mode seed.llm
+      (SeedPool.Dist.to_int seed.score)
+end

@@ -8,39 +8,38 @@ module CD = Coverage.Domain
 let llctx = ALlvm.create_context ()
 
 let initialize () =
+  ALlvm.set_opaque_pointers llctx true;
   Config.initialize llctx ();
   Random.self_init ()
 
-let llfuzz () =
+let llfuzz (module SP : Seedcorpus.Seedpool.SeedPool) () =
   let open Oracle in
-  ALlvm.set_opaque_pointers llctx true;
-  initialize ();
-
   let llset = ALlvm.LLModuleSet.create 4096 in
 
+  let module FZ = Fuzzer.Make (SP) in
   (* fuzzing *)
-  let seed_pool = SeedPool.make llctx in
-  F.printf "#initial seeds: %d@." (SeedPool.cardinal seed_pool);
-  L.info "initial seeds: %d" (SeedPool.cardinal seed_pool);
+  let seed_pool = SP.make llctx in
+  F.printf "#initial seeds: %d@." (SP.cardinal seed_pool);
+  L.info "initial seeds: %d" (SP.cardinal seed_pool);
 
   seed_pool
-  |> SeedPool.iter (fun seed ->
-         let filename = SeedPool.name_seed seed in
+  |> SP.iter (fun seed ->
+         let filename = SP.name_seed seed in
          F.eprintf "%s@." filename;
          ALlvm.save_ll !Config.corpus_dir filename seed.llm |> ignore);
 
-  if SeedPool.cardinal seed_pool = 0 then (
+  if SP.cardinal seed_pool = 0 then (
     F.printf "no seed loaded@.";
     exit 0);
 
   seed_pool
-  |> SeedPool.iter (fun seed -> ALlvm.LLModuleSet.add llset seed.llm ());
+  |> SP.iter (fun (seed : SP.seed_t) -> ALlvm.LLModuleSet.add llset seed.llm ());
 
   if !Config.dry_run then exit 0;
 
   AUtil.start_time := AUtil.now ();
   L.info "fuzzing campaign starts@.";
-  let coverage = Fuzzer.run seed_pool llctx llset Fuzzer.Progress.empty in
+  let coverage = FZ.run seed_pool llctx llset Fuzzer.Progress.empty in
   let end_time = AUtil.now () in
   L.info "fuzzing campaign ends@.";
   L.info "total coverage: %d lines" (CD.Coverage.cardinal coverage);
@@ -49,4 +48,12 @@ let llfuzz () =
   F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
-let _ = llfuzz ()
+let _ =
+  initialize ();
+  match !Config.metric with
+  | Config.Min_metric ->
+      let module SP = SeedPool.Make (CD.MinDistance) in
+      llfuzz (module SP) ()
+  | Config.Avg_metric ->
+      let module SP = SeedPool.Make (CD.AverageDistance) in
+      llfuzz (module SP) ()
