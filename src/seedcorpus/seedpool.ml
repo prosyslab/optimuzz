@@ -95,6 +95,7 @@ let collect_cleaned_seeds llctx seed_dir =
 
   let cleaned_seeds =
     optimizable_seeds
+    |> List.filter Prep.check_llm_for_mutation
     |> List.filter_map (fun llm ->
            ALlvm.clean_module_data llm;
            Prep.clean_llm llctx true llm)

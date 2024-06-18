@@ -1,5 +1,39 @@
 open Util
 
+let check_type_for_mutation llv =
+  match llv |> ALlvm.type_of |> ALlvm.classify_type with
+  | Void | Half | Label | Integer | Function | Array | Pointer | Vector
+  | Metadata ->
+      true
+  | _ -> false
+
+let check_opc_for_mutation opc =
+  if ALlvm.OpcodeClass.classify opc = UNSUPPORTED then false else true
+
+let rec check_opd_for_mutation i llv res =
+  if (not res) || i = ALlvm.num_operands llv then res
+  else
+    i
+    |> ALlvm.operand llv
+    |> check_type_for_mutation
+    |> check_opd_for_mutation (i + 1) llv
+
+let check_llv_for_mutation res llv =
+  if not res then res
+  else
+    match ALlvm.classify_value llv with
+    | Instruction opc ->
+        opc |> check_opc_for_mutation |> check_opd_for_mutation 0 llv
+    | _ -> check_type_for_mutation llv
+
+let check_func_for_mutation f =
+  let res = ALlvm.fold_left_params check_llv_for_mutation true f in
+  ALlvm.fold_left_all_instr check_llv_for_mutation res f
+
+let check_llm_for_mutation llm =
+  let res = ALlvm.fold_left_globals check_llv_for_mutation true llm in
+  ALlvm.fold_left_functions check_llv_for_mutation res llm
+
 let check_exist_ret func =
   let is_ret instr = ALlvm.instr_opcode instr = Ret in
   ALlvm.any_all_instr is_ret func
