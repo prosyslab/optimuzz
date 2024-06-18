@@ -150,38 +150,34 @@ let resume_seedpool llctx dir seedpool =
 
   push_list seeds seedpool
 
-let seed_from_llm llm target_path =
-  match run_opt llm with
-  | None -> None
-  | Some (id, cov) ->
-      let seed = make_seed llm target_path cov in
-      L.info "seed: %010d, %a" id pp_seed seed;
-      Some seed
-
-let construct_seedpool target_path llmodules =
+let construct_seedpool ?(max_size : int = 100) target_path llmodules =
+  let open AUtil in
+  let seeds =
+    llmodules
+    |> List.filter_map (fun llm ->
+           let* _, cov = run_opt llm in
+           make_seed llm target_path cov |> Option.some)
+  in
   let pool_covers, pool_noncovers =
-    List.fold_left
-      (fun (pool_first, other_seeds) llm ->
-        match seed_from_llm llm target_path with
-        | None -> (pool_first, other_seeds)
-        | Some seed ->
-            if seed.covers then (seed :: pool_first, other_seeds)
-            else (pool_first, seed :: other_seeds))
-      ([], []) llmodules
+    seeds
+    |> List.fold_left
+         (fun (pool_first, other_seeds) seed ->
+           if seed.covers then (seed :: pool_first, other_seeds)
+           else (pool_first, seed :: other_seeds))
+         ([], [])
   in
 
   if pool_covers = [] then (
     L.info "No covering seeds found. Using closest seeds.";
     (* pool_closest contains seeds which are closest to the target *)
-    let _pool_cnt, pool_closest =
+    let _cnt, pool_closest =
       pool_noncovers
       |> List.sort_uniq (fun a b ->
              compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
       |> List.sort (fun a b -> compare a.score b.score)
       |> List.fold_left
            (fun (cnt, pool) seed ->
-             if cnt >= !Config.max_initial_seed then (cnt, pool)
-             else (cnt + 1, push seed pool))
+             if cnt >= max_size then (cnt, pool) else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
     pool_closest)
