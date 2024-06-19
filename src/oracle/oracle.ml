@@ -84,15 +84,20 @@ module Optimizer = struct
     L.info "opt: %s -> %s"
       (Filename.basename filename)
       (Filename.basename output);
-    AUtil.clean !Config.cov_file;
-    let exit_state =
-      AUtil.cmd [ !Config.opt_bin; filename; "-S"; passes; "-o"; output ]
-    in
     try
-      let cov = CD.Coverage.read !Config.cov_file in
-      if exit_state = 0 then Ok cov else Error Non_zero_exit
-    with Sys_error _ ->
-      (* cov.cov is not generated : the file did not trigger [passes] *)
-      (* prerr_endline "Optimizer: cov.cov is not generated"; *)
-      Error Cov_not_generated
+      AUtil.clean !Config.cov_file;
+      let exit_state =
+        AUtil.cmd
+          [
+            "timeout 5s"; !Config.opt_bin; filename; "-S"; passes; "-o"; output;
+          ]
+      in
+      try
+        let cov = CD.Coverage.read !Config.cov_file in
+        if exit_state = 0 then Ok cov else Error Non_zero_exit
+      with Sys_error _ ->
+        (* cov.cov is not generated : the file did not trigger [passes] *)
+        (* prerr_endline "Optimizer: cov.cov is not generated"; *)
+        Error Cov_not_generated
+    with _ -> Error Non_zero_exit
 end
