@@ -103,6 +103,7 @@ module type Distance = sig
   val to_int : t -> int
   val to_priority : t -> int
   val of_string : string -> t
+  val of_int : int -> t
 end
 
 module AverageDistance : Distance with type t = float = struct
@@ -127,6 +128,7 @@ module AverageDistance : Distance with type t = float = struct
   let to_priority dist = dist *. 10.0 |> int_of_float
   let of_string = float_of_string
   let to_int = int_of_float
+  let of_int = float_of_int
 end
 
 module MinDistance : Distance with type t = int = struct
@@ -148,4 +150,5 @@ module MinDistance : Distance with type t = int = struct
   let to_priority dist = dist * 10
   let of_string = int_of_string
   let to_int = Fun.id
+  let of_int = Fun.id
 end

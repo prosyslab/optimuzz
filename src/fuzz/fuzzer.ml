@@ -185,8 +185,8 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
              seed with
              priority =
                (match !Config.queue with
-               | PQueue -> seed.priority + 1
-               | FIFO -> 0);
+               | Priority_queue -> seed.priority + 1
+               | Fifo_queue -> 0);
            }
     in
 
