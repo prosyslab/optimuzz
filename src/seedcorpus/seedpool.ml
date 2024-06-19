@@ -111,8 +111,8 @@ module Make (Distance : CD.Distance) : SeedPool = struct
 
   let get_prio covers (score : Dist.t) =
     match !Config.queue with
-    | PQueue -> if covers then 0 else score |> Dist.to_priority
-    | FIFO -> 0 (* ignore score *)
+    | Priority_queue -> if covers then 0 else score |> Dist.to_priority
+    | Fifo_queue -> 0 (* ignore score *)
 
   let push s pool = AUtil.PrioQueue.insert pool s.priority s
   let pop pool = AUtil.PrioQueue.extract pool
@@ -123,6 +123,7 @@ module Make (Distance : CD.Distance) : SeedPool = struct
   let make_seed llm target_path cov =
     let covers = CD.Coverage.cover_target target_path cov in
     let score = Dist.distance target_path cov in
+    L.info "[Seed] Score: %a" Dist.pp score;
     { priority = get_prio covers score; llm; covers; score }
 
   let parse_seed_filename filename =

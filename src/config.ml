@@ -29,7 +29,7 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 (* fuzzing options *)
 
 type metric = Min_metric | Avg_metric
-type queue_type = PQueue | FIFO
+type queue_type = Priority_queue | Fifo_queue
 
 (** seedpool construction configuration *)
 type seedpool_opt =
@@ -52,7 +52,10 @@ let seedpool_option = ref Fresh
 
 (* string_of_types *)
 let string_of_metric = function Min_metric -> "min" | Avg_metric -> "avg"
-let string_of_queue_type = function PQueue -> "priority" | FIFO -> "fifo"
+
+let string_of_queue_type = function
+  | Priority_queue -> "priority"
+  | Fifo_queue -> "fifo"
 
 let string_of_seedpool_option = function
   | Fresh -> "fresh"
@@ -78,7 +81,7 @@ let num_mutant = ref 1
 let no_tv = ref false
 let record_cov = ref false
 let metric = ref Min_metric
-let queue = ref PQueue
+let queue = ref Fifo_queue
 let no_learn = ref true
 let learn_inc = ref 20
 let learn_dec = ref 5
@@ -211,8 +214,8 @@ let opts =
     ( "-queue",
       Arg.String
         (function
-        | "priority" -> queue := PQueue
-        | "fifo" -> queue := FIFO
+        | "priority" -> queue := Priority_queue
+        | "fifo" -> queue := Fifo_queue
         | _ -> failwith "Invalid queue"),
       "Queue type for fuzzing" );
     (* logging options *)
