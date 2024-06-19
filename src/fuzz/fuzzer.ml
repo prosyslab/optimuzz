@@ -82,12 +82,7 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
     match optim_res with
     | Error _ -> Invalid
     | Ok cov_mutant ->
-        let new_seed : SeedPool.seed_t =
-          let covers = CD.Coverage.cover_target target_path cov_mutant in
-          let score = Dist.distance target_path cov_mutant in
-          let priority = SeedPool.get_prio covers score in
-          { priority; llm = mutant; covers; score }
-        in
+        let new_seed = SeedPool.make_seed mutant target_path cov_mutant in
         L.debug "mutant score: %a, covers: %b\n" Dist.pp new_seed.score
           new_seed.covers;
         let is_crash = valid_res = Oracle.Validator.Incorrect in
