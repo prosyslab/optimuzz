@@ -1,11 +1,30 @@
 open Util
 
-let check_type_for_mutation llv =
-  match llv |> ALlvm.type_of |> ALlvm.classify_type with
-  | Void | Half | Label | Integer | Function | Array | Pointer | Vector
-  | Metadata ->
-      true
-  | _ -> false
+let check_value_type_for_mutation llv =
+  let ty = ALlvm.type_of llv in
+
+  if String.starts_with ~prefix:"target" (ALlvm.string_of_lltype ty) then false
+  else if
+    String.starts_with ~prefix:"@" (ALlvm.string_of_llvalue llv)
+    || String.starts_with ~prefix:"declare" (ALlvm.string_of_llvalue llv)
+  then false
+  else
+    match ALlvm.classify_type ty with
+    | Void | Half | Label | Integer | Function | Array | Vector | Metadata ->
+        true
+    | Pointer -> (
+        try
+          ignore
+            (Str.search_forward
+               (Str.regexp_string "inttoptr")
+               (ALlvm.string_of_llvalue llv)
+               0);
+          false
+        with Not_found ->
+          llv |> ALlvm.type_of |> ALlvm.address_space = 0
+          && (not (ALlvm.is_global_constant llv))
+          && not (ALlvm.is_null llv))
+    | _ -> false
 
 let check_opc_for_mutation opc =
   if ALlvm.OpcodeClass.classify opc = UNSUPPORTED then false else true
@@ -15,7 +34,7 @@ let rec check_opd_for_mutation i llv res =
   else
     i
     |> ALlvm.operand llv
-    |> check_type_for_mutation
+    |> check_value_type_for_mutation
     |> check_opd_for_mutation (i + 1) llv
 
 let check_llv_for_mutation res llv =
@@ -24,15 +43,20 @@ let check_llv_for_mutation res llv =
     match ALlvm.classify_value llv with
     | Instruction opc ->
         opc |> check_opc_for_mutation |> check_opd_for_mutation 0 llv
-    | _ -> check_type_for_mutation llv
+    | _ -> check_value_type_for_mutation llv
 
 let check_func_for_mutation f =
   let res = ALlvm.fold_left_params check_llv_for_mutation true f in
-  ALlvm.fold_left_all_instr check_llv_for_mutation res f
+  let res = ALlvm.fold_left_all_instr check_llv_for_mutation res f in
+  res
 
 let check_llm_for_mutation llm =
   let res = ALlvm.fold_left_globals check_llv_for_mutation true llm in
-  ALlvm.fold_left_functions check_llv_for_mutation res llm
+  if not res then res
+  else
+    ALlvm.fold_left_functions
+      (fun res f -> if not res then res else check_func_for_mutation f)
+      res llm
 
 let check_exist_ret func =
   let is_ret instr = ALlvm.instr_opcode instr = Ret in
