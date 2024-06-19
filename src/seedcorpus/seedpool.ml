@@ -186,10 +186,7 @@ let construct_seedpool target_path llmodules =
       |> List.fold_left
            (fun (cnt, pool) seed ->
              if cnt >= !Config.max_initial_seed then (cnt, pool)
-             else (
-               print_endline
-                 ("pushed_hash: " ^ string_of_int (ALlvm.hash_llm seed.llm));
-               (cnt + 1, push seed pool)))
+             else (cnt + 1, push seed pool))
            (0, AUtil.PrioQueue.empty)
     in
     pool_closest)
@@ -201,11 +198,6 @@ let construct_seedpool target_path llmodules =
       |> List.sort_uniq (fun a b ->
              compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
     in
-    List.iter
-      (fun seed ->
-        print_endline ("pushed_hash: " ^ string_of_int (ALlvm.hash_llm seed.llm)))
-      pool_covers;
-
     push_list pool_covers AUtil.PrioQueue.empty)
 
 let make_fresh llctx seed_dir target_path =
