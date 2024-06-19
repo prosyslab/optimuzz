@@ -83,6 +83,7 @@ let _ =
     (fun arg -> args := arg :: !args)
     "usage: check-corpus <out-dir> [options]";
 
+  Config.opt_bin := "./opt";
   Config.alive_tv_bin := !tv_bin;
 
   let out_dir = !args |> List.hd in
