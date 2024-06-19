@@ -71,7 +71,7 @@ module type SeedPool = sig
 
   val pp_seed : Format.formatter -> seed_t -> unit
   val name_seed : ?parent:seed_t -> seed_t -> string
-  val get_prio : bool -> Dist.t -> int
+  val make_seed : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> seed_t
   val push : seed_t -> t -> t
   val pop : t -> seed_t * t
   val cardinal : t -> int
