@@ -149,9 +149,8 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
 
   (** [run pool llctx cov_set get_count] pops seed from [pool]
     and mutate seed [Config.num_mutant] times.*)
-  let rec run pool llctx llset progress =
+  let rec run target_path pool llctx llset progress =
     let seed, pool_popped = SeedPool.pop pool in
-    let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
     let mutator = mutate_seed llctx target_path llset in
 
     L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
@@ -190,5 +189,6 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
       !Config.time_budget > 0
       && AUtil.now () - !AUtil.start_time > !Config.time_budget
     in
-    if exhausted then progress.cov_sofar else run new_pool llctx llset progress
+    if exhausted then progress.cov_sofar
+    else run target_path new_pool llctx llset progress
 end

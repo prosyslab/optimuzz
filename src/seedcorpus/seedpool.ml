@@ -77,7 +77,7 @@ module type SeedPool = sig
   val cardinal : t -> int
   val push_list : seed_t list -> t -> t
   val iter : (seed_t -> unit) -> t -> unit
-  val make : Llvm.llcontext -> t
+  val make : Llvm.llcontext -> CD.Path.t -> t
 end
 
 module Make (Distance : CD.Distance) : SeedPool = struct
@@ -225,9 +225,8 @@ module Make (Distance : CD.Distance) : SeedPool = struct
     |> construct_seedpool target_path
 
   (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
-  let make llctx =
+  let make llctx target_path =
     let seed_dir = !Config.seed_dir in
-    let target_path = CD.Path.parse !Config.cov_directed |> Option.get in
     assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
     match !Config.seedpool_option with
