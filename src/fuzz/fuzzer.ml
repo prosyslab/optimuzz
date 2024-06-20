@@ -179,6 +179,10 @@ module Make (SeedPool : SD.SEED_POOL) = struct
       |> SeedPool.push seed
     in
 
+    (* let new_pool =
+         pool_popped |> SeedPool.push_list new_seeds |> SeedPool.push seed
+       in *)
+
     (* repeat until the time budget or seed pool exhausts *)
     let exhausted =
       !Config.time_budget > 0
