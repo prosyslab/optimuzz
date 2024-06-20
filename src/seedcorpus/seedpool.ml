@@ -196,11 +196,7 @@ module Make (Distance : CD.Distance) : SeedPool = struct
         |> List.sort (fun a b -> compare a.score b.score)
         |> List.fold_left
              (fun (cnt, pool) seed ->
-               if cnt >= max_size then (cnt, pool)
-               else (
-                 print_endline
-                   ("pushed_hash: " ^ string_of_int (ALlvm.hash_llm seed.llm));
-                 (cnt + 1, push seed pool)))
+               if cnt >= max_size then (cnt, pool) else (cnt + 1, push seed pool))
              (0, AUtil.PrioQueue.empty)
       in
       pool_closest)
@@ -212,11 +208,6 @@ module Make (Distance : CD.Distance) : SeedPool = struct
         |> List.sort_uniq (fun a b ->
                compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
       in
-      List.iter
-        (fun seed ->
-          print_endline
-            ("pushed_hash: " ^ string_of_int (ALlvm.hash_llm seed.llm)))
-        pool_covers;
 
       push_list pool_covers AUtil.PrioQueue.empty)
 
