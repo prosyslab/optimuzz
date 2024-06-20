@@ -68,26 +68,25 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-module Make (SeedPool : SeedPool.SeedPool) = struct
-  module Dist = SeedPool.Dist
+module Make (SeedPool : SeedPool.SEED_POOL) = struct
+  module Seed = SeedPool.Seed
+  module Dist = Seed.Distance
   module Mutator = Mutator.Make (SeedPool)
 
   type res_t =
     | Invalid
-    | Interesting of bool * SeedPool.seed_t * Progress.t
-    | Not_interesting of bool * SeedPool.seed_t
+    | Interesting of bool * SeedPool.Seed.t * Progress.t
+    | Not_interesting of bool * SeedPool.Seed.t
 
-  let check_mutant mutant target_path (seed : SeedPool.seed_t) progress =
+  let check_mutant mutant target_path (seed : SeedPool.Seed.t) progress =
     let optim_res, valid_res = measure_optimizer_coverage mutant in
     match optim_res with
     | Error _ -> Invalid
     | Ok cov_mutant ->
-        let new_seed = SeedPool.make_seed mutant target_path cov_mutant in
-        L.debug "mutant score: %a, covers: %b\n" Dist.pp new_seed.score
-          new_seed.covers;
+        let new_seed = SeedPool.Seed.make mutant target_path cov_mutant in
+        L.debug "mutant: %a\n" SeedPool.Seed.pp new_seed;
         let is_crash = valid_res = Oracle.Validator.Incorrect in
-        if new_seed.covers || ((not seed.covers) && new_seed.score < seed.score)
-        then
+        if Seed.closer new_seed seed then
           let progress =
             progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
           in
@@ -95,13 +94,13 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
         else Not_interesting (is_crash, new_seed)
 
   let save_seed is_crash parent seed =
-    let seed_name = SeedPool.name_seed ~parent seed in
-    if is_crash then ALlvm.save_ll !Config.crash_dir seed_name seed.llm
-    else ALlvm.save_ll !Config.corpus_dir seed_name seed.llm
+    let seed_name = Seed.name ~parent seed in
+    let llm = Seed.llmodule seed in
+    if is_crash then ALlvm.save_ll !Config.crash_dir seed_name llm
+    else ALlvm.save_ll !Config.corpus_dir seed_name llm
 
   (* each mutant is mutated [Config.num_mutation] times *)
-  let mutate_seed llctx target_path llset (seed : SeedPool.seed_t) progress
-      limit =
+  let mutate_seed llctx target_path llset (seed : Seed.t) progress limit =
     (* assert (if not @@ seed.covers then seed.score > 0.0 else true); *)
     let learning = not !Config.no_learn in
 
@@ -109,9 +108,10 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
       L.debug "TABLE:";
       L.debug "%a" Domain.OpcodeMap.pp !opc_tbl);
 
-    let rec traverse times (src : SeedPool.seed_t) progress =
+    let rec traverse times (src : Seed.t) progress =
       if times = 0 then (
-        ALlvm.LLModuleSet.add llset src.llm ();
+        let llm = Seed.llmodule src in
+        ALlvm.LLModuleSet.add llset llm ();
         None)
       else
         (* find table to use *)
@@ -123,25 +123,25 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
             (* duplicate seed *)
             None
         | None -> (
+            let parent = ALlvm.hash_llm (Seed.llmodule seed) in
             match check_mutant dst target_path src progress with
             | Interesting (is_crash, new_seed, new_progress) ->
-                ALlvm.LLModuleSet.add llset new_seed.llm ();
+                let llm = Seed.llmodule new_seed in
+                ALlvm.LLModuleSet.add llset llm ();
                 (* update mutation table *)
                 if learning then update_mut_tbl opcode_old opcode_new;
-                let seed_name = SeedPool.name_seed ~parent:seed new_seed in
+                let seed_name = Seed.name ~parent new_seed in
                 if is_crash then
-                  ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
-                  |> ignore
-                else
-                  ALlvm.save_ll !Config.corpus_dir seed_name new_seed.llm
-                  |> ignore;
+                  ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore
+                else ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
                 Some (new_seed, new_progress)
             | Not_interesting (is_crash, new_seed) ->
+                let llm = Seed.llmodule new_seed in
                 (if is_crash then
-                   let seed_name = SeedPool.name_seed ~parent:seed new_seed in
-                   ALlvm.save_ll !Config.crash_dir seed_name new_seed.llm
-                   |> ignore);
-                traverse (times - 1) { src with llm = dst } progress
+                   let seed_name = Seed.name ~parent new_seed in
+                   ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore);
+                let new_mutant = Seed.overwrite src llm in
+                traverse (times - 1) new_mutant progress
             | Invalid -> traverse times src progress)
     in
 
@@ -153,8 +153,9 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
     let seed, pool_popped = SeedPool.pop pool in
     let mutator = mutate_seed llctx target_path llset in
 
-    L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash);
-    L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule seed.llm);
+    let llm = Seed.llmodule seed in
+    L.debug "fuzz-hash: %d\n" (ALlvm.string_of_llmodule llm |> Hashtbl.hash);
+    L.debug "fuzz-llm: %s\n" (ALlvm.string_of_llmodule llm);
 
     (* try generating interesting mutants *)
     (* each seed gets mutated upto n times *)
@@ -170,19 +171,16 @@ module Make (SeedPool : SeedPool.SeedPool) = struct
     let new_seeds, progress = iter !Config.num_mutant ([], progress) in
     F.printf "\r%a@?" Progress.pp progress;
 
-    List.iter (L.info "[new_seed] %a" SeedPool.pp_seed) new_seeds;
+    List.iter (L.info "[new_seed] %a" Seed.pp) new_seeds;
     let new_pool =
-      pool_popped
-      |> SeedPool.push_list new_seeds
-      |> SeedPool.push
-           {
-             seed with
-             priority =
-               (match !Config.queue with
-               | Priority_queue -> seed.priority + 1
-               | Fifo_queue -> 0);
-           }
+      new_seeds
+      |> List.fold_left (fun pool seed -> SeedPool.push seed pool) pool_popped
+      |> SeedPool.push seed
     in
+
+    (* let new_pool =
+         pool_popped |> SeedPool.push_list new_seeds |> SeedPool.push seed
+       in *)
 
     (* repeat until the time budget or seed pool exhausts *)
     let exhausted =

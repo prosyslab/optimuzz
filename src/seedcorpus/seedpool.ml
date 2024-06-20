@@ -57,117 +57,188 @@ let collect_cleaned_seeds llctx seed_dir =
 
   cleaned_seeds
 
-module type SeedPool = sig
-  module Dist : CD.Distance
+let parse_seed_filename filename =
+  let filename = Filename.chop_extension filename in
+  (* covers:true -> true *)
+  let parse_covers s =
+    let colon = String.index s ':' in
+    String.sub s (colon + 1) (String.length s - colon - 1)
+  in
 
-  type seed_t = {
-    priority : int;
-    llm : Llvm.llmodule;
-    covers : bool;
-    score : Dist.t;
-  }
+  (* score:4.500 -> 4.500 *)
+  let parse_score s =
+    let colon = String.index s ':' in
+    String.sub s (colon + 1) (String.length s - colon - 1)
+  in
+  match String.split_on_char ',' filename with
+  | [ _date; _id; score; covers ] ->
+      let covers = parse_covers covers in
+      let score = parse_score score in
+      Ok (covers, score)
+  | [ _date; _id; _src; score; covers ] ->
+      let covers = parse_covers covers in
+      let score = parse_score score in
+      Ok (covers, score)
+  | lst ->
+      List.iter (Format.eprintf "%s@.") lst;
+      Format.asprintf "Can't parse the filename: %s@." filename |> Result.error
+
+module type SEED = sig
+  module Distance : CD.Distance
 
   type t
 
-  val pp_seed : Format.formatter -> seed_t -> unit
-  val name_seed : ?parent:seed_t -> seed_t -> string
-  val make_seed : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> seed_t
-  val push : seed_t -> t -> t
-  val pop : t -> seed_t * t
-  val cardinal : t -> int
-  val push_list : seed_t list -> t -> t
-  val iter : (seed_t -> unit) -> t -> unit
-  val make : Llvm.llcontext -> CD.Path.t -> t
+  val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
+  val llmodule : t -> Llvm.llmodule
+  val overwrite : t -> Llvm.llmodule -> t
+  val covers : t -> bool
+  val score : t -> Distance.t
+  val name : ?parent:int -> t -> string
+  val pp : Format.formatter -> t -> unit
+  val closer : t -> t -> bool
 end
 
-module Make (Distance : CD.Distance) : SeedPool = struct
-  module Dist = Distance
+module type PRIORITY_SEED = sig
+  module Distance : CD.Distance
 
-  type seed_t = {
-    priority : int;
-    llm : Llvm.llmodule;
-    covers : bool;
-    score : Dist.t;
-  }
+  type t
 
-  type t = seed_t AUtil.PrioQueue.queue
+  val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
+  val priority : t -> int
+  val inc_priority : t -> t
+  val llmodule : t -> Llvm.llmodule
+  val overwrite : t -> Llvm.llmodule -> t
+  val covers : t -> bool
+  val score : t -> Distance.t
+  val name : ?parent:int -> t -> string
+  val pp : Format.formatter -> t -> unit
+  val closer : t -> t -> bool
+end
 
-  let pp_seed fmt seed =
-    Format.fprintf fmt "score: %a, covers: %b" Dist.pp seed.score seed.covers
+module type QUEUE = sig
+  type elt
+  type t
 
-  let name_seed ?(parent : seed_t option) (seed : seed_t) =
-    let hash = ALlvm.string_of_llmodule seed.llm |> Hashtbl.hash in
+  val empty : t
+
+  val register : elt -> t -> t
+  (** push a seed to the queue for the first time *)
+
+  val push : elt -> t -> t
+  (** push a seed to the queue -- not the first time *)
+
+  val push_if_closer : elt -> elt -> t -> t
+  val pop : t -> elt * t
+  val length : t -> int
+  val iter : (elt -> unit) -> t -> unit
+end
+
+module Make_priority_queue (S : PRIORITY_SEED) : QUEUE with type elt = S.t =
+struct
+  type elt = S.t
+  type t = elt AUtil.PrioQueue.queue
+
+  let empty = AUtil.PrioQueue.empty
+  let register seed pool = AUtil.PrioQueue.insert pool (S.priority seed) seed
+
+  let push seed pool =
+    let seed = S.inc_priority seed in
+    AUtil.PrioQueue.insert pool (S.priority seed) seed
+
+  let push_if_closer old_seed new_seed pool =
+    if S.closer old_seed new_seed then push new_seed pool else pool
+
+  let pop = AUtil.PrioQueue.extract
+  let length = AUtil.PrioQueue.length
+  let iter = AUtil.PrioQueue.iter
+end
+
+module Make_fifo_queue (S : SEED) : QUEUE with type elt = S.t = struct
+  type elt = S.t
+  type t = elt Queue.t
+
+  let empty = Queue.create ()
+
+  let push seed pool =
+    Queue.push seed pool;
+    pool
+
+  let register = push
+
+  let push_if_closer old_seed seed pool =
+    if S.closer old_seed seed then push seed pool else pool
+
+  let pop pool = (Queue.pop pool, pool)
+  let length = Queue.length
+  let iter = Queue.iter
+end
+
+module Seed (Distance : CD.Distance) = struct
+  module Distance = Distance
+
+  type t = { llm : Llvm.llmodule; score : Distance.t; covers : bool }
+
+  let make llm target_path cov =
+    let covers = CD.Coverage.cover_target target_path cov in
+    let score = Distance.distance target_path cov in
+    { llm; covers; score }
+
+  let llmodule seed = seed.llm
+  let covers seed = seed.covers
+  let score seed = seed.score
+  let overwrite seed llm = { seed with llm }
+
+  let pp fmt seed =
+    Format.fprintf fmt "hash: %10d, score: %a, covers: %b"
+      (ALlvm.hash_llm seed.llm) Distance.pp seed.score seed.covers
+
+  let name ?(parent : int option) seed =
+    let hash = ALlvm.hash_llm seed.llm in
     match parent with
     | None ->
         Format.asprintf "date:%s,id:%010d,score:%a,covers:%b.ll"
           (AUtil.get_current_time ())
-          hash Dist.pp seed.score seed.covers
-    | Some { llm = src; _ } ->
+          hash Distance.pp seed.score seed.covers
+    | Some parent_hash ->
         Format.asprintf "date:%s,id:%010d,src:%010d,score:%a,covers:%b.ll"
           (AUtil.get_current_time ())
-          hash
-          (ALlvm.string_of_llmodule src |> Hashtbl.hash)
-          Dist.pp seed.score seed.covers
+          hash parent_hash Distance.pp seed.score seed.covers
 
-  let get_prio covers (score : Dist.t) =
-    match !Config.queue with
-    | Priority_queue -> if covers then 0 else score |> Dist.to_priority
-    | Fifo_queue -> 0 (* ignore score *)
+  let closer old_seed new_seed =
+    new_seed.covers || ((not old_seed.covers) && new_seed.score < old_seed.score)
+end
 
-  let push s pool = AUtil.PrioQueue.insert pool s.priority s
-  let pop pool = AUtil.PrioQueue.extract pool
-  let cardinal = AUtil.PrioQueue.length
-  let push_list l (p : t) = List.fold_left (fun pool seed -> push seed pool) p l
-  let iter = AUtil.PrioQueue.iter
+module PrioritySeed (Dist : CD.Distance) = struct
+  module Distance = Dist
+  module Seed = Seed (Dist)
 
-  let make_seed llm target_path cov =
-    let covers = CD.Coverage.cover_target target_path cov in
-    let score = Dist.distance target_path cov in
-    L.info "[Seed] Score: %a" Dist.pp score;
-    { priority = get_prio covers score; llm; covers; score }
+  type t = int * Seed.t
 
-  let parse_seed_filename filename =
-    let filename = Filename.chop_extension filename in
-    (* covers:true -> true *)
-    let parse_covers s =
-      let colon = String.index s ':' in
-      let s = String.sub s (colon + 1) (String.length s - colon - 1) in
-      bool_of_string s
-    in
-    (* score:4.500 -> 4.500 *)
-    let parse_score s =
-      let colon = String.index s ':' in
-      let s = String.sub s (colon + 1) (String.length s - colon - 1) in
-      Dist.of_string s
-    in
-    match String.split_on_char ',' filename with
-    | [ _date; _id; score; covers ] ->
-        let covers = parse_covers covers in
-        let score = parse_score score in
-        Ok (covers, score)
-    | [ _date; _id; _src; score; covers ] ->
-        let covers = parse_covers covers in
-        let score = parse_score score in
-        Ok (covers, score)
-    | lst ->
-        List.iter (Format.eprintf "%s@.") lst;
-        Format.asprintf "Can't parse the filename: %s@." filename
-        |> Result.error
+  let make llm target_path cov =
+    let seed = Seed.make llm target_path cov in
+    (Seed.score seed |> Seed.Distance.to_priority, seed)
 
-  let resume_seedpool llctx dir seedpool =
-    let open AUtil in
-    let seedfiles = Sys.readdir dir |> Array.to_list in
-    let seeds =
-      seedfiles
-      |> filter_map_res (fun file ->
-             let+ llm = ALlvm.read_ll llctx (Filename.concat dir file) in
-             let+ covers, score = parse_seed_filename file in
-             Ok { priority = get_prio covers score; llm; covers; score })
-    in
+  let priority seed = fst seed
+  let inc_priority seed = (fst seed + 1, snd seed)
+  let llmodule seed = snd seed |> Seed.llmodule
+  let covers seed = Seed.covers (snd seed)
+  let score (seed : t) = Seed.score (snd seed)
+  let overwrite seed llm = (fst seed, Seed.overwrite (snd seed) llm)
+  let pp fmt seed = Seed.pp fmt (snd seed)
+  let name ?parent seed = Seed.name ?parent (snd seed)
+  let closer old_seed new_seed = Seed.closer (snd old_seed) (snd new_seed)
+end
 
-    Format.eprintf "Resuming %d seeds@." (List.length seeds);
+module type SEED_POOL = sig
+  module Seed : SEED
+  include QUEUE with type elt = Seed.t
 
-    push_list seeds seedpool
+  val make : Llvm.llcontext -> CD.Path.t -> t
+end
+
+module FifoSeedPool (Seed : SEED) : SEED_POOL = struct
+  module Seed = Seed
+  include Make_fifo_queue (Seed)
 
   let construct_seedpool ?(max_size : int = 100) target_path llmodules =
     let open AUtil in
@@ -175,13 +246,13 @@ module Make (Distance : CD.Distance) : SeedPool = struct
       llmodules
       |> List.filter_map (fun llm ->
              let* _, cov = run_opt llm in
-             make_seed llm target_path cov |> Option.some)
+             Seed.make llm target_path cov |> Option.some)
     in
     let pool_covers, pool_noncovers =
       seeds
       |> List.fold_left
            (fun (pool_first, other_seeds) seed ->
-             if seed.covers then (seed :: pool_first, other_seeds)
+             if Seed.covers seed then (seed :: pool_first, other_seeds)
              else (pool_first, seed :: other_seeds))
            ([], [])
     in
@@ -192,12 +263,15 @@ module Make (Distance : CD.Distance) : SeedPool = struct
       let _cnt, pool_closest =
         pool_noncovers
         |> List.sort_uniq (fun a b ->
-               compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
-        |> List.sort (fun a b -> compare a.score b.score)
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
+        |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
         |> List.fold_left
              (fun (cnt, pool) seed ->
-               if cnt >= max_size then (cnt, pool) else (cnt + 1, push seed pool))
-             (0, AUtil.PrioQueue.empty)
+               if cnt >= max_size then (cnt, pool)
+               else (cnt + 1, register seed pool))
+             (0, empty)
       in
       pool_closest)
     else (
@@ -206,23 +280,101 @@ module Make (Distance : CD.Distance) : SeedPool = struct
       let pool_covers =
         pool_covers
         |> List.sort_uniq (fun a b ->
-               compare (ALlvm.hash_llm a.llm) (ALlvm.hash_llm b.llm))
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
       in
 
-      push_list pool_covers AUtil.PrioQueue.empty)
+      pool_covers |> List.fold_left (fun pool seed -> push seed pool) empty)
+
+  let make llctx target_path =
+    let seed_dir = !Config.seed_dir in
+    assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
+
+    collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
+end
+
+module PrioritySeedPool (Seed : PRIORITY_SEED) : SEED_POOL = struct
+  include Make_priority_queue (Seed)
+  module Seed = Seed
+
+  let get_prio covers (score : Seed.Distance.t) =
+    if covers then 0 else score |> Seed.Distance.to_priority
+
+  (* let resume_seedpool llctx dir seedpool =
+     let open AUtil in
+     let seedfiles = Sys.readdir dir |> Array.to_list in
+     let seeds =
+       seedfiles
+       |> filter_map_res (fun file ->
+              let+ llm = ALlvm.read_ll llctx (Filename.concat dir file) in
+              let+ covers, score = parse_seed_filename file in
+              Ok { priority = get_prio covers score; llm; covers; score })
+     in
+
+     Format.eprintf "Resuming %d seeds@." (List.length seeds);
+
+     push_list seeds seedpool *)
+
+  let construct_seedpool ?(max_size : int = 100) target_path llmodules =
+    let open AUtil in
+    let seeds =
+      llmodules
+      |> List.filter_map (fun llm ->
+             let* _, cov = run_opt llm in
+             Seed.make llm target_path cov |> Option.some)
+    in
+    let pool_covers, pool_noncovers =
+      seeds
+      |> List.fold_left
+           (fun (pool_first, other_seeds) seed ->
+             if Seed.covers seed then (seed :: pool_first, other_seeds)
+             else (pool_first, seed :: other_seeds))
+           ([], [])
+    in
+
+    if pool_covers = [] then (
+      L.info "No covering seeds found. Using closest seeds.";
+      (* pool_closest contains seeds which are closest to the target *)
+      let _cnt, pool_closest =
+        pool_noncovers
+        |> List.sort_uniq (fun a b ->
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
+        |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
+        |> List.fold_left
+             (fun (cnt, pool) seed ->
+               if cnt >= max_size then (cnt, pool)
+               else (cnt + 1, register seed pool))
+             (0, empty)
+      in
+      pool_closest)
+    else (
+      (* if we have covering seeds, we use covering seeds only. *)
+      L.info "Covering seeds found. Using them only.";
+      let pool_covers =
+        pool_covers
+        |> List.sort_uniq (fun a b ->
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
+      in
+
+      pool_covers |> List.fold_left (fun pool seed -> register seed pool) empty)
 
   let make_fresh llctx seed_dir target_path =
     assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
     collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
 
-  let make_skip_clean llctx seed_dir target_path =
-    let seed_files = Sys.readdir seed_dir |> Array.to_list in
-    seed_files
-    |> List.map (Filename.concat seed_dir)
-    |> List.map (ALlvm.read_ll llctx)
-    |> List.filter_map Result.to_option
-    |> construct_seedpool target_path
+  (* let make_skip_clean llctx seed_dir target_path =
+     let seed_files = Sys.readdir seed_dir |> Array.to_list in
+     seed_files
+     |> List.map (Filename.concat seed_dir)
+     |> List.map (ALlvm.read_ll llctx)
+     |> List.filter_map Result.to_option
+     |> construct_seedpool target_path *)
 
   (** make seedpool from Config.seed_dir. this queue contains llmodule, covered, distance *)
   let make llctx target_path =
@@ -231,12 +383,13 @@ module Make (Distance : CD.Distance) : SeedPool = struct
 
     match !Config.seedpool_option with
     | Config.Fresh -> make_fresh llctx seed_dir target_path
-    | Config.SkipClean -> make_skip_clean llctx seed_dir target_path
-    | Config.Resume ->
-        assert (
-          Sys.file_exists !Config.crash_dir
-          && Sys.is_directory !Config.crash_dir);
-        AUtil.PrioQueue.empty
-        |> resume_seedpool llctx !Config.crash_dir
-        |> resume_seedpool llctx !Config.corpus_dir
+    | _ -> failwith "Temporarily disabled seedpool construction"
+  (* | Config.SkipClean -> make_skip_clean llctx seed_dir target_path *)
+  (* | Config.Resume ->
+      assert (
+        Sys.file_exists !Config.crash_dir
+        && Sys.is_directory !Config.crash_dir);
+      AUtil.PrioQueue.empty
+      |> resume_seedpool llctx !Config.crash_dir
+      |> resume_seedpool llctx !Config.corpus_dir *)
 end

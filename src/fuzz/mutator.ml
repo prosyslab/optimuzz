@@ -1413,7 +1413,9 @@ let cut_below llctx llm =
             Some llm
         | _ -> None)
 
-module Make (SeedPool : Seedcorpus.Seedpool.SeedPool) = struct
+module Make (SeedPool : Seedcorpus.Seedpool.SEED_POOL) = struct
+  module Seed = SeedPool.Seed
+
   (* inner-basicblock mutation (independent of block CFG) *)
   let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
     let mutation = choose_mutation mode score in
@@ -1443,8 +1445,9 @@ module Make (SeedPool : Seedcorpus.Seedpool.SeedPool) = struct
         L.debug "None";
         mutate_inner_bb llctx learning opc_tbl mode llm score
 
-  let run llctx learning opc_tbl (seed : SeedPool.seed_t) =
-    let mode = if seed.covers then FOCUS else EXPAND in
-    mutate_inner_bb llctx learning opc_tbl mode seed.llm
-      (SeedPool.Dist.to_int seed.score)
+  let run llctx learning opc_tbl seed =
+    let mode = if Seed.covers seed then FOCUS else EXPAND in
+    let llm = Seed.llmodule seed in
+    let score = Seed.score seed |> Seed.Distance.to_int in
+    mutate_inner_bb llctx learning opc_tbl mode llm score
 end
