@@ -2,6 +2,7 @@ open Util.ALlvm
 module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 module L = Logger
+module SD = Seedcorpus.Domain
 
 type mode_t = EXPAND | FOCUS
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
@@ -1413,8 +1414,8 @@ let cut_below llctx llm =
             Some llm
         | _ -> None)
 
-module Make (SeedPool : Seedcorpus.Seedpool.SEED_POOL) = struct
-  module Seed = SeedPool.Seed
+module Make (Seed : SD.SEED) = struct
+  (* module Seed = SeedPool.Seed *)
 
   (* inner-basicblock mutation (independent of block CFG) *)
   let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
