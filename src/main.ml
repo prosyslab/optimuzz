@@ -2,7 +2,8 @@ open Fuzz
 open Util
 module F = Format
 module L = Logger
-module SeedPool = Seedcorpus.Seedpool
+module SP = Seedcorpus.Seedpool
+module SD = Seedcorpus.Domain
 module CD = Coverage.Domain
 
 let llctx = ALlvm.create_context ()
@@ -12,13 +13,13 @@ let initialize () =
   Config.initialize llctx ();
   Random.self_init ()
 
-let llfuzz (module SP : SeedPool.SEED_POOL) () =
+let llfuzz (module SP : SD.SEED_POOL) () =
   let open Oracle in
+  let llset = ALlvm.LLModuleSet.create 4096 in
   match !Config.direct with
   | None -> ()
   | Some path ->
       let target_path = CD.Path.parse path |> Option.get in
-      let llset = ALlvm.LLModuleSet.create 4096 in
 
       let module FZ = Fuzzer.Make (SP) in
       (* fuzzing *)
@@ -57,18 +58,16 @@ let llfuzz (module SP : SeedPool.SEED_POOL) () =
 
 let _ =
   initialize ();
+  let module MinFifoPool = SP.FifoSeedPool (SD.Seed (CD.MinDistance)) in
+  let module MinPriorityPool =
+    SP.PrioritySeedPool (SD.PrioritySeed (CD.MinDistance)) in
+  let module AvgFifoPool = SP.FifoSeedPool (SD.Seed (CD.AverageDistance)) in
+  let module AvgPriorityPool =
+    SP.PrioritySeedPool (SD.PrioritySeed (CD.AverageDistance)) in
   match (!Config.metric, !Config.queue) with
-  | Config.Min_metric, Config.Fifo_queue ->
-      let module SP = SeedPool.FifoSeedPool (SeedPool.Seed (CD.MinDistance)) in
-      llfuzz (module SP) ()
+  | Config.Min_metric, Config.Fifo_queue -> llfuzz (module MinFifoPool) ()
   | Config.Min_metric, Config.Priority_queue ->
-      let module SP =
-        SeedPool.PrioritySeedPool (SeedPool.PrioritySeed (CD.MinDistance)) in
-      llfuzz (module SP) ()
-  | Config.Avg_metric, Config.Fifo_queue ->
-      let module SP = SeedPool.FifoSeedPool (SeedPool.Seed (CD.AverageDistance)) in
-      llfuzz (module SP) ()
+      llfuzz (module MinPriorityPool) ()
+  | Config.Avg_metric, Config.Fifo_queue -> llfuzz (module AvgFifoPool) ()
   | Config.Avg_metric, Config.Priority_queue ->
-      let module SP =
-        SeedPool.PrioritySeedPool (SeedPool.PrioritySeed (CD.AverageDistance)) in
-      llfuzz (module SP) ()
+      llfuzz (module AvgPriorityPool) ()

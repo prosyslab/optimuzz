@@ -1,6 +1,7 @@
 open Util
 module CD = Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
+module SD = Seedcorpus.Domain
 module F = Format
 module L = Logger
 
@@ -68,23 +69,23 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-module Make (SeedPool : SeedPool.SEED_POOL) = struct
+module Make (SeedPool : SD.SEED_POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
-  module Mutator = Mutator.Make (SeedPool)
+  module Mutator = Mutator.Make (Seed)
 
   type res_t =
     | Invalid
-    | Interesting of bool * SeedPool.Seed.t * Progress.t
-    | Not_interesting of bool * SeedPool.Seed.t
+    | Interesting of bool * Seed.t * Progress.t
+    | Not_interesting of bool * Seed.t
 
-  let check_mutant mutant target_path (seed : SeedPool.Seed.t) progress =
+  let check_mutant mutant target_path (seed : Seed.t) progress =
     let optim_res, valid_res = measure_optimizer_coverage mutant in
     match optim_res with
     | Error _ -> Invalid
     | Ok cov_mutant ->
-        let new_seed = SeedPool.Seed.make mutant target_path cov_mutant in
-        L.debug "mutant: %a\n" SeedPool.Seed.pp new_seed;
+        let new_seed = Seed.make mutant target_path cov_mutant in
+        L.debug "mutant: %a\n" Seed.pp new_seed;
         let is_crash = valid_res = Oracle.Validator.Incorrect in
         if Seed.closer new_seed seed then
           let progress =
@@ -177,10 +178,6 @@ module Make (SeedPool : SeedPool.SEED_POOL) = struct
       |> List.fold_left (fun pool seed -> SeedPool.push seed pool) pool_popped
       |> SeedPool.push seed
     in
-
-    (* let new_pool =
-         pool_popped |> SeedPool.push_list new_seeds |> SeedPool.push seed
-       in *)
 
     (* repeat until the time budget or seed pool exhausts *)
     let exhausted =
