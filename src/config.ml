@@ -70,7 +70,9 @@ let string_of_level = function
 
 (* default *)
 let time_budget = ref (-1)
-let cov_directed = ref ""
+
+(* target path. If None, directed guiding is turned off *)
+let direct = ref None
 
 let optimizer_passes =
   (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
@@ -192,7 +194,7 @@ let opts =
     (* fuzzing options *)
     ("-random-seed", Arg.Set_int random_seed, "Set random seed");
     ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
-    ("-direct", Arg.Set_string cov_directed, "Target coverage id");
+    ("-direct", Arg.String (fun s -> direct := Some s), "Target path");
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
@@ -355,6 +357,9 @@ let log_options opts =
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
          | Arg.String _ when name = "-seedpool" ->
              L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
+         | Arg.String _ when name = "-direct" ->
+             L.info "%s: %s" name
+               (match !direct with Some s -> s | None -> "undirected")
          | _ -> failwith "not implemented");
 
   L.flush ()
@@ -388,9 +393,6 @@ let initialize llctx () =
   L.from_file (Filename.concat !out_dir "fuzz.log");
   L.set_level !log_level;
   log_options opts;
-
-  if !cov_directed = "" then
-    failwith "Coverage target is not set. Please set -direct option.";
 
   if Sys.file_exists !seed_dir |> not then
     failwith ("Seed directory not found: " ^ !seed_dir);
