@@ -165,16 +165,16 @@ let log_time = ref 30
    refer to: https://llvm.org/docs/Passes.html *)
 let _instCombine = ref true
 
-let opts =
+let env_opts =
   [
-    (* if these two are set, branch to other operation (not fuzzing) *)
-    ( "-pattern",
-      Arg.Set_string pattern_path,
-      "To generate programs of certain patterns" );
-    ( "-coverage",
-      Arg.Set_string cov_tgt_path,
-      "To measure opt coverage only over the file" );
-    (* paths *)
+    ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
+    ("-out-dir", Arg.Set_string out_dir, "Output directory");
+    ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
+    ("-tv-bin", Arg.Set_string alive_tv_bin, "Path to alive-tv executable");
+  ]
+
+let fuzzing_opts =
+  [
     ( "-seedpool",
       Arg.String
         (function
@@ -183,20 +183,15 @@ let opts =
         | "resume" -> seedpool_option := Resume
         | _ -> failwith "Invalid start option"),
       "Start option" );
-    ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
-    ("-out-dir", Arg.Set_string out_dir, "Output directory");
-    ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
-    ("-tv-bin", Arg.Set_string alive_tv_bin, "Path to alive-tv executable");
-    ( "-passes",
-      Arg.String
-        (function s -> optimizer_passes := String.split_on_char ',' s),
-      "Set opt passes" );
-    (* fuzzing options *)
-    ("-random-seed", Arg.Set_int random_seed, "Set random seed");
-    ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
-    ("-direct", Arg.String (fun s -> direct := Some s), "Target path");
-    ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
-    ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
+    ( "-direct",
+      Arg.String (fun s -> direct := Some s),
+      "Target path. Undirected fuzzing if not set." );
+    ( "-n-mutation",
+      Arg.Set_int num_mutation,
+      "Each mutant is mutated up to m times." );
+    ( "-n-mutant",
+      Arg.Set_int num_mutant,
+      "Each seed can generate up to n mutants." );
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
     ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
     ( "-learn-inc",
@@ -212,7 +207,6 @@ let opts =
         | "avg" -> metric := Avg_metric
         | _ -> failwith "Invalid metric"),
       "Metric to give a score to a coverage" );
-    ("-record-cov", Arg.Set record_cov, "Recording all coverage");
     ( "-queue",
       Arg.String
         (function
@@ -220,7 +214,31 @@ let opts =
         | "fifo" -> queue := Fifo_queue
         | _ -> failwith "Invalid queue"),
       "Queue type for fuzzing" );
-    (* logging options *)
+  ]
+
+let opts =
+  [
+    (* if these two are set, branch to other operation (not fuzzing) *)
+    ( "-pattern",
+      Arg.Set_string pattern_path,
+      "To generate programs of certain patterns" );
+    (* ( "-coverage", Arg.Set_string cov_tgt_path, "To measure opt coverage only over the file" ); *)
+    (* paths *)
+    ( "-seedpool",
+      Arg.String
+        (function
+        | "fresh" -> seedpool_option := Fresh
+        | "skip-clean" -> seedpool_option := SkipClean
+        | "resume" -> seedpool_option := Resume
+        | _ -> failwith "Invalid start option"),
+      "Start option" );
+    ( "-passes",
+      Arg.String
+        (function s -> optimizer_passes := String.split_on_char ',' s),
+      "Set opt passes" );
+    ("-random-seed", Arg.Set_int random_seed, "Set random seed");
+    ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
+    ("-record-cov", Arg.Set record_cov, "Recording all coverage");
     ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
     ( "-log-level",
       Arg.String
@@ -240,6 +258,7 @@ let opts =
       "[register whitelist] Combine instructions to form fewer, simple \
        instructions" );
   ]
+  @ env_opts @ fuzzing_opts
 
 (* * only called after arguments are parsed. *)
 (* TODO: is there optimization files other than ones under Transforms? *)
