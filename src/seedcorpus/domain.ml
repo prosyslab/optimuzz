@@ -1,19 +1,43 @@
 module CD = Coverage.Domain
 open Util
 
+module type SEED_PRINTER = sig
+  type t
+
+  val pp : Format.formatter -> t -> unit
+  val name : ?parent:int -> t -> string
+end
+
+module type SEED_MEASURE = sig
+  type t
+
+  module Distance : CD.Distance
+
+  val score : t -> Distance.t
+  val covers : t -> bool
+  val closer : t -> t -> bool
+end
+
+module type NAIVE_SEED = sig
+  type t
+
+  include SEED_PRINTER with type t := t
+
+  val make : Llvm.llmodule -> t
+  val llmodule : t -> Llvm.llmodule
+end
+
 module type SEED = sig
   module Distance : CD.Distance
 
   type t
 
+  include SEED_PRINTER with type t := t
+  include SEED_MEASURE with type t := t with module Distance := Distance
+
   val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
   val llmodule : t -> Llvm.llmodule
   val overwrite : t -> Llvm.llmodule -> t
-  val covers : t -> bool
-  val score : t -> Distance.t
-  val name : ?parent:int -> t -> string
-  val pp : Format.formatter -> t -> unit
-  val closer : t -> t -> bool
 end
 
 module type PRIORITY_SEED = sig
@@ -21,15 +45,14 @@ module type PRIORITY_SEED = sig
 
   type t
 
+  include SEED_PRINTER with type t := t
+  include SEED_MEASURE with type t := t with module Distance := Distance
+
   val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
   val priority : t -> int
   val inc_priority : t -> t
   val llmodule : t -> Llvm.llmodule
   val overwrite : t -> Llvm.llmodule -> t
-  val covers : t -> bool
-  val score : t -> Distance.t
-  val name : ?parent:int -> t -> string
-  val pp : Format.formatter -> t -> unit
   val closer : t -> t -> bool
 end
 
@@ -45,7 +68,6 @@ module type QUEUE = sig
   val push : elt -> t -> t
   (** push a seed to the queue -- not the first time *)
 
-  val push_if_closer : elt -> elt -> t -> t
   val pop : t -> elt * t
   val length : t -> int
   val iter : (elt -> unit) -> t -> unit
@@ -56,6 +78,13 @@ module type SEED_POOL = sig
   include QUEUE with type elt = Seed.t
 
   val make : Llvm.llcontext -> CD.Path.t -> t
+end
+
+module type UNDIRECTED_SEED_POOL = sig
+  module Seed : NAIVE_SEED
+  include QUEUE with type elt = Seed.t
+
+  val make : Llvm.llcontext -> t
 end
 
 module Seed (Distance : CD.Distance) = struct
@@ -112,4 +141,24 @@ module PrioritySeed (Dist : CD.Distance) = struct
   let pp fmt seed = Seed.pp fmt (snd seed)
   let name ?parent seed = Seed.name ?parent (snd seed)
   let closer old_seed new_seed = Seed.closer (snd old_seed) (snd new_seed)
+end
+
+(** Seed configuration unaware of directed fuzzing.
+    It does not contain (covers, score) which is used for guiding input generation *)
+module NaiveSeed = struct
+  type t = Llvm.llmodule
+
+  let make llm = llm
+  let llmodule seed = seed
+  let pp fmt seed = Format.fprintf fmt "hash: %10d" (ALlvm.hash_llm seed)
+
+  let name ?(parent : int option) seed =
+    let hash = ALlvm.hash_llm seed in
+    match parent with
+    | None ->
+        Format.asprintf "date:%s,id:%010d.ll" (AUtil.get_current_time ()) hash
+    | Some parent_hash ->
+        Format.asprintf "date:%s,id:%010d,src:%010d.ll"
+          (AUtil.get_current_time ())
+          hash parent_hash
 end
