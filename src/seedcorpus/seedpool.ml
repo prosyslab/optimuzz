@@ -141,20 +141,16 @@ module FifoSeedPool (Seed : D.SEED) : D.SEED_POOL = struct
     if pool_covers = [] then (
       L.info "No covering seeds found. Using closest seeds.";
       (* pool_closest contains seeds which are closest to the target *)
-      let _cnt, pool_closest =
+      let pool_closest =
         pool_noncovers
         |> List.sort_uniq (fun a b ->
                compare
                  (ALlvm.hash_llm (Seed.llmodule a))
                  (ALlvm.hash_llm (Seed.llmodule b)))
         |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-        |> List.fold_left
-             (fun (cnt, pool) seed ->
-               if cnt >= max_size then (cnt, pool)
-               else (cnt + 1, register seed pool))
-             (0, empty)
+        |> take max_size
       in
-      pool_closest)
+      pool_closest |> List.fold_left (fun pool seed -> push seed pool) empty)
     else (
       (* if we have covering seeds, we use covering seeds only. *)
       L.info "Covering seeds found. Using them only.";

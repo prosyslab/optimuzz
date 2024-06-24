@@ -165,3 +165,12 @@ let ( let* ) = Option.bind
 
 let filter_map_res f lst =
   List.filter_map (fun x -> f x |> Result.to_option) lst
+
+(** [take n lst] returns the first [n] elements in [list] *)
+let take n lst =
+  let rec aux acc n = function
+    | [] -> List.rev acc
+    | _ when n = 0 -> List.rev acc
+    | hd :: tl -> aux (hd :: acc) (n - 1) tl
+  in
+  aux [] n lst
