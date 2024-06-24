@@ -87,7 +87,7 @@ module Make (SeedPool : SD.SEED_POOL) = struct
         let new_seed = Seed.make mutant target_path cov_mutant in
         L.debug "mutant: %a\n" Seed.pp new_seed;
         let is_crash = valid_res = Oracle.Validator.Incorrect in
-        if Seed.closer new_seed seed then
+        if Seed.closer seed new_seed then
           let progress =
             progress |> Progress.inc_gen |> Progress.add_cov cov_mutant
           in
