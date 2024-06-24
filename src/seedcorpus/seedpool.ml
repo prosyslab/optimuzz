@@ -96,9 +96,6 @@ struct
     let seed = S.inc_priority seed in
     AUtil.PrioQueue.insert pool (S.priority seed) seed
 
-  let push_if_closer old_seed new_seed pool =
-    if S.closer old_seed new_seed then push new_seed pool else pool
-
   let pop = AUtil.PrioQueue.extract
   let length = AUtil.PrioQueue.length
   let iter = AUtil.PrioQueue.iter
@@ -115,10 +112,6 @@ module Make_fifo_queue (S : D.SEED) : D.QUEUE with type elt = S.t = struct
     pool
 
   let register = push
-
-  let push_if_closer old_seed seed pool =
-    if S.closer old_seed seed then push seed pool else pool
-
   let pop pool = (Queue.pop pool, pool)
   let length = Queue.length
   let iter = Queue.iter
@@ -280,4 +273,34 @@ module PrioritySeedPool (Seed : D.PRIORITY_SEED) : D.SEED_POOL = struct
       AUtil.PrioQueue.empty
       |> resume_seedpool llctx !Config.crash_dir
       |> resume_seedpool llctx !Config.corpus_dir *)
+end
+
+module UndirectedPool (Seed : D.NAIVE_SEED) : D.UNDIRECTED_SEED_POOL = struct
+  module Seed = Seed
+
+  type elt = Seed.t
+  type t = elt Queue.t
+
+  let make llctx =
+    let seed_dir = !Config.seed_dir in
+
+    let pool = Queue.create () in
+
+    collect_cleaned_seeds llctx seed_dir
+    |> List.map Seed.make
+    |> List.to_seq
+    |> Queue.add_seq pool;
+
+    pool
+
+  let empty = Queue.create ()
+
+  let push seed pool =
+    Queue.push seed pool;
+    pool
+
+  let register = push
+  let pop pool = (Queue.pop pool, pool)
+  let length = Queue.length
+  let iter = Queue.iter
 end
