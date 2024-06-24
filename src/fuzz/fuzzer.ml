@@ -191,3 +191,57 @@ module Make (SeedPool : SD.SEED_POOL) = struct
     if exhausted then progress.cov_sofar
     else run target_path new_pool llctx llset progress
 end
+
+module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
+  module Seed = SeedPool.Seed
+  module Mutator = Mutator.Make_undirected (Seed)
+
+  let mutate_seed llctx llset seed progress =
+    let _, _, dst = Mutator.run llctx seed in
+    match ALlvm.LLModuleSet.find_opt llset dst with
+    | Some _ -> None (* duplicate seed *)
+    | None -> (
+        let parent = ALlvm.hash_llm (Seed.llmodule seed) in
+        ALlvm.LLModuleSet.add llset dst ();
+        let optim_res, valid_res = measure_optimizer_coverage dst in
+        match optim_res with
+        | Error _ -> None
+        | Ok cov ->
+            let new_progress =
+              progress |> Progress.add_cov cov |> Progress.inc_gen
+            in
+            let seed_name = Seed.name ~parent seed in
+            let new_seed = Seed.make dst in
+            if valid_res = Oracle.Validator.Incorrect then
+              ALlvm.save_ll !Config.crash_dir seed_name dst |> ignore
+            else ALlvm.save_ll !Config.corpus_dir seed_name dst |> ignore;
+            Some (new_seed, new_progress))
+
+  let run pool llctx llset =
+    let mutator = mutate_seed llctx llset in
+
+    let rec fuzz pool progress =
+      let seed, pool_popped = SeedPool.pop pool in
+      let rec mutate times (seeds, progress) =
+        if times = 0 then (seeds, progress)
+        else
+          match mutator seed progress with
+          | Some (new_seed, new_progress) ->
+              mutate (times - 1) (new_seed :: seeds, new_progress)
+          | None -> mutate (times - 1) (seeds, progress)
+      in
+
+      let new_seeds, progress = mutate !Config.num_mutant ([], progress) in
+      List.iter (L.info "[new_seed] %a" Seed.pp) new_seeds;
+      let new_pool =
+        List.fold_left
+          (fun pool seed -> SeedPool.push seed pool)
+          pool_popped new_seeds
+        |> SeedPool.push seed
+      in
+
+      fuzz new_pool progress
+    in
+
+    fuzz pool Progress.empty
+end

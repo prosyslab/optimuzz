@@ -12,17 +12,18 @@ let pp_mutation fmt m =
   | TYPE -> Format.fprintf fmt "TYPE"
   | CUT -> Format.fprintf fmt "CUT"
 
-let expand_mutations =
-  [ (CREATE, 2); (OPCODE, 4); (OPERAND, 4); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
+let unfold_mutations mutations =
+  mutations
   |> List.map (fun (m, p) -> List.init p (Fun.const m))
   |> List.flatten
   |> Array.of_list
 
+let expand_mutations =
+  unfold_mutations
+    [ (CREATE, 2); (OPCODE, 4); (OPERAND, 4); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
+
 let focus_mutations =
-  [ (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
-  |> List.map (fun (m, p) -> List.init p (Fun.const m))
-  |> List.flatten
-  |> Array.of_list
+  unfold_mutations [ (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
 
 let pp_opcode fmt opc =
   match opc with

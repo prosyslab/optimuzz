@@ -69,6 +69,7 @@ module type QUEUE = sig
 
   val pop : t -> elt * t
   val length : t -> int
+  val is_empty : t -> bool
   val iter : (elt -> unit) -> t -> unit
 end
 

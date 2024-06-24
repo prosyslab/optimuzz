@@ -86,6 +86,8 @@ let parse_seed_filename filename =
 
 module Make_priority_queue (S : D.PRIORITY_SEED) : D.QUEUE with type elt = S.t =
 struct
+  open AUtil
+
   type elt = S.t
   type t = elt AUtil.PrioQueue.queue
 
@@ -94,11 +96,12 @@ struct
 
   let push seed pool =
     let seed = S.inc_priority seed in
-    AUtil.PrioQueue.insert pool (S.priority seed) seed
+    PrioQueue.insert pool (S.priority seed) seed
 
-  let pop = AUtil.PrioQueue.extract
-  let length = AUtil.PrioQueue.length
-  let iter = AUtil.PrioQueue.iter
+  let pop = PrioQueue.extract
+  let length = PrioQueue.length
+  let is_empty = function PrioQueue.Empty -> true | _ -> false
+  let iter = PrioQueue.iter
 end
 
 module Make_fifo_queue (S : D.SEED) : D.QUEUE with type elt = S.t = struct
@@ -114,6 +117,7 @@ module Make_fifo_queue (S : D.SEED) : D.QUEUE with type elt = S.t = struct
   let register = push
   let pop pool = (Queue.pop pool, pool)
   let length = Queue.length
+  let is_empty = Queue.is_empty
   let iter = Queue.iter
 end
 
@@ -298,5 +302,6 @@ module UndirectedPool (Seed : D.NAIVE_SEED) : D.UNDIRECTED_SEED_POOL = struct
   let register = push
   let pop pool = (Queue.pop pool, pool)
   let length = Queue.length
+  let is_empty = Queue.is_empty
   let iter = Queue.iter
 end

@@ -53,7 +53,23 @@ let llfuzz (module SP : SD.SEED_POOL) target_path =
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let llfuzz_undirected (module SP : SD.UNDIRECTED_SEED_POOL) =
-  failwith "Not implemented"
+  let module FZ = Fuzzer.Make_undirected (SP) in
+  let llset = ALlvm.LLModuleSet.create 4096 in
+  let seed_pool = SP.make llctx in
+
+  if SP.is_empty seed_pool then (
+    F.printf "no seed loaded@.";
+    exit 0);
+
+  seed_pool
+  |> SP.iter (fun seed ->
+         let filename = SP.Seed.name seed in
+         ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
+         |> ignore);
+
+  if !Config.dry_run then exit 0;
+  let _ = FZ.run seed_pool llctx llset in
+  ()
 
 let _ =
   initialize ();
