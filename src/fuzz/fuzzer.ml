@@ -239,6 +239,7 @@ module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
           pool_popped new_seeds
         |> SeedPool.push seed
       in
+      F.printf "\r%a@?" Progress.pp progress;
 
       fuzz new_pool progress
     in
