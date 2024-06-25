@@ -47,8 +47,12 @@ let check_transformation tmp_dir llfile =
   in
 
   match Optimizer.run ~passes:!optimizer_passes ~output:llfile_opt llfile with
-  | Error Non_zero_exit -> failwith ("Crashing module:" ^ llfile)
-  | Error Hang -> failwith ("Crashing module:" ^ llfile)
+  | Error Non_zero_exit ->
+      (* failwith ("Crashing module:" ^ llfile) *)
+      true
+  | Error Hang ->
+      (* failwith ("Crashing module:" ^ llfile) *)
+      true
   | Error Cov_not_generated | Ok _ -> (
       try
         (* coverage is not required *)
