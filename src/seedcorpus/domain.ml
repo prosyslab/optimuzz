@@ -53,7 +53,6 @@ module type PRIORITY_SEED = sig
   val inc_priority : t -> t
   val llmodule : t -> Llvm.llmodule
   val overwrite : t -> Llvm.llmodule -> t
-  val closer : t -> t -> bool
 end
 
 module type QUEUE = sig
