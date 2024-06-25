@@ -121,8 +121,8 @@ module Make_fifo_queue (S : D.SEED) : D.QUEUE with type elt = S.t = struct
   let iter = Queue.iter
 end
 
-module FifoSeedPool (Seed : D.SEED) : D.SEED_POOL = struct
-  module Seed = Seed
+module FifoSeedPool (Distance : CD.Distance) : D.SEED_POOL = struct
+  module Seed = D.Seed (Distance)
   include Make_fifo_queue (Seed)
 
   let construct_seedpool ?(max_size : int = 100) target_path llmodules =
@@ -175,9 +175,9 @@ module FifoSeedPool (Seed : D.SEED) : D.SEED_POOL = struct
     collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
 end
 
-module PrioritySeedPool (Seed : D.PRIORITY_SEED) : D.SEED_POOL = struct
+module PrioritySeedPool (Distance : CD.Distance) : D.SEED_POOL = struct
+  module Seed = D.PrioritySeed (Distance)
   include Make_priority_queue (Seed)
-  module Seed = Seed
 
   let get_prio covers (score : Seed.Distance.t) =
     if covers then 0 else score |> Seed.Distance.to_priority

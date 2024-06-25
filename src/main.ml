@@ -73,13 +73,6 @@ let llfuzz_undirected (module SP : SD.UNDIRECTED_SEED_POOL) =
 
 let _ =
   initialize ();
-  let module MinFifoPool = SP.FifoSeedPool (SD.Seed (CD.MinDistance)) in
-  let module MinPriorityPool =
-    SP.PrioritySeedPool (SD.PrioritySeed (CD.MinDistance)) in
-  let module AvgFifoPool = SP.FifoSeedPool (SD.Seed (CD.AverageDistance)) in
-  let module AvgPriorityPool =
-    SP.PrioritySeedPool (SD.PrioritySeed (CD.AverageDistance)) in
-  let module UndirectedPool = SP.UndirectedPool (SD.NaiveSeed) in
   match !Config.direct with
   | Some s -> (
       F.printf "direct mode@.";
@@ -87,13 +80,18 @@ let _ =
 
       match (!Config.metric, !Config.queue) with
       | Config.Min_metric, Config.Fifo_queue ->
+          let module MinFifoPool = SP.FifoSeedPool (CD.MinDistance) in
           llfuzz (module MinFifoPool) target_path
       | Config.Min_metric, Config.Priority_queue ->
+          let module MinPriorityPool = SP.PrioritySeedPool (CD.MinDistance) in
           llfuzz (module MinPriorityPool) target_path
       | Config.Avg_metric, Config.Fifo_queue ->
+          let module AvgFifoPool = SP.FifoSeedPool (CD.AverageDistance) in
           llfuzz (module AvgFifoPool) target_path
       | Config.Avg_metric, Config.Priority_queue ->
+          let module AvgPriorityPool = SP.PrioritySeedPool (CD.AverageDistance) in
           llfuzz (module AvgPriorityPool) target_path)
   | _ ->
+      let module UndirectedPool = SP.UndirectedPool (SD.NaiveSeed) in
       F.printf "undirected mode@.";
       llfuzz_undirected (module UndirectedPool)
