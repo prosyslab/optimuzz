@@ -210,8 +210,8 @@ module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
             let new_progress =
               progress |> Progress.add_cov cov |> Progress.inc_gen
             in
-            let seed_name = Seed.name ~parent seed in
             let new_seed = Seed.make dst in
+            let seed_name = Seed.name ~parent new_seed in
             if valid_res = Oracle.Validator.Incorrect then
               ALlvm.save_ll !Config.crash_dir seed_name dst |> ignore
             else ALlvm.save_ll !Config.corpus_dir seed_name dst |> ignore;
