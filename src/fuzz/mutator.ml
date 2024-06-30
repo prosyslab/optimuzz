@@ -56,7 +56,7 @@ let subst_binary llctx instr opcode =
 
 let subst_cast llctx instr opc_new =
   assert (OpCls.opcls_of instr = CAST);
-  (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None) *)
+  (* ZExt -> SExt, SExt -> ZExt, Trunc -> Trunc (None), BitCast -> BitCast *)
   let new_instr =
     create_cast llctx instr opc_new (operand instr 0) (type_of instr)
   in
@@ -268,9 +268,18 @@ let check_cast_ty opc ty_dst llv =
     if tycls = Integer then integer_bitwidth ty
     else ty |> element_type |> integer_bitwidth
   in
+  let get_total_bw ty =
+    let tycls = classify_type ty in
+    assert (tycls = Integer || tycls = Vector);
+    if tycls = Integer then integer_bitwidth ty
+    else
+      let el_bw = ty |> element_type |> integer_bitwidth in
+      el_bw * vector_size ty
+  in
   match opc with
   | ZExt | SExt -> get_bw ty_dst > get_bw ty_src
   | Trunc -> get_bw ty_dst < get_bw ty_src
+  | BitCast -> get_total_bw ty_dst = get_total_bw ty_src
   | _ -> failwith "NEVER OCCUR"
 
 let get_dst_tys opc ty_src =
@@ -548,7 +557,7 @@ let subst_rand_instr llctx learning opc_tbl llm =
   let is_tgt i =
     match OpCls.opcls_of i with
     | BINARY -> true
-    | CAST -> instr_opcode i <> Trunc
+    | CAST -> instr_opcode i <> Trunc && instr_opcode i <> BitCast
     | ICMP -> true
     | _ -> false
   in
@@ -582,6 +591,7 @@ let subst_rand_instr llctx learning opc_tbl llm =
             | ZExt -> Opcode.SExt
             | SExt -> ZExt
             | Trunc -> Trunc
+            | BitCast -> BitCast
             | _ -> failwith "NEVER OCCUR"
         in
         if opc_old = opc_new then (None, None, None)
@@ -735,7 +745,11 @@ let rec trav_cast llv ty_new accu =
   match classify_value llv with
   | Instruction opc
     when OpcodeClass.classify opc = CAST && operand llv 0 |> type_of = ty_new ->
-      if check_const_flow (operand llv 0) false then accu else Retry
+      if check_const_flow (operand llv 0) false then accu
+      else if opc = BitCast then accu
+      else Retry
+  | Instruction opc when opc = BitCast && not (check_cast_ty opc ty_new llv) ->
+      Retry
   | _ when type_of llv = ty_new -> Retry
   | _ -> (
       match (llv |> type_of |> classify_type, classify_type ty_new) with
@@ -877,6 +891,7 @@ and collect_ty_changing_llvs llv ty_new accu =
             Impossible
           else if opc = ShuffleVector && classify_type ty_new <> Vector then
             Impossible
+          else if opc = BitCast && not (check_cast_ty opc ty_new llv) then Retry
           else
             Success accu
             |> trav_llvs_used_by_curr llv ty_new
@@ -1100,9 +1115,9 @@ let migrate_cast builder instr_old typemap link_v =
       |> integer_bitwidth
       < (opd |> type_of |> element_type |> integer_bitwidth)
   in
-
   (* FIXME: for now, using ZExt only *)
-  (if is_trunc then build_trunc
+  (if instr_opcode instr_old = BitCast then build_bitcast
+   else if is_trunc then build_trunc
    else if instr_opcode instr_old = SExt then build_sext
    else if instr_opcode instr_old = ZExt then build_zext
    else if Random.bool () then build_sext
@@ -1300,18 +1315,18 @@ let change_type llctx llm =
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
   let target = AUtil.choose_random (all_instrs @ f_params) in
   L.debug "target: %s" (string_of_llvalue target);
-
   if check_target_for_change_type target f then
     (* decide type *)
     let ty_old = type_of target in
-    let rec loop () =
+    let rec loop i =
       let ty_new = AUtil.choose_random !Config.Interests.interesting_types in
       L.debug "checking %s as new type..." (string_of_lltype ty_new);
-      if ty_old = ty_new then loop ()
+      if i = 10 then None
+      else if ty_old = ty_new then loop (i + 1)
       else
         match collect_ty_changing_llvs target ty_new (Success LLVMap.empty) with
         | Impossible -> None
-        | Retry -> loop ()
+        | Retry -> loop (i + 1)
         | Success typemap ->
             L.debug "Available! typemap:";
             LLVMap.iter
@@ -1322,7 +1337,7 @@ let change_type llctx llm =
             verify_and_clean f f_new |> ignore;
             Some llm
     in
-    loop ()
+    loop 0
   else None
 
 let delete_empty_blocks func =

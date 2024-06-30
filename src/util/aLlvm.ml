@@ -395,7 +395,7 @@ module OpcodeClass = struct
         BINARY
     | ExtractElement | InsertElement | ShuffleVector -> VEC opc
     | Alloca | Load | Store -> MEM opc
-    | Trunc | ZExt | SExt -> CAST
+    | Trunc | ZExt | SExt | BitCast -> CAST
     | ICmp -> ICMP
     | PHI | Select -> OTHER opc
     | _ -> UNSUPPORTED
@@ -435,6 +435,7 @@ module OpcodeClass = struct
     | Opcode.Trunc -> build_trunc
     | ZExt -> build_zext
     | SExt -> build_sext
+    | BitCast -> build_bitcast
     | _ -> invalid_arg (string_of_opcode opc ^ " is not a cast opcode."))
       o ty "" llb
 
@@ -768,6 +769,7 @@ module ChangeRetVal = struct
     | SExt -> build_sext opd ty "" builder
     | ZExt -> build_zext opd ty "" builder
     | Trunc -> build_trunc opd ty "" builder
+    | BitCast -> build_bitcast opd ty "" builder
     | _ -> failwith "Opcode is not cast"
 
   let migrate_icmp builder instr_old link_v =
