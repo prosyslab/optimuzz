@@ -37,7 +37,9 @@ let collect_cleaned_seeds llctx seed_dir =
     |> List.map (Filename.concat seed_dir)
     |> List.filter can_optimize
     |> List.filter_map (fun path ->
-           ALlvm.read_ll llctx path |> Result.to_option)
+           match ALlvm.read_ll llctx path with
+           | Error _ -> None
+           | Ok llm -> Some (path, llm))
   in
   if optimizable_seeds = [] then (
     L.info "No optimizable seeds found.";
@@ -45,10 +47,10 @@ let collect_cleaned_seeds llctx seed_dir =
 
   let cleaned_seeds =
     optimizable_seeds
-    |> List.filter Prep.check_llm_for_mutation
-    |> List.filter_map (fun llm ->
+    |> List.filter (fun (_path, llm) -> Prep.check_llm_for_mutation llm)
+    |> List.filter_map (fun (path, llm) ->
            ALlvm.clean_module_data llm;
-           Prep.clean_llm llctx true llm)
+           Prep.clean_llm llctx true llm |> Option.map (fun llm -> (path, llm)))
   in
 
   (* cleaned_seeds can be cached since the collection is independent of target_path *)
@@ -168,7 +170,11 @@ module FifoSeedPool (Seed : D.SEED) : D.SEED_POOL = struct
     let seed_dir = !Config.seed_dir in
     assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
-    collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
+    collect_cleaned_seeds llctx seed_dir
+    |> List.map (fun (path, llm) ->
+           L.info "trace: %s -> %010d@." path (ALlvm.hash_llm llm);
+           llm)
+    |> construct_seedpool target_path
 end
 
 module PrioritySeedPool (Seed : D.PRIORITY_SEED) : D.SEED_POOL = struct
@@ -243,7 +249,11 @@ module PrioritySeedPool (Seed : D.PRIORITY_SEED) : D.SEED_POOL = struct
   let make_fresh llctx seed_dir target_path =
     assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
-    collect_cleaned_seeds llctx seed_dir |> construct_seedpool target_path
+    collect_cleaned_seeds llctx seed_dir
+    |> List.map (fun (path, llm) ->
+           L.info "%s -> %010d@." path (ALlvm.hash_llm llm);
+           llm)
+    |> construct_seedpool target_path
 
   (* let make_skip_clean llctx seed_dir target_path =
      let seed_files = Sys.readdir seed_dir |> Array.to_list in
@@ -283,6 +293,9 @@ module UndirectedPool (Seed : D.NAIVE_SEED) : D.UNDIRECTED_SEED_POOL = struct
     let pool = Queue.create () in
 
     collect_cleaned_seeds llctx seed_dir
+    |> List.map (fun (path, llm) ->
+           L.info "%s -> %010d@." path (ALlvm.hash_llm llm);
+           llm)
     |> List.map Seed.make
     |> List.to_seq
     |> Queue.add_seq pool;

@@ -27,6 +27,7 @@ let _ =
     let cleaned_seeds = main seed_dir in
 
     cleaned_seeds
+    |> List.map snd
     |> List.iter (fun llm ->
            let filename = ALlvm.hash_llm llm |> Format.sprintf "id:%010d.ll" in
            ALlvm.save_ll out_dir filename llm |> ignore)
