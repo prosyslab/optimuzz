@@ -102,19 +102,18 @@ module Seed (Distance : CD.Distance) = struct
   let overwrite seed llm = { seed with llm }
 
   let pp fmt seed =
-    Format.fprintf fmt "hash: %10d, score: %a, covers: %b"
+    Format.fprintf fmt "hash: %010d, score: %a, covers: %b"
       (ALlvm.hash_llm seed.llm) Distance.pp seed.score seed.covers
 
   let name ?(parent : int option) seed =
     let hash = ALlvm.hash_llm seed.llm in
+    let curr = AUtil.get_current_time () in
     match parent with
     | None ->
-        Format.asprintf "date:%s,id:%010d,score:%a,covers:%b.ll"
-          (AUtil.get_current_time ())
-          hash Distance.pp seed.score seed.covers
+        Format.asprintf "date:%s,id:%010d,score:%a,covers:%b.ll" curr hash
+          Distance.pp seed.score seed.covers
     | Some parent_hash ->
-        Format.asprintf "date:%s,id:%010d,src:%010d,score:%a,covers:%b.ll"
-          (AUtil.get_current_time ())
+        Format.asprintf "date:%s,id:%010d,src:%010d,score:%a,covers:%b.ll" curr
           hash parent_hash Distance.pp seed.score seed.covers
 
   let closer old_seed new_seed =

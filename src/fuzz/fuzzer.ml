@@ -94,12 +94,6 @@ module Make (SeedPool : SD.SEED_POOL) = struct
           Interesting (is_crash, new_seed, progress)
         else Not_interesting (is_crash, new_seed)
 
-  let save_seed is_crash parent seed =
-    let seed_name = Seed.name ~parent seed in
-    let llm = Seed.llmodule seed in
-    if is_crash then ALlvm.save_ll !Config.crash_dir seed_name llm
-    else ALlvm.save_ll !Config.corpus_dir seed_name llm
-
   (* each mutant is mutated [Config.num_mutation] times *)
   let mutate_seed llctx target_path llset (seed : Seed.t) progress limit =
     (* assert (if not @@ seed.covers then seed.score > 0.0 else true); *)
