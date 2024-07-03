@@ -748,8 +748,6 @@ let rec trav_cast llv ty_new accu =
       if check_const_flow (operand llv 0) false then accu
       else if opc = BitCast then accu
       else Retry
-  | Instruction opc when opc = BitCast && not (check_cast_ty opc ty_new llv) ->
-      Retry
   | _ when type_of llv = ty_new -> Retry
   | _ -> (
       match (llv |> type_of |> classify_type, classify_type ty_new) with
@@ -773,6 +771,8 @@ and trav_llvs_used_by_curr curr ty_new accu =
   | Instruction opc -> (
       match OpcodeClass.classify opc with
       | MEM _ -> accu
+      | CAST when opc = BitCast ->
+          if check_cast_ty opc ty_new curr then accu else Retry
       | CAST -> trav_cast (operand curr 0) ty_new accu
       | BINARY ->
           let opd0 = operand curr 0 in
@@ -827,6 +827,10 @@ and trav_llvs_using_curr curr ty_new accu =
       let user = user use in
       match OpCls.opcls_of user with
       | TER _ | MEM _ -> (* does not affect *) accu
+      | CAST when classify_value user = Instruction BitCast ->
+          if check_cast_ty BitCast ty_new user then
+            collect_ty_changing_llvs user ty_new accu
+          else Retry
       | CAST -> trav_cast user ty_new accu
       | BINARY | OTHER PHI -> collect_ty_changing_llvs user ty_new accu
       | OTHER Select ->
@@ -1107,13 +1111,13 @@ let migrate_cast builder instr_old typemap link_v =
 
   (* decide whether we have to use extension or truncation *)
   let is_trunc =
-    if classify_type dest_ty = Integer then
-      integer_bitwidth dest_ty < (opd |> type_of |> integer_bitwidth)
-    else
-      dest_ty
-      |> element_type
-      |> integer_bitwidth
-      < (opd |> type_of |> element_type |> integer_bitwidth)
+    let get_bw ty =
+      let tycls = classify_type ty in
+      assert (tycls = Integer || tycls = Vector);
+      if tycls = Integer then integer_bitwidth ty
+      else ty |> element_type |> integer_bitwidth
+    in
+    get_bw dest_ty < (opd |> type_of |> get_bw)
   in
   (* FIXME: for now, using ZExt only *)
   (if instr_opcode instr_old = BitCast then build_bitcast
