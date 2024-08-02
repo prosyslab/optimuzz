@@ -1,6 +1,7 @@
 open Util
 
 type opcode_t = ICMP of ALlvm.Icmp.t | OTHER of ALlvm.Opcode.t
+type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 
 let pp_mutation fmt m =
@@ -11,6 +12,12 @@ let pp_mutation fmt m =
   | FLAG -> Format.fprintf fmt "FLAG"
   | TYPE -> Format.fprintf fmt "TYPE"
   | CUT -> Format.fprintf fmt "CUT"
+
+let uniform_mutations =
+  [ (CREATE, 1); (OPCODE, 1); (OPERAND, 1); (FLAG, 1); (TYPE, 1); (CUT, 1) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
 
 let expand_mutations =
   [ (CREATE, 2); (OPCODE, 4); (OPERAND, 4); (FLAG, 3); (TYPE, 2); (CUT, 1) ]

@@ -16,6 +16,7 @@
   coverage
   seedcorpus
   fuzz
+  mutation
   pattern
   util
   logger))

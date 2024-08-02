@@ -2,14 +2,12 @@ open Util.ALlvm
 module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 module L = Logger
-module SD = Seedcorpus.Domain
 
-type mode_t = EXPAND | FOCUS
 type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
 
 let choose_mutation mode score =
   match mode with
-  | EXPAND ->
+  | Domain.EXPAND ->
       let mutations = Domain.expand_mutations in
       let r = Random.int (score + Array.length mutations) in
       if r <= score then mutations.(0) else mutations.(r - score)
@@ -1433,41 +1431,35 @@ let cut_below llctx llm =
             Some llm
         | _ -> None)
 
-module Make (Seed : SD.SEED) = struct
-  (* module Seed = SeedPool.Seed *)
+(* inner-basicblock mutation (independent of block CFG) *)
+let rec mutate_inner_bb llctx learning opc_tbl llm choice_fn =
+  let mutation = choice_fn () in
+  L.info "mutation: %a" Domain.pp_mutation mutation;
+  (* L.debug "before:\n%s" (string_of_llmodule llm); *)
+  let mutation_result =
+    match mutation with
+    | CREATE -> (None, None, create_rand_instr llctx llm)
+    | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
+    | OPERAND -> (None, None, subst_rand_opd llctx llm)
+    | FLAG -> (None, None, modify_flag llctx llm)
+    | TYPE -> (None, None, change_type llctx llm)
+    | CUT -> (None, None, cut_below llctx llm)
+  in
+  match mutation_result with
+  | Some opc_old, Some opc_new, Some llm ->
+      L.debug "mutant: %s" (string_of_llmodule llm);
+      let f = choose_function llm in
+      reset_var_names f;
+      (Some opc_old, Some opc_new, llm)
+  | _, _, Some llm ->
+      L.debug "mutant: %s" (string_of_llmodule llm);
+      let f = choose_function llm in
+      reset_var_names f;
+      (None, None, llm)
+  | _, _, None ->
+      L.debug "None";
+      mutate_inner_bb llctx learning opc_tbl llm choice_fn
 
-  (* inner-basicblock mutation (independent of block CFG) *)
-  let rec mutate_inner_bb llctx learning opc_tbl mode llm score =
-    let mutation = choose_mutation mode score in
-    L.info "mutation: %a" Domain.pp_mutation mutation;
-    (* L.debug "before:\n%s" (string_of_llmodule llm); *)
-    let mutation_result =
-      match mutation with
-      | CREATE -> (None, None, create_rand_instr llctx llm)
-      | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
-      | OPERAND -> (None, None, subst_rand_opd llctx llm)
-      | FLAG -> (None, None, modify_flag llctx llm)
-      | TYPE -> (None, None, change_type llctx llm)
-      | CUT -> (None, None, cut_below llctx llm)
-    in
-    match mutation_result with
-    | Some opc_old, Some opc_new, Some llm ->
-        L.debug "mutant: %s" (string_of_llmodule llm);
-        let f = choose_function llm in
-        reset_var_names f;
-        (Some opc_old, Some opc_new, llm)
-    | _, _, Some llm ->
-        L.debug "mutant: %s" (string_of_llmodule llm);
-        let f = choose_function llm in
-        reset_var_names f;
-        (None, None, llm)
-    | _, _, None ->
-        L.debug "None";
-        mutate_inner_bb llctx learning opc_tbl mode llm score
-
-  let run llctx learning opc_tbl seed =
-    let mode = if Seed.covers seed then FOCUS else EXPAND in
-    let llm = Seed.llmodule seed in
-    let score = Seed.score seed |> Seed.Distance.to_int in
-    mutate_inner_bb llctx learning opc_tbl mode llm score
-end
+let run llctx llm (choice_fn : unit -> Domain.mutation_t) =
+  (* FIXME: parameterize learning system *)
+  mutate_inner_bb llctx false Domain.OpcodeMap.empty llm choice_fn

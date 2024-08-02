@@ -8,7 +8,7 @@ let main () =
   Logger.set_level Logger.DEBUG;
 
   Logger.debug "before:\n%s" (ALlvm.string_of_llmodule llm);
-  (match Fuzz.Mutator.cut_below llctx llm with
+  (match Mutation.Mutator.cut_below llctx llm with
   | None -> Logger.debug "no change"
   | Some llm' -> Logger.debug "after:\n%s" (ALlvm.string_of_llmodule llm'));
 

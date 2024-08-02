@@ -2,6 +2,7 @@ open Util
 module CD = Coverage.Domain
 module SeedPool = Seedcorpus.Seedpool
 module SD = Seedcorpus.Domain
+module MD = Mutation.Domain
 module F = Format
 module L = Logger
 
@@ -17,18 +18,16 @@ module Progress = struct
       (CD.Coverage.cardinal progress.cov_sofar)
 end
 
-let opc_tbl = ref Domain.OpcodeMap.empty
+let opc_tbl = ref MD.OpcodeMap.empty
 
 let update_mut_tbl opcode_old opcode_new =
   let reward = !Config.learn_inc in
   match (opcode_old, opcode_new) with
   | Some opcode_old, Some opcode_new ->
-      let new_tbl =
-        Domain.OpcodeMap.update opcode_old opcode_new reward !opc_tbl
-      in
+      let new_tbl = MD.OpcodeMap.update opcode_old opcode_new reward !opc_tbl in
       opc_tbl := new_tbl;
       L.info "Updated TABLE:";
-      L.info "%a" Domain.OpcodeMap.pp !opc_tbl
+      L.info "%a" MD.OpcodeMap.pp !opc_tbl
   | _, _ -> ()
 
 (** runs optimizer with an input file
@@ -72,7 +71,6 @@ let record_timestamp cov =
 module Make_directed (SeedPool : SD.SEED_POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
-  module Mutator = Mutator.Make (Seed)
 
   type res_t =
     | Invalid
@@ -101,7 +99,7 @@ module Make_directed (SeedPool : SD.SEED_POOL) = struct
 
     if learning then (
       L.debug "TABLE:";
-      L.debug "%a" Domain.OpcodeMap.pp !opc_tbl);
+      L.debug "%a" MD.OpcodeMap.pp !opc_tbl);
 
     let rec traverse times (src : Seed.t) progress =
       if times = 0 then (
@@ -110,8 +108,13 @@ module Make_directed (SeedPool : SD.SEED_POOL) = struct
         None)
       else
         (* find table to use *)
+        let choice () =
+          let mode = if Seed.covers src then MD.FOCUS else EXPAND in
+          let score = Seed.score src |> Seed.Distance.to_int in
+          Mutation.Mutator.choose_mutation mode score
+        in
         let opcode_old, opcode_new, dst =
-          Mutator.run llctx learning !opc_tbl src
+          Mutation.Mutator.run llctx (Seed.llmodule src) choice
         in
         match ALlvm.LLModuleSet.find_opt llset dst with
         | Some _ ->

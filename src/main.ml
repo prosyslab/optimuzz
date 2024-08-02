@@ -53,19 +53,42 @@ let llfuzz (module SP : SD.SEED_POOL) target_path =
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let llfuzz_undirected (module SP : SD.UNDIRECTED_SEED_POOL) =
-  failwith "Not implemented"
+  let open Oracle in
+  let llset = ALlvm.LLModuleSet.create 4096 in
+
+  let module FZ = Fuzzer.Make_undirected (SP) in
+  let seed_pool = SP.make llctx in
+  F.printf "#initial seeds: %d@." (SP.length seed_pool);
+  L.info "initial seeds: %d" (SP.length seed_pool);
+
+  seed_pool
+  |> SP.iter (fun seed ->
+         let filename = SP.Seed.name seed in
+         ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
+         |> ignore);
+
+  if SP.length seed_pool = 0 then (
+    F.printf "no seed loaded@.";
+    exit 0);
+
+  seed_pool
+  |> SP.iter (fun (seed : SP.Seed.t) ->
+         ALlvm.LLModuleSet.add llset (SP.Seed.llmodule seed) ());
+
+  if !Config.dry_run then exit 0;
+  let coverage = FZ.run seed_pool llctx llset Fuzzer.Progress.empty in
+  L.info "fuzzing campaign ends@."
 
 let _ =
   initialize ();
-  let module MinFifoPool = SP.FifoSeedPool (SD.Seed (CD.MinDistance)) in
-  let module MinPriorityPool =
-    SP.PrioritySeedPool (SD.PrioritySeed (CD.MinDistance)) in
-  let module AvgFifoPool = SP.FifoSeedPool (SD.Seed (CD.AverageDistance)) in
-  let module AvgPriorityPool =
-    SP.PrioritySeedPool (SD.PrioritySeed (CD.AverageDistance)) in
-  let module UndirectedPool = SP.UndirectedPool (SD.NaiveSeed) in
   match !Config.direct with
   | Some s -> (
+      let module MinFifoPool = SP.FifoSeedPool (SD.Seed (CD.MinDistance)) in
+      let module MinPriorityPool =
+        SP.PrioritySeedPool (SD.PrioritySeed (CD.MinDistance)) in
+      let module AvgFifoPool = SP.FifoSeedPool (SD.Seed (CD.AverageDistance)) in
+      let module AvgPriorityPool =
+        SP.PrioritySeedPool (SD.PrioritySeed (CD.AverageDistance)) in
       F.printf "direct mode@.";
       let target_path = CD.Path.parse s |> Option.get in
 
@@ -79,5 +102,6 @@ let _ =
       | Config.Avg_metric, Config.Priority_queue ->
           llfuzz (module AvgPriorityPool) target_path)
   | _ ->
+      let module UndirectedPool = SP.UndirectedPool (SD.NaiveSeed) in
       F.printf "undirected mode@.";
       llfuzz_undirected (module UndirectedPool)

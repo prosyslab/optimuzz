@@ -1,6 +1,6 @@
 (library
  (name fuzz)
- (modules mutator fuzzer domain)
+ (modules fuzzer)
  (libraries
   llvm
   llvm.analysis
@@ -8,5 +8,6 @@
   util
   coverage
   seedcorpus
+  mutation
   oracle
   logger))

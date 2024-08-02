@@ -10,7 +10,7 @@ let main () =
   Logger.set_level Logger.DEBUG;
 
   Logger.debug ~to_console:true "before:\n%s" (ALlvm.string_of_llmodule llm);
-  (match Fuzz.Mutator.change_type llctx llm with
+  (match Mutation.Mutator.change_type llctx llm with
   | Some llm' ->
       Logger.debug ~to_console:true "after:\n%s" (ALlvm.string_of_llmodule llm')
   | None -> Logger.debug "no change");
