@@ -48,9 +48,9 @@ let collect_cleaned_seeds llctx seed_dir =
   let cleaned_seeds =
     optimizable_seeds
     |> List.filter (fun (_path, llm) -> Prep.check_llm_for_mutation llm)
-    |> List.filter_map (fun (path, llm) ->
+    (* |> List.filter_map (fun (path, llm) ->
            ALlvm.clean_module_data llm;
-           Prep.clean_llm llctx true llm |> Option.map (fun llm -> (path, llm)))
+           Prep.clean_llm llctx true llm |> Option.map (fun llm -> (path, llm))) *)
   in
 
   (* cleaned_seeds can be cached since the collection is independent of target_path *)
