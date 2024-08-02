@@ -152,3 +152,18 @@ module MinDistance : Distance with type t = int = struct
   let to_int = Fun.id
   let of_int = Fun.id
 end
+
+module EdgeCoverage = struct
+  include Set.Make (String)
+
+  let read file =
+    let ic = open_in file in
+    let rec aux accu =
+      match input_line ic with
+      | line -> add line accu |> aux
+      | exception End_of_file -> accu
+    in
+    let cov = aux empty in
+    close_in ic;
+    cov
+end
