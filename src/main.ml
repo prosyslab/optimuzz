@@ -17,7 +17,7 @@ let llfuzz (module SP : SD.SEED_POOL) target_path =
   let open Oracle in
   let llset = ALlvm.LLModuleSet.create 4096 in
 
-  let module FZ = Fuzzer.Make (SP) in
+  let module FZ = Fuzzer.Make_directed (SP) in
   (* fuzzing *)
   let seed_pool = SP.make llctx target_path in
   F.printf "#initial seeds: %d@." (SP.length seed_pool);

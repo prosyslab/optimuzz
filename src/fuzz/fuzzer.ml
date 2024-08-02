@@ -69,7 +69,7 @@ let record_timestamp cov =
     F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
     |> output_string AUtil.timestamp_fp)
 
-module Make (SeedPool : SD.SEED_POOL) = struct
+module Make_directed (SeedPool : SD.SEED_POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
   module Mutator = Mutator.Make (Seed)
@@ -180,4 +180,21 @@ module Make (SeedPool : SD.SEED_POOL) = struct
     in
     if exhausted then progress.cov_sofar
     else run target_path new_pool llctx llset progress
+end
+
+module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
+  let choice () =
+    let muts = MD.uniform_mutations in
+    let idx = Random.int (Array.length muts) in
+    muts.(idx)
+
+  let run pool llctx llset progress =
+    let rec iter pool progress =
+      let seed, pool_popped = SeedPool.pop pool in
+      let llm = SeedPool.Seed.llmodule seed in
+      let mutant = Mutation.Mutator.run llctx llm choice in
+      failwith "Not implemented"
+    in
+
+    iter pool progress
 end
