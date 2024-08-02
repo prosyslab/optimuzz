@@ -275,6 +275,7 @@ module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
              (fun prog cov -> prog |> Progress.add_cov cov |> Progress.inc_gen)
              progress
       in
+      F.printf "\r%a@?" Progress.pp new_progress;
 
       let new_pool =
         interesting_mutants
@@ -284,6 +285,12 @@ module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
              pool_popped
         |> SeedPool.push seed
       in
+
+      interesting_mutants
+      |> List.iter (fun (mutant, _) ->
+             let llm = SeedPool.Seed.llmodule mutant in
+             let seed_name = SeedPool.Seed.name mutant in
+             ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore);
 
       campaign new_pool new_progress
     in
