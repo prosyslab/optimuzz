@@ -35,7 +35,7 @@ module type SEED = sig
   include SEED_PRINTER with type t := t
   include SEED_MEASURE with type t := t with module Distance := Distance
 
-  val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
+  val make : Llvm.llmodule -> CD.Path.t -> CD.AstCoverage.t -> t
   val llmodule : t -> Llvm.llmodule
   val overwrite : t -> Llvm.llmodule -> t
 end
@@ -48,7 +48,7 @@ module type PRIORITY_SEED = sig
   include SEED_PRINTER with type t := t
   include SEED_MEASURE with type t := t with module Distance := Distance
 
-  val make : Llvm.llmodule -> CD.Path.t -> CD.Coverage.t -> t
+  val make : Llvm.llmodule -> CD.Path.t -> CD.AstCoverage.t -> t
   val priority : t -> int
   val inc_priority : t -> t
   val llmodule : t -> Llvm.llmodule
@@ -86,13 +86,13 @@ module type UNDIRECTED_SEED_POOL = sig
   val make : Llvm.llcontext -> t
 end
 
-module Seed (Distance : CD.Distance) = struct
+module DistancedSeed (Distance : CD.Distance) = struct
   module Distance = Distance
 
   type t = { llm : Llvm.llmodule; score : Distance.t; covers : bool }
 
   let make llm target_path cov =
-    let covers = CD.Coverage.cover_target target_path cov in
+    let covers = CD.AstCoverage.cover_target target_path cov in
     let score = Distance.distance target_path cov in
     { llm; covers; score }
 
@@ -120,9 +120,9 @@ module Seed (Distance : CD.Distance) = struct
     new_seed.covers || ((not old_seed.covers) && new_seed.score < old_seed.score)
 end
 
-module PrioritySeed (Dist : CD.Distance) = struct
+module PriorityDistancedSeed (Dist : CD.Distance) = struct
   module Distance = Dist
-  module Seed = Seed (Dist)
+  module Seed = DistancedSeed (Dist)
 
   type t = int * Seed.t
 

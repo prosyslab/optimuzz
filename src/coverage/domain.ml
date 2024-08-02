@@ -74,7 +74,7 @@ module DistanceSet = struct
     (0, 0) |> fold (fun (_path, dist) (total, cnt) -> (total + dist, cnt + 1)) s
 end
 
-module Coverage = struct
+module AstCoverage = struct
   include Set.Make (Path)
 
   let read file =
@@ -97,7 +97,7 @@ end
 module type Distance = sig
   type t
 
-  val distance : Path.t -> Coverage.t -> t
+  val distance : Path.t -> AstCoverage.t -> t
   val pp : Format.formatter -> t -> unit
   val compare : t -> t -> int
   val to_int : t -> int
@@ -111,7 +111,7 @@ module AverageDistance : Distance with type t = float = struct
 
   let distance target cov =
     let distances : DistanceSet.t =
-      Coverage.fold
+      AstCoverage.fold
         (fun path accu ->
           let ds = Path.distances path target |> List.to_seq in
           accu |> DistanceSet.add_seq ds)
@@ -137,7 +137,7 @@ module MinDistance : Distance with type t = int = struct
   let distance target cov =
     let module IntSet = Set.Make (Int) in
     let distances =
-      Coverage.fold
+      AstCoverage.fold
         (fun path accu ->
           let d = Path.diff path target in
           accu |> IntSet.add d)
@@ -166,4 +166,14 @@ module EdgeCoverage = struct
     let cov = aux empty in
     close_in ic;
     cov
+end
+
+module type COVERAGE = sig
+  type t
+
+  val read : string -> t
+  val empty : t
+  val union : t -> t -> t
+  val diff : t -> t -> t
+  val cardinal : t -> int
 end

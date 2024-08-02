@@ -2,6 +2,7 @@ open Oracle
 open Util
 open Domainslib
 module L = Logger
+module Opt = Optimizer (CD.AstCoverage)
 
 let args = ref []
 let ntasks = ref 12
@@ -40,13 +41,14 @@ let collect_module_files ?predicate dir =
 (** [check_transformation llfile] returns
  *  if optimized module of [llfile] refines the module of [llfile]*)
 let check_transformation tmp_dir llfile =
+  let module Opt = Oracle.Optimizer (CD.AstCoverage) in
   let llfile_opt =
     let basename = Filename.basename llfile in
     let filename_opt = Filename.chop_suffix basename "ll" ^ "opt.ll" in
     tmp_dir ^ Filename.dir_sep ^ filename_opt
   in
 
-  match Optimizer.run ~passes:!optimizer_passes ~output:llfile_opt llfile with
+  match Opt.run ~passes:!optimizer_passes ~output:llfile_opt llfile with
   | Error Non_zero_exit -> failwith ("Crashing module:" ^ llfile)
   | Error Hang -> failwith ("Crashing module:" ^ llfile)
   | Error Cov_not_generated | Ok _ -> (

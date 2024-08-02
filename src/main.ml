@@ -18,6 +18,8 @@ let llfuzz (module SP : SD.SEED_POOL) target_path =
   let llset = ALlvm.LLModuleSet.create 4096 in
 
   let module FZ = Fuzzer.Make_directed (SP) in
+  let module Coverage = CD.AstCoverage in
+  let module Progress = Fuzzer.Progress (Coverage) in
   (* fuzzing *)
   let seed_pool = SP.make llctx target_path in
   F.printf "#initial seeds: %d@." (SP.length seed_pool);
@@ -41,22 +43,21 @@ let llfuzz (module SP : SD.SEED_POOL) target_path =
 
   AUtil.start_time := AUtil.now ();
   L.info "fuzzing campaign starts@.";
-  let coverage =
-    FZ.run target_path seed_pool llctx llset Fuzzer.Progress.empty
-  in
+  let coverage = FZ.run target_path seed_pool llctx llset Progress.empty in
   let end_time = AUtil.now () in
   L.info "fuzzing campaign ends@.";
-  L.info "total coverage: %d lines" (CD.Coverage.cardinal coverage);
+  L.info "total coverage: %d lines" (Coverage.cardinal coverage);
   L.info "time spent: %ds" (end_time - !AUtil.start_time);
 
-  F.printf "\ntotal coverage: %d lines@." (CD.Coverage.cardinal coverage);
+  F.printf "\ntotal coverage: %d lines@." (Coverage.cardinal coverage);
   F.printf "time spend: %ds@." (end_time - !AUtil.start_time)
 
 let llfuzz_undirected (module SP : SD.UNDIRECTED_SEED_POOL) =
   let open Oracle in
-  let llset = ALlvm.LLModuleSet.create 4096 in
-
   let module FZ = Fuzzer.Make_undirected (SP) in
+  let module Coverage = CD.EdgeCoverage in
+  let module Progress = Fuzzer.Progress (Coverage) in
+  let llset = ALlvm.LLModuleSet.create 4096 in
   let seed_pool = SP.make llctx in
   F.printf "#initial seeds: %d@." (SP.length seed_pool);
   L.info "initial seeds: %d" (SP.length seed_pool);
@@ -76,32 +77,36 @@ let llfuzz_undirected (module SP : SD.UNDIRECTED_SEED_POOL) =
          ALlvm.LLModuleSet.add llset (SP.Seed.llmodule seed) ());
 
   if !Config.dry_run then exit 0;
-  let coverage = FZ.run seed_pool llctx llset Fuzzer.Progress.empty in
+  let _coverage = FZ.run seed_pool llctx llset Progress.empty in
   L.info "fuzzing campaign ends@."
 
 let _ =
   initialize ();
-  match !Config.direct with
-  | Some s -> (
-      let module MinFifoPool = SP.FifoSeedPool (SD.Seed (CD.MinDistance)) in
-      let module MinPriorityPool =
-        SP.PrioritySeedPool (SD.PrioritySeed (CD.MinDistance)) in
-      let module AvgFifoPool = SP.FifoSeedPool (SD.Seed (CD.AverageDistance)) in
-      let module AvgPriorityPool =
-        SP.PrioritySeedPool (SD.PrioritySeed (CD.AverageDistance)) in
+  match !Config.mode with
+  | Directed s -> (
       F.printf "direct mode@.";
       let target_path = CD.Path.parse s |> Option.get in
-
       match (!Config.metric, !Config.queue) with
       | Config.Min_metric, Config.Fifo_queue ->
+          let module MinFifoPool =
+            SP.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
           llfuzz (module MinFifoPool) target_path
       | Config.Min_metric, Config.Priority_queue ->
+          let module MinPriorityPool =
+            SP.PrioritySeedPool (SD.PriorityDistancedSeed (CD.MinDistance)) in
           llfuzz (module MinPriorityPool) target_path
       | Config.Avg_metric, Config.Fifo_queue ->
+          let module AvgFifoPool =
+            SP.FifoSeedPool (SD.DistancedSeed (CD.AverageDistance)) in
           llfuzz (module AvgFifoPool) target_path
       | Config.Avg_metric, Config.Priority_queue ->
+          let module AvgPriorityPool =
+            SP.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
           llfuzz (module AvgPriorityPool) target_path)
-  | _ ->
+  | Greybox ->
       let module UndirectedPool = SP.UndirectedPool (SD.NaiveSeed) in
-      F.printf "undirected mode@.";
+      F.printf "greybox mode@.";
       llfuzz_undirected (module UndirectedPool)
+  | Blackbox ->
+      F.printf "blackbox mode@.";
+      failwith "Not implemented"

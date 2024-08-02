@@ -30,3 +30,17 @@
  (alias runtest)
  (action
   (diff test2.output test2.expected)))
+
+(rule
+ (deps edge.test1.cov)
+ (targets edge.test1.output)
+ (action
+  (with-stdout-to
+   %{targets}
+   (ignore-stderr
+    (run ./test.exe %{deps})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff edge.test1.output edge.test1.expected)))

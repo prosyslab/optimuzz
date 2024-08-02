@@ -284,7 +284,7 @@ let read_ll llctx filepath =
       Format.eprintf "%s: %s" filepath msg;
       Result.Error (Format.asprintf "%s: %s" filepath msg)
 
-(** [save_ll target_dir output filename llmodule] saves [llmodule]
+(** [save_ll target_dir filename llmodule] saves [llmodule]
  *  under [target_dir], named as [filename].
  *  This functions returns the fully qualified filename of the produced file. *)
 let save_ll dir filename llm =
