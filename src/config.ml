@@ -71,8 +71,28 @@ let string_of_level = function
 (* default *)
 let time_budget = ref (-1)
 
-(* target path. If None, directed guiding is turned off *)
-let direct = ref None
+module Mode = struct
+  type t = Blackbox | Greybox | Directed of string
+
+  let string_of = function
+    | Blackbox -> "blackbox"
+    | Greybox -> "greybox"
+    | Directed s -> "directed: " ^ s
+
+  let of_string s =
+    match s with
+    | "blackbox" -> Blackbox
+    | "greybox" -> Greybox
+    | _ ->
+        (* if starts with directed: *)
+        if String.length s >= 9 && String.sub s 0 9 = "directed:" then
+          Directed (String.sub s 9 (String.length s - 9))
+        else failwith "Invalid mode"
+end
+
+let mode = ref Mode.Blackbox
+
+(* optimizer options *)
 
 let optimizer_passes =
   (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
@@ -165,63 +185,51 @@ let log_time = ref 30
    refer to: https://llvm.org/docs/Passes.html *)
 let _instCombine = ref true
 
-let opts =
+let env_opts =
   [
-    (* if these two are set, branch to other operation (not fuzzing) *)
-    ( "-pattern",
-      Arg.Set_string pattern_path,
-      "To generate programs of certain patterns" );
-    ( "-coverage",
-      Arg.Set_string cov_tgt_path,
-      "To measure opt coverage only over the file" );
-    (* paths *)
-    ( "-seedpool",
-      Arg.String
-        (function
-        | "fresh" -> seedpool_option := Fresh
-        | "skip-clean" -> seedpool_option := SkipClean
-        | "resume" -> seedpool_option := Resume
-        | _ -> failwith "Invalid start option"),
-      "Start option" );
     ("-seed-dir", Arg.Set_string seed_dir, "Seed program directory");
     ("-out-dir", Arg.Set_string out_dir, "Output directory");
     ("-opt-bin", Arg.Set_string opt_bin, "Path to opt executable");
     ("-tv-bin", Arg.Set_string alive_tv_bin, "Path to alive-tv executable");
-    ( "-passes",
-      Arg.String
-        (function s -> optimizer_passes := String.split_on_char ',' s),
-      "Set opt passes" );
-    (* fuzzing options *)
-    ("-random-seed", Arg.Set_int random_seed, "Set random seed");
-    ("-limit", Arg.Set_int time_budget, "Time budget (limit in seconds)");
-    ("-direct", Arg.String (fun s -> direct := Some s), "Target path");
+  ]
+
+let fuzzing_opts =
+  [
+    ( "-mode",
+      Arg.String (fun s -> mode := Mode.of_string s),
+      "(blackbox, greybox, directed:<path>)" );
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
-    ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
-    ( "-learn-inc",
-      Arg.Set_int learn_inc,
-      "Reward for correct mutation during learning" );
-    ( "-learn-dec",
-      Arg.Set_int learn_dec,
-      "Penalty for incorrect mutation during learning" );
+    (* ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
+       ( "-learn-inc",
+         Arg.Set_int learn_inc,
+         "Reward for correct mutation during learning" );
+       ( "-learn-dec",
+         Arg.Set_int learn_dec,
+         "Penalty for incorrect mutation during learning" ); *)
     ( "-metric",
       Arg.String
         (function
         | "min" -> metric := Min_metric
         | "avg" -> metric := Avg_metric
         | _ -> failwith "Invalid metric"),
-      "Metric to give a score to a coverage" );
-    ("-record-cov", Arg.Set record_cov, "Recording all coverage");
+      "Metric to give a score to an AST coverage" );
     ( "-queue",
       Arg.String
         (function
         | "priority" -> queue := Priority_queue
         | "fifo" -> queue := Fifo_queue
         | _ -> failwith "Invalid queue"),
-      "Queue type for fuzzing" );
-    (* logging options *)
-    ("-log-time", Arg.Set_int log_time, "Change timestamp interval");
+      "Queue type of the seed pool (priority, fifo)" );
+  ]
+
+let other_opts =
+  [
+    ( "-passes",
+      Arg.String
+        (function s -> optimizer_passes := String.split_on_char ',' s),
+      "Set opt passes" );
     ( "-log-level",
       Arg.String
         (function
@@ -234,12 +242,37 @@ let opts =
     ( "-dry-run",
       Arg.Set dry_run,
       "Do not run fuzzing. (for testing configuration)" );
-    (* gcov whitelist *)
-    ( "-instcombine",
-      Arg.Set _instCombine,
-      "[register whitelist] Combine instructions to form fewer, simple \
-       instructions" );
   ]
+
+let opts =
+  env_opts @ fuzzing_opts @ other_opts
+  @ [
+      (* if these two are set, branch to other operation (not fuzzing) *)
+      (* ( "-pattern",
+           Arg.Set_string pattern_path,
+           "To generate programs of certain patterns" );
+         ( "-coverage",
+           Arg.Set_string cov_tgt_path,
+           "To measure opt coverage only over the file" ); *)
+      (* paths *)
+      (* ( "-seedpool",
+         Arg.String
+           (function
+           | "fresh" -> seedpool_option := Fresh
+           | "skip-clean" -> seedpool_option := SkipClean
+           | "resume" -> seedpool_option := Resume
+           | _ -> failwith "Invalid start option"),
+         "Start option" ); *)
+      ("-record-cov", Arg.Set record_cov, "Recording all coverage");
+      (* logging options *)
+      (* ("-log-time", Arg.Set_int log_time, "Change timestamp interval"); *)
+
+      (* gcov whitelist *)
+      (* ( "-instcombine",
+         Arg.Set _instCombine,
+         "[register whitelist] Combine instructions to form fewer, simple \
+          instructions" ); *)
+    ]
 
 (* * only called after arguments are parsed. *)
 (* TODO: is there optimization files other than ones under Transforms? *)
@@ -357,9 +390,8 @@ let log_options opts =
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
          | Arg.String _ when name = "-seedpool" ->
              L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
-         | Arg.String _ when name = "-direct" ->
-             L.info "%s: %s" name
-               (match !direct with Some s -> s | None -> "undirected")
+         | Arg.String _ when name = "-mode" ->
+             L.info "%s: %s" name (Mode.string_of !mode)
          | _ -> failwith "not implemented");
 
   L.flush ()

@@ -14,13 +14,14 @@ let speclist =
   ]
 
 let measure_coverage input direct ~passes () =
-  let res = Optimizer.run ~passes input in
+  let module Opt = Optimizer (CD.AstCoverage) in
+  let res = Opt.run ~passes input in
   let target = CD.Path.parse direct |> Option.get in
   passes |> List.iter (fun pass -> F.printf "Pass: %s@." pass);
   match res with
   | Ok cov ->
-      F.printf "Total coverage: %d@." (CD.Coverage.cardinal cov);
-      F.printf "Covers: %b@." (CD.Coverage.cover_target target cov);
+      F.printf "Total coverage: %d@." (CD.AstCoverage.cardinal cov);
+      F.printf "Covers: %b@." (CD.AstCoverage.cover_target target cov);
       ()
   | _ -> ()
 

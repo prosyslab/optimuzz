@@ -13,6 +13,7 @@ all: fmt
 	$(LN) _build/default/src/program/cov.exe cov
 	$(LN) _build/default/src/program/pattern_check.exe pattern-check
 	$(LN) _build/default/src/program/clean.exe clean
+	$(LN) _build/default/mutation/driver.exe llmutate
 
 test: all
 	$(DUNE) test

@@ -6,16 +6,16 @@ module MD = Mutation.Domain
 module F = Format
 module L = Logger
 
-module Progress = struct
-  type t = { cov_sofar : CD.Coverage.t; gen_count : int }
+module Progress (Coverage : CD.COVERAGE) = struct
+  type t = { cov_sofar : Coverage.t; gen_count : int }
 
-  let empty = { cov_sofar = CD.Coverage.empty; gen_count = 0 }
+  let empty = { cov_sofar = Coverage.empty; gen_count = 0 }
   let inc_gen p = { p with gen_count = p.gen_count + 1 }
-  let add_cov cov p = { p with cov_sofar = CD.Coverage.union p.cov_sofar cov }
+  let add_cov cov p = { p with cov_sofar = Coverage.union p.cov_sofar cov }
 
   let pp fmt progress =
     F.fprintf fmt "generated: %d, coverage: %d" progress.gen_count
-      (CD.Coverage.cardinal progress.cov_sofar)
+      (Coverage.cardinal progress.cov_sofar)
 end
 
 let opc_tbl = ref MD.OpcodeMap.empty
@@ -35,12 +35,13 @@ let update_mut_tbl opcode_old opcode_new =
     Returns the results *)
 let measure_optimizer_coverage llm =
   let open Oracle in
+  let module Opt = Optimizer (CD.AstCoverage) in
   let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
   let filename = ALlvm.save_ll !Config.out_dir filename llm in
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res =
-    Optimizer.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
+    Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
       filename
   in
 
@@ -60,17 +61,18 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let record_timestamp cov =
-  (* timestamp *)
-  let now = AUtil.now () in
-  if now - !AUtil.recent_time > !Config.log_time then (
-    AUtil.recent_time := now;
-    F.sprintf "%d %d\n" (now - !AUtil.start_time) (CD.Coverage.cardinal cov)
-    |> output_string AUtil.timestamp_fp)
+(* let record_timestamp cov =
+   (* timestamp *)
+   let now = AUtil.now () in
+   if now - !AUtil.recent_time > !Config.log_time then (
+     AUtil.recent_time := now;
+     F.sprintf "%d %d\n" (now - !AUtil.start_time) (Coverage.cardinal cov)
+     |> output_string AUtil.timestamp_fp) *)
 
 module Make_directed (SeedPool : SD.SEED_POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
+  module Progress = Progress (CD.AstCoverage)
 
   type res_t =
     | Invalid
@@ -107,7 +109,6 @@ module Make_directed (SeedPool : SD.SEED_POOL) = struct
         ALlvm.LLModuleSet.add llset llm ();
         None)
       else
-        (* find table to use *)
         let choice () =
           let mode = if Seed.covers src then MD.FOCUS else EXPAND in
           let score = Seed.score src |> Seed.Distance.to_int in
@@ -186,18 +187,106 @@ module Make_directed (SeedPool : SD.SEED_POOL) = struct
 end
 
 module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
+  module Coverage = CD.EdgeCoverage
+  module Opt = Oracle.Optimizer (Coverage)
+  module Progress = Progress (Coverage)
+
   let choice () =
     let muts = MD.uniform_mutations in
     let idx = Random.int (Array.length muts) in
     muts.(idx)
 
-  let run pool llctx llset progress =
-    let rec iter pool progress =
-      let seed, pool_popped = SeedPool.pop pool in
-      let llm = SeedPool.Seed.llmodule seed in
-      let mutant = Mutation.Mutator.run llctx llm choice in
-      failwith "Not implemented"
+  let measure_optimizer_coverage llm =
+    let open Oracle in
+    let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
+    let filename = ALlvm.save_ll !Config.out_dir filename llm in
+    let optimized_ir_filename = AUtil.name_opted_ver filename in
+
+    let optimization_res =
+      Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
+        filename
     in
 
-    iter pool progress
+    (if !Config.record_cov then
+       try
+         let cov_strings = AUtil.read_lines !Config.cov_file in
+         AUtil.update_numbers_with_cov !Config.json_file cov_strings
+       with Sys_error _ -> ());
+
+    if !Config.no_tv then (
+      AUtil.clean filename;
+      AUtil.clean optimized_ir_filename;
+      (optimization_res, Validator.Correct))
+    else
+      let validation_res = Validator.run filename optimized_ir_filename in
+      AUtil.clean filename;
+      AUtil.clean optimized_ir_filename;
+      (optimization_res, validation_res)
+
+  let evalutate_mutant mutant cov_sofar =
+    let optim_res, _ = measure_optimizer_coverage mutant in
+    match optim_res with
+    | Error _ -> (false, Coverage.empty)
+    | Ok cov_mutant ->
+        (* new edges are discovered? *)
+        let new_points = Coverage.diff cov_mutant cov_sofar in
+        let interesting = not @@ Coverage.is_empty new_points in
+        (interesting, cov_mutant)
+
+  let mutate_seed llctx llset choice seed =
+    let llm = SeedPool.Seed.llmodule seed in
+    let _, _, mutant = Mutation.Mutator.run llctx llm choice in
+    match ALlvm.LLModuleSet.find_opt llset mutant with
+    | Some _ -> None
+    | None ->
+        let new_seed = SeedPool.Seed.make mutant in
+        Some new_seed
+
+  let run pool llctx llset progress =
+    let mutator = mutate_seed llctx llset choice in
+    (* try to make mutants up to [times] times *)
+    let rec generate_mutants times seed =
+      if times = 0 then []
+      else
+        match mutator seed with
+        | Some new_seed -> new_seed :: generate_mutants (times - 1) seed
+        | None -> generate_mutants (times - 1) seed
+    in
+    let rec campaign pool (progress : Progress.t) =
+      let seed, pool_popped = SeedPool.pop pool in
+
+      let mutants = generate_mutants !Config.num_mutant seed in
+
+      let interesting_mutants =
+        mutants
+        |> List.map (fun mutant ->
+               ( mutant,
+                 evalutate_mutant
+                   (SeedPool.Seed.llmodule mutant)
+                   progress.cov_sofar ))
+        |> List.filter (fun (_, (interesting, _)) -> interesting)
+        |> List.map (fun (mutant, (_, cov)) -> (mutant, cov))
+      in
+
+      let new_progress : Progress.t =
+        interesting_mutants
+        |> List.map snd
+        |> List.fold_left
+             (fun prog cov -> prog |> Progress.add_cov cov |> Progress.inc_gen)
+             progress
+      in
+
+      let new_pool =
+        interesting_mutants
+        |> List.map fst
+        |> List.fold_left
+             (fun pool mutant -> SeedPool.push mutant pool)
+             pool_popped
+        |> SeedPool.push seed
+      in
+
+      campaign new_pool new_progress
+    in
+
+    campaign pool progress
 end
