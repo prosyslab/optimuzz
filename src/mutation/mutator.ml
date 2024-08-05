@@ -1458,33 +1458,40 @@ let cut_below llctx llm =
         | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let rec mutate_inner_bb llctx learning opc_tbl llm choice_fn =
-  let mutation = choice_fn () in
-  L.info "mutation: %a" Domain.pp_mutation mutation;
-  (* L.debug "before:\n%s" (string_of_llmodule llm); *)
-  let mutation_result =
-    match mutation with
-    | CREATE -> (None, None, create_rand_instr llctx llm)
-    | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
-    | OPERAND -> (None, None, subst_rand_opd llctx llm)
-    | FLAG -> (None, None, modify_flag llctx llm)
-    | TYPE -> (None, None, change_type llctx llm)
-    | CUT -> (None, None, cut_below llctx llm)
+let mutate_inner_bb llctx learning opc_tbl llm choice_fn =
+  let rec loop times () =
+    if times = 0 then (None, None, None)
+    else
+      let mutation = choice_fn () in
+      L.info "mutation: %a" Domain.pp_mutation mutation;
+      (* L.debug "before:\n%s" (string_of_llmodule llm); *)
+      let mutation_result =
+        match mutation with
+        | CREATE -> (None, None, create_rand_instr llctx llm)
+        | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
+        | OPERAND -> (None, None, subst_rand_opd llctx llm)
+        | FLAG -> (None, None, modify_flag llctx llm)
+        | TYPE -> (None, None, change_type llctx llm)
+        | CUT -> (None, None, cut_below llctx llm)
+      in
+      match mutation_result with
+      | Some opc_old, Some opc_new, Some llm ->
+          L.debug "mutant: %s" (string_of_llmodule llm);
+          let f = choose_function llm in
+          reset_var_names f;
+          (Some opc_old, Some opc_new, Some llm)
+      | _, _, Some llm ->
+          L.debug "mutant: %s" (string_of_llmodule llm);
+          let f = choose_function llm in
+          reset_var_names f;
+          (None, None, Some llm)
+      | _, _, None ->
+          L.debug "None";
+          (* FIXME: possible infinite loop *)
+          loop (times - 1) ()
   in
-  match mutation_result with
-  | Some opc_old, Some opc_new, Some llm ->
-      L.debug "mutant: %s" (string_of_llmodule llm);
-      let f = choose_function llm in
-      reset_var_names f;
-      (Some opc_old, Some opc_new, llm)
-  | _, _, Some llm ->
-      L.debug "mutant: %s" (string_of_llmodule llm);
-      let f = choose_function llm in
-      reset_var_names f;
-      (None, None, llm)
-  | _, _, None ->
-      L.debug "None";
-      mutate_inner_bb llctx learning opc_tbl llm choice_fn
+
+  loop 5 ()
 
 let run llctx llm (choice_fn : unit -> Domain.mutation_t) =
   (* FIXME: parameterize learning system *)

@@ -8,10 +8,13 @@ let choice () =
 let main path save_dir save_name =
   let llctx = Llvm.create_context () in
   match ALlvm.read_ll llctx path with
-  | Ok llm ->
+  | Ok llm -> (
       let _, _, mutant = Mutation.Mutator.run llctx llm choice in
-      let save_path = ALlvm.save_ll save_dir save_name mutant in
-      save_path
+      match mutant with
+      | None -> failwith "Failed to find a proper mutation"
+      | Some mutant ->
+          let save_path = ALlvm.save_ll save_dir save_name mutant in
+          save_path)
   | Error e -> failwith e
 
 let _ =
