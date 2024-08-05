@@ -296,7 +296,8 @@ module UndirectedPool (Seed : D.NAIVE_SEED) : D.UNDIRECTED_SEED_POOL = struct
 
     collect_cleaned_seeds llctx seed_dir
     |> List.map (fun (path, llm) ->
-           L.info "%s -> %010d@." path (ALlvm.hash_llm llm);
+           (* record hash values in the log *)
+           L.info "%s -> %010d" path (ALlvm.hash_llm llm);
            llm)
     |> List.map Seed.make
     |> List.to_seq
