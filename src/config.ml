@@ -178,9 +178,6 @@ module Interests = struct
     interesting_types := !interesting_integer_types @ !interesting_vector_types
 end
 
-(* logging options *)
-let log_time = ref 30
-
 (* whitelist
    refer to: https://llvm.org/docs/Passes.html *)
 let _instCombine = ref true
@@ -264,9 +261,6 @@ let opts =
            | _ -> failwith "Invalid start option"),
          "Start option" ); *)
       ("-record-cov", Arg.Set record_cov, "Recording all coverage");
-      (* logging options *)
-      (* ("-log-time", Arg.Set_int log_time, "Change timestamp interval"); *)
-
       (* gcov whitelist *)
       (* ( "-instcombine",
          Arg.Set _instCombine,
