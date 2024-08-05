@@ -61,14 +61,6 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-(* let record_timestamp cov =
-   (* timestamp *)
-   let now = AUtil.now () in
-   if now - !AUtil.recent_time > !Config.log_time then (
-     AUtil.recent_time := now;
-     F.sprintf "%d %d\n" (now - !AUtil.start_time) (Coverage.cardinal cov)
-     |> output_string AUtil.timestamp_fp) *)
-
 module Make_directed (SeedPool : SD.SEED_POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
@@ -117,31 +109,38 @@ module Make_directed (SeedPool : SD.SEED_POOL) = struct
         let opcode_old, opcode_new, dst =
           Mutation.Mutator.run llctx (Seed.llmodule src) choice
         in
-        match ALlvm.LLModuleSet.find_opt llset dst with
-        | Some _ ->
-            (* duplicate seed *)
-            None
-        | None -> (
-            let parent = ALlvm.hash_llm (Seed.llmodule seed) in
-            match check_mutant dst target_path src progress with
-            | Interesting (is_crash, new_seed, new_progress) ->
-                let llm = Seed.llmodule new_seed in
-                ALlvm.LLModuleSet.add llset llm ();
-                (* update mutation table *)
-                if learning then update_mut_tbl opcode_old opcode_new;
-                let seed_name = Seed.name ~parent new_seed in
-                if is_crash then
-                  ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore
-                else ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
-                Some (new_seed, new_progress)
-            | Not_interesting (is_crash, new_seed) ->
-                let llm = Seed.llmodule new_seed in
-                (if is_crash then
-                   let seed_name = Seed.name ~parent new_seed in
-                   ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore);
-                let new_mutant = Seed.overwrite src llm in
-                traverse (times - 1) new_mutant progress
-            | Invalid -> traverse times src progress)
+        match dst with
+        | None ->
+            (* mutator failed to find a proper mutation *)
+            (* probably there is no chance to find a proper one ... deduct one iteration time *)
+            traverse (times - 1) src progress
+        | Some dst -> (
+            match ALlvm.LLModuleSet.find_opt llset dst with
+            | Some _ ->
+                (* duplicate seed *)
+                None
+            | None -> (
+                let parent = ALlvm.hash_llm (Seed.llmodule seed) in
+                match check_mutant dst target_path src progress with
+                | Interesting (is_crash, new_seed, new_progress) ->
+                    let llm = Seed.llmodule new_seed in
+                    ALlvm.LLModuleSet.add llset llm ();
+                    (* update mutation table *)
+                    if learning then update_mut_tbl opcode_old opcode_new;
+                    let seed_name = Seed.name ~parent new_seed in
+                    if is_crash then
+                      ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore
+                    else
+                      ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
+                    Some (new_seed, new_progress)
+                | Not_interesting (is_crash, new_seed) ->
+                    let llm = Seed.llmodule new_seed in
+                    (if is_crash then
+                       let seed_name = Seed.name ~parent new_seed in
+                       ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore);
+                    let new_mutant = Seed.overwrite src llm in
+                    traverse (times - 1) new_mutant progress
+                | Invalid -> traverse times src progress))
     in
 
     traverse limit seed progress
@@ -234,8 +233,10 @@ module Make_undirected (SeedPool : SD.UNDIRECTED_SEED_POOL) = struct
         (interesting, cov_mutant)
 
   let mutate_seed llctx llset choice seed =
+    let open Util.AUtil in
     let llm = SeedPool.Seed.llmodule seed in
     let _, _, mutant = Mutation.Mutator.run llctx llm choice in
+    let* mutant = mutant in
     match ALlvm.LLModuleSet.find_opt llset mutant with
     | Some _ -> None
     | None ->
