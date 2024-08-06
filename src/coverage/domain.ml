@@ -1,3 +1,5 @@
+module F = Format
+
 (** represents a path in the AST branch tree *)
 module Path : sig
   type t
@@ -94,6 +96,21 @@ module AstCoverage = struct
   let cover_target = mem
 end
 
+module EdgeCoverage = struct
+  include Set.Make (String)
+
+  let read file =
+    let ic = open_in file in
+    let rec aux accu =
+      match input_line ic with
+      | line -> add line accu |> aux
+      | exception End_of_file -> accu
+    in
+    let cov = aux empty in
+    close_in ic;
+    cov
+end
+
 module type Distance = sig
   type t
 
@@ -153,21 +170,6 @@ module MinDistance : Distance with type t = int = struct
   let of_int = Fun.id
 end
 
-module EdgeCoverage = struct
-  include Set.Make (String)
-
-  let read file =
-    let ic = open_in file in
-    let rec aux accu =
-      match input_line ic with
-      | line -> add line accu |> aux
-      | exception End_of_file -> accu
-    in
-    let cov = aux empty in
-    close_in ic;
-    cov
-end
-
 module type COVERAGE = sig
   type t
 
@@ -176,4 +178,30 @@ module type COVERAGE = sig
   val union : t -> t -> t
   val diff : t -> t -> t
   val cardinal : t -> int
+end
+
+module type PROGRESS = sig
+  module Coverage : COVERAGE
+
+  type t = { cov_sofar : Coverage.t; gen_count : int }
+
+  val empty : t
+  val inc_gen : t -> t
+  val add_cov : Coverage.t -> t -> t
+  val pp : Format.formatter -> t -> unit
+end
+
+module Progress (Coverage : COVERAGE) :
+  PROGRESS with module Coverage = Coverage = struct
+  module Coverage = Coverage
+
+  type t = { cov_sofar : Coverage.t; gen_count : int }
+
+  let empty = { cov_sofar = Coverage.empty; gen_count = 0 }
+  let inc_gen p = { p with gen_count = p.gen_count + 1 }
+  let add_cov cov p = { p with cov_sofar = Coverage.union p.cov_sofar cov }
+
+  let pp fmt progress =
+    F.fprintf fmt "generated: %d, coverage: %d" progress.gen_count
+      (Coverage.cardinal progress.cov_sofar)
 end

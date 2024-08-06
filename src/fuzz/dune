@@ -1,6 +1,6 @@
 (library
  (name fuzz)
- (modules fuzzer)
+ (modules fuzzer ast_distance_based edge_cov_based)
  (libraries
   llvm
   llvm.analysis
