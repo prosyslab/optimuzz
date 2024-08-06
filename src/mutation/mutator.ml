@@ -515,58 +515,69 @@ let rec get_cands_for_create loc i cands llm =
     in
     get_cands_for_create loc (i + 1) cands llm
 
-(** [create_rand_instr llctx llm] creates a random instruction. *)
-let create_rand_instr llctx llm =
-  let llm = Llvm_transform_utils.clone_module llm in
-  let f = choose_function llm in
-  let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
-  let loc =
-    all_instrs
-    |> List.filter (fun i ->
-           let opc = instr_opcode i in
-           opc <> PHI && opc <> Call && opc <> Br)
-    |> AUtil.choose_random
-  in
-  L.debug "location: %s" (string_of_llvalue loc);
-  let cands = get_cands_for_create loc 0 [] llm in
-  if cands = [] then None
-  else
-    let idx, opc, opds = AUtil.choose_random cands in
-    L.debug "idx: %s" (string_of_int idx);
-    L.debug "opcode: %s" (string_of_opcode opc);
-    let opd = Candidates.choose opds in
-    L.debug "operand: %s" (string_of_llvalue opd);
-    let ty_dst = type_of (operand loc idx) in
-    let ty_opd = type_of opd in
-    let tycls_opd = classify_type ty_opd in
-    assert (tycls_opd = Integer || tycls_opd = Vector);
-    let new_instr =
-      match OpCls.classify opc with
-      | BINARY ->
-          let opd' = get_rand_opd loc ty_opd llm in
-          create_binary llctx loc opc opd opd'
-      | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
-      | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
-      | VEC ShuffleVector ->
-          if opd |> type_of |> classify_type = Vector then
-            create_rand_shufflevector llctx loc opd llm
-          else (
-            L.debug
-              "ShuffleVector instruction does not require non-vector operands.";
-            L.debug "This mutation will be ignored.";
-            loc)
-      | CAST -> create_cast llctx loc opc opd ty_dst
-      | ICMP ->
-          let cond = OpCls.random_icmp () in
-          let opd' = get_rand_opd loc ty_opd llm in
-          create_icmp llctx loc cond opd opd'
-      | OTHER Select -> create_rand_select llctx loc opd llm
-      | _ -> failwith "NEVER OCCUR"
+(** [create_rand_llv llctx llm] creates a random instruction or gloabl variable. *)
+let create_rand_llv llctx llm =
+  if Random.int 4 = 0 then
+    let ty =
+      AUtil.choose_random
+        (pointer_type llctx :: !Config.Interests.interesting_types)
     in
-    if type_of new_instr == ty_dst then (
-      set_operand loc idx new_instr;
-      Some llm)
-    else None
+    let _ = declare_global ty "" llm in
+    Some llm
+  else
+    let llm = Llvm_transform_utils.clone_module llm in
+    let f = choose_function llm in
+    let all_instrs =
+      fold_left_all_instr (fun accu instr -> instr :: accu) [] f
+    in
+    let loc =
+      all_instrs
+      |> List.filter (fun i ->
+             let opc = instr_opcode i in
+             opc <> PHI && opc <> Call && opc <> Br)
+      |> AUtil.choose_random
+    in
+    L.debug "location: %s" (string_of_llvalue loc);
+    let cands = get_cands_for_create loc 0 [] llm in
+    if cands = [] then None
+    else
+      let idx, opc, opds = AUtil.choose_random cands in
+      L.debug "idx: %s" (string_of_int idx);
+      L.debug "opcode: %s" (string_of_opcode opc);
+      let opd = Candidates.choose opds in
+      L.debug "operand: %s" (string_of_llvalue opd);
+      let ty_dst = type_of (operand loc idx) in
+      let ty_opd = type_of opd in
+      let tycls_opd = classify_type ty_opd in
+      assert (tycls_opd = Integer || tycls_opd = Vector);
+      let new_instr =
+        match OpCls.classify opc with
+        | BINARY ->
+            let opd' = get_rand_opd loc ty_opd llm in
+            create_binary llctx loc opc opd opd'
+        | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
+        | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
+        | VEC ShuffleVector ->
+            if opd |> type_of |> classify_type = Vector then
+              create_rand_shufflevector llctx loc opd llm
+            else (
+              L.debug
+                "ShuffleVector instruction does not require non-vector \
+                 operands.";
+              L.debug "This mutation will be ignored.";
+              loc)
+        | CAST -> create_cast llctx loc opc opd ty_dst
+        | ICMP ->
+            let cond = OpCls.random_icmp () in
+            let opd' = get_rand_opd loc ty_opd llm in
+            create_icmp llctx loc cond opd opd'
+        | OTHER Select -> create_rand_select llctx loc opd llm
+        | _ -> failwith "NEVER OCCUR"
+      in
+      if type_of new_instr == ty_dst then (
+        set_operand loc idx new_instr;
+        Some llm)
+      else None
 
 (** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
@@ -1468,7 +1479,7 @@ let mutate_inner_bb times llctx learning opc_tbl llm choice_fn =
       (* L.debug "before:\n%s" (string_of_llmodule llm); *)
       let mutation_result =
         match mutation with
-        | CREATE -> (None, None, create_rand_instr llctx llm)
+        | CREATE -> (None, None, create_rand_llv llctx llm)
         | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
         | OPERAND -> (None, None, subst_rand_opd llctx llm)
         | FLAG -> (None, None, modify_flag llctx llm)

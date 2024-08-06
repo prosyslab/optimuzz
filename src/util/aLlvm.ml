@@ -367,6 +367,8 @@ let replace_hard before after =
   replace_all_uses_with before after;
   delete_instruction before
 
+let num_globals llm = fold_left_globals (fun n _ -> n + 1) 0 llm
+
 (* OpcodeClass.t follows classification of LLVM language reference:
    https://llvm.org/docs/LangRef.html *)
 module OpcodeClass = struct
