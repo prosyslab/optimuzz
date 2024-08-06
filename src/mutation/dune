@@ -1,8 +1,3 @@
-(executable
- (name driver)
- (modules driver)
- (libraries util mutation))
-
 (library
  (name mutation)
  (modules mutator domain)
