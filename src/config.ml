@@ -72,21 +72,25 @@ let string_of_level = function
 let time_budget = ref (-1)
 
 module Mode = struct
-  type t = Blackbox | Greybox | Directed of string
+  type t = Blackbox | Greybox | Directed of string * int
 
   let string_of = function
     | Blackbox -> "blackbox"
     | Greybox -> "greybox"
-    | Directed s -> "directed: " ^ s
+    | Directed (file, lineno) ->
+        "directed: " ^ file ^ ":" ^ string_of_int lineno
 
   let of_string s =
     match s with
     | "blackbox" -> Blackbox
     | "greybox" -> Greybox
     | _ ->
-        (* if starts with directed: *)
+        (* direct option is of form `directed:file:lineno` *)
         if String.length s >= 9 && String.sub s 0 9 = "directed:" then
-          Directed (String.sub s 9 (String.length s - 9))
+          let target = String.split_on_char ':' s |> List.tl in
+          let target_file = target |> List.hd in
+          let target_line = target |> List.tl |> List.hd in
+          Directed (target_file, int_of_string target_line)
         else failwith "Invalid mode"
 end
 
@@ -194,7 +198,7 @@ let fuzzing_opts =
   [
     ( "-mode",
       Arg.String (fun s -> mode := Mode.of_string s),
-      "(blackbox, greybox, directed:<path>)" );
+      "(blackbox, greybox, directed:<file>:<lineno>)" );
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ("-no-tv", Arg.Set no_tv, "Turn off translation validation");

@@ -1459,6 +1459,7 @@ let cut_below llctx llm =
 
 (* inner-basicblock mutation (independent of block CFG) *)
 let mutate_inner_bb llctx learning opc_tbl llm choice_fn =
+  (* allow up to [times] times to find a proper mutation *)
   let rec loop times () =
     if times = 0 then (None, None, None)
     else
@@ -1487,7 +1488,6 @@ let mutate_inner_bb llctx learning opc_tbl llm choice_fn =
           (None, None, Some llm)
       | _, _, None ->
           L.debug "None";
-          (* FIXME: possible infinite loop *)
           loop (times - 1) ()
   in
 

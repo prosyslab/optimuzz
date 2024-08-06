@@ -27,34 +27,6 @@ module type NAIVE_SEED = sig
   val llmodule : t -> Llvm.llmodule
 end
 
-module type SEED = sig
-  module Distance : CD.Distance
-
-  type t
-
-  include SEED_PRINTER with type t := t
-  include SEED_MEASURE with type t := t with module Distance := Distance
-
-  val make : Llvm.llmodule -> CD.Path.t -> CD.AstCoverage.t -> t
-  val llmodule : t -> Llvm.llmodule
-  val overwrite : t -> Llvm.llmodule -> t
-end
-
-module type PRIORITY_SEED = sig
-  module Distance : CD.Distance
-
-  type t
-
-  include SEED_PRINTER with type t := t
-  include SEED_MEASURE with type t := t with module Distance := Distance
-
-  val make : Llvm.llmodule -> CD.Path.t -> CD.AstCoverage.t -> t
-  val priority : t -> int
-  val inc_priority : t -> t
-  val llmodule : t -> Llvm.llmodule
-  val overwrite : t -> Llvm.llmodule -> t
-end
-
 module type QUEUE = sig
   type elt
   type t
@@ -70,20 +42,6 @@ module type QUEUE = sig
   val pop : t -> elt * t
   val length : t -> int
   val iter : (elt -> unit) -> t -> unit
-end
-
-module type SEED_POOL = sig
-  module Seed : SEED
-  include QUEUE with type elt = Seed.t
-
-  val make : Llvm.llcontext -> CD.Path.t -> t
-end
-
-module type UNDIRECTED_SEED_POOL = sig
-  module Seed : NAIVE_SEED
-  include QUEUE with type elt = Seed.t
-
-  val make : Llvm.llcontext -> t
 end
 
 module DistancedSeed (Distance : CD.Distance) = struct
@@ -141,8 +99,8 @@ module PriorityDistancedSeed (Dist : CD.Distance) = struct
   let closer old_seed new_seed = Seed.closer (snd old_seed) (snd new_seed)
 end
 
-(** Seed configuration unaware of directed fuzzing.
-    It does not contain (covers, score) which is used for guiding input generation *)
+(** Seed configuration unaware of ast-distance based directed fuzzing.
+    It only contains llvm module data *)
 module NaiveSeed = struct
   type t = Llvm.llmodule
 
