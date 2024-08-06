@@ -13,6 +13,16 @@ let pp_mutation fmt m =
   | TYPE -> Format.fprintf fmt "TYPE"
   | CUT -> Format.fprintf fmt "CUT"
 
+let mutation_of_string s =
+  match s with
+  | "CREATE" -> CREATE
+  | "OPCODE" -> OPCODE
+  | "OPERAND" -> OPERAND
+  | "FLAG" -> FLAG
+  | "TYPE" -> TYPE
+  | "CUT" -> CUT
+  | _ -> failwith "Unreachable"
+
 let uniform_mutations =
   [ (CREATE, 1); (OPCODE, 1); (OPERAND, 1); (FLAG, 1); (TYPE, 1); (CUT, 1) ]
   |> List.map (fun (m, p) -> List.init p (Fun.const m))

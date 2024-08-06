@@ -17,3 +17,8 @@
  (name clean)
  (modules clean)
  (libraries seedcorpus util))
+
+(executable
+ (name llmutate)
+ (modules llmutate)
+ (libraries mutation util))

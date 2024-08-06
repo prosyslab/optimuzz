@@ -1458,7 +1458,7 @@ let cut_below llctx llm =
         | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let mutate_inner_bb llctx learning opc_tbl llm choice_fn =
+let mutate_inner_bb times llctx learning opc_tbl llm choice_fn =
   (* allow up to [times] times to find a proper mutation *)
   let rec loop times () =
     if times = 0 then (None, None, None)
@@ -1491,8 +1491,8 @@ let mutate_inner_bb llctx learning opc_tbl llm choice_fn =
           loop (times - 1) ()
   in
 
-  loop 5 ()
+  loop times ()
 
-let run llctx llm (choice_fn : unit -> Domain.mutation_t) =
+let run ?(times = 5) llctx llm (choice_fn : unit -> Domain.mutation_t) =
   (* FIXME: parameterize learning system *)
-  mutate_inner_bb llctx false Domain.OpcodeMap.empty llm choice_fn
+  mutate_inner_bb times llctx false Domain.OpcodeMap.empty llm choice_fn
