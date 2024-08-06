@@ -36,7 +36,7 @@ let _ =
   Printexc.record_backtrace true;
   Random.self_init ();
   if Array.length Sys.argv < 4 then (
-    Format.eprintf "Usage: llmutate <path> <save_dir> <save_name>";
+    Format.eprintf "Usage: llmutate <filename> <save_dir> <save_name>";
     exit 0);
 
   Arg.parse opts (fun _ -> ()) "";
@@ -44,8 +44,8 @@ let _ =
   L.from_channel stdout;
   L.set_level L.DEBUG;
 
-  let path = Sys.argv.(1) in
+  let filename = Sys.argv.(1) in
   let save_dir = Sys.argv.(2) in
-  let save_name = Sys.argv.(3) in
-  let save_path = main path save_dir save_name in
+  let save_name = Sys.argv.(3) |> Filename.basename in
+  let save_path = main filename save_dir save_name in
   print_endline save_path

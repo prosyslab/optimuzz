@@ -12,6 +12,7 @@ let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "crash"
 let corpus_dir = ref "corpus"
+let muts_dir = ref "muts"
 let cov_file = ref "cov.cov"
 let gcov_dir = ref "gcov"
 let json_file = ref "cov.json"
@@ -336,7 +337,7 @@ let init_gcov_list () =
   |> fun x -> gcov_list := x
 
 type dependencies = { opt : string; alive_tv : string }
-type output = { out : string; crash : string; corpus : string }
+type output = { out : string; crash : string; corpus : string; muts : string }
 
 let lookup_dependencies cwd =
   let opt = Filename.concat cwd !opt_bin in
@@ -356,6 +357,8 @@ let setup_output cwd out_dir =
   let crash = Filename.concat out !crash_dir in
   (* cwd / llfuzz-out / corpus *)
   let corpus = Filename.concat out !corpus_dir in
+  (* cwd / llfuzz-out / corpus *)
+  let muts = Filename.concat out "muts" in
 
   if
     !seedpool_option <> Resume
@@ -368,8 +371,9 @@ let setup_output cwd out_dir =
   (try Sys.mkdir out 0o755 with _ -> ());
   (try Sys.mkdir crash 0o755 with _ -> ());
   (try Sys.mkdir corpus 0o755 with _ -> ());
+  (try Sys.mkdir muts 0o755 with _ -> ());
 
-  { out; crash; corpus }
+  { out; crash; corpus; muts }
 
 let log_options opts =
   opts
@@ -415,10 +419,11 @@ let initialize llctx () =
   opt_bin := opt;
   alive_tv_bin := alive_tv;
 
-  let { out; crash; corpus } = setup_output cwd !out_dir in
+  let { out; crash; corpus; muts } = setup_output cwd !out_dir in
   out_dir := out;
   crash_dir := crash;
   corpus_dir := corpus;
+  muts_dir := muts;
 
   L.from_file (Filename.concat !out_dir "fuzz.log");
   L.set_level !log_level;

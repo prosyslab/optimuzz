@@ -49,19 +49,33 @@ let evalutate_mutant mutant cov_sofar =
       let interesting = not @@ Coverage.is_empty new_points in
       (interesting, cov_mutant)
 
-let mutate_seed llctx llset choice seed =
+let mutate_seed llctx llset seed =
   let open Util.AUtil in
-  let llm = SeedPool.Seed.llmodule seed in
-  let _, _, mutant = Mutation.Mutator.run llctx llm choice in
-  let* mutant = mutant in
-  match ALlvm.LLModuleSet.find_opt llset mutant with
-  | Some _ -> None
-  | None ->
-      let new_seed = SeedPool.Seed.make mutant in
-      Some new_seed
+  let muts = !Config.muts_dir in
+  let seed_filename =
+    ALlvm.save_ll muts (F.sprintf "id:%010d.ll" (ALlvm.hash_llm seed)) seed
+  in
+  let mut_filename = Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" in
+  cmd [ "./llmutate"; seed_filename; muts; mut_filename ] |> ignore;
+
+  let mutant = ALlvm.read_ll llctx (Filename.concat muts mut_filename) in
+  match mutant with
+  | Ok mutant ->
+      if ALlvm.LLModuleSet.mem llset mutant then None
+      else Some (SeedPool.Seed.make mutant)
+  | Error _ -> None
+(*
+   let llm = SeedPool.Seed.llmodule seed in
+   let _, _, mutant = Mutation.Mutator.run llctx llm choice in
+   let* mutant = mutant in
+   match ALlvm.LLModuleSet.find_opt llset mutant with
+   | Some _ -> None
+   | None ->
+       let new_seed = SeedPool.Seed.make mutant in
+       Some new_seed *)
 
 let run pool llctx llset progress =
-  let mutator = mutate_seed llctx llset choice in
+  let mutator = mutate_seed llctx llset in
   (* try to make mutants up to [times] times *)
   let rec generate_mutants times seed =
     if times = 0 then []
