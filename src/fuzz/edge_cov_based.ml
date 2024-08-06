@@ -58,7 +58,7 @@ let mutate_seed llctx llset seed =
   let mut_filename = Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" in
   cmd [ "./llmutate"; seed_filename; muts; mut_filename ] |> ignore;
 
-  let mutant = ALlvm.read_ll llctx (Filename.concat muts mut_filename) in
+  let mutant = ALlvm.read_ll llctx mut_filename in
   match mutant with
   | Ok mutant ->
       if ALlvm.LLModuleSet.mem llset mutant then None
