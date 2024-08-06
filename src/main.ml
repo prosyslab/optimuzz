@@ -88,26 +88,27 @@ let llfuzz_edge_cov_based () =
 let _ =
   initialize ();
   match !Config.mode with
-  (* | Directed (file, lineno) -> (
+  | Config.Mode.Ast_distance_based s -> (
       F.printf "direct mode@.";
       let target_path = CD.Path.parse s |> Option.get in
+      let module SA = Seedcorpus.Ast_distance_based in
       match (!Config.metric, !Config.queue) with
       | Config.Min_metric, Config.Fifo_queue ->
           let module MinFifoPool =
-            SP.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
-          llfuzz (module MinFifoPool) target_path
+            SA.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
+          llfuzz_ast_distanced_based (module MinFifoPool) target_path
       | Config.Min_metric, Config.Priority_queue ->
           let module MinPriorityPool =
-            SP.PrioritySeedPool (SD.PriorityDistancedSeed (CD.MinDistance)) in
-          llfuzz (module MinPriorityPool) target_path
+            SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.MinDistance)) in
+          llfuzz_ast_distanced_based (module MinPriorityPool) target_path
       | Config.Avg_metric, Config.Fifo_queue ->
           let module AvgFifoPool =
-            SP.FifoSeedPool (SD.DistancedSeed (CD.AverageDistance)) in
-          llfuzz (module AvgFifoPool) target_path
+            SA.FifoSeedPool (SD.DistancedSeed (CD.AverageDistance)) in
+          llfuzz_ast_distanced_based (module AvgFifoPool) target_path
       | Config.Avg_metric, Config.Priority_queue ->
           let module AvgPriorityPool =
-            SP.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
-          llfuzz (module AvgPriorityPool) target_path) *)
+            SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
+          llfuzz_ast_distanced_based (module AvgPriorityPool) target_path)
   | Greybox ->
       F.printf "greybox mode@.";
       llfuzz_edge_cov_based ()

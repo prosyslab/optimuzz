@@ -101,8 +101,8 @@ module Make_priority_queue (S : DISTANCED_PRIORITY_SEED) :
   let iter = AUtil.PrioQueue.iter
 end
 
-module Make_fifo_queue (S : DISTANCED_PRIORITY_SEED) :
-  D.QUEUE with type elt = S.t = struct
+module Make_fifo_queue (S : DISTANCED_SEED) : D.QUEUE with type elt = S.t =
+struct
   type elt = S.t
   type t = elt Queue.t
 
@@ -118,7 +118,7 @@ module Make_fifo_queue (S : DISTANCED_PRIORITY_SEED) :
   let iter = Queue.iter
 end
 
-module FifoSeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
+module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
   module Seed = Seed
   include Make_fifo_queue (Seed)
   module Opt = Oracle.Optimizer (Coverage)

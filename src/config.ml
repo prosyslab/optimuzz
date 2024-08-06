@@ -73,26 +73,33 @@ let string_of_level = function
 let time_budget = ref (-1)
 
 module Mode = struct
-  type t = Blackbox | Greybox | Directed of string * int
+  type t =
+    | Blackbox
+    | Greybox
+    | Directed of string * int
+    | Ast_distance_based of string
 
   let string_of = function
     | Blackbox -> "blackbox"
     | Greybox -> "greybox"
     | Directed (file, lineno) ->
         "directed: " ^ file ^ ":" ^ string_of_int lineno
+    | Ast_distance_based path -> "ast-distance-based:" ^ path
 
   let of_string s =
     match s with
     | "blackbox" -> Blackbox
     | "greybox" -> Greybox
-    | _ ->
+    | _ when String.length s >= 9 && String.sub s 0 9 = "directed:" ->
         (* direct option is of form `directed:file:lineno` *)
-        if String.length s >= 9 && String.sub s 0 9 = "directed:" then
-          let target = String.split_on_char ':' s |> List.tl in
-          let target_file = target |> List.hd in
-          let target_line = target |> List.tl |> List.hd in
-          Directed (target_file, int_of_string target_line)
-        else failwith "Invalid mode"
+        let target = String.split_on_char ':' s |> List.tl in
+        let target_file = target |> List.hd in
+        let target_line = target |> List.tl |> List.hd in
+        Directed (target_file, int_of_string target_line)
+    | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance-based:"
+      ->
+        Ast_distance_based (String.sub s 19 (String.length s - 19))
+    | _ -> failwith "Invalid mode"
 end
 
 let mode = ref Mode.Blackbox
