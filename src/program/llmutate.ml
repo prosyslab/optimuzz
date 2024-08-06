@@ -21,6 +21,7 @@ let choice () =
 
 let main path save_dir save_name =
   let llctx = Llvm.create_context () in
+  Config.Interests.set_interesting_types llctx;
   match ALlvm.read_ll llctx path with
   | Ok llm -> (
       let _, _, mutant = Mutation.Mutator.run ~times:10 llctx llm choice in
@@ -41,6 +42,7 @@ let _ =
   Arg.parse opts (fun _ -> ()) "";
 
   L.from_channel stdout;
+  L.set_level L.DEBUG;
 
   let path = Sys.argv.(1) in
   let save_dir = Sys.argv.(2) in
