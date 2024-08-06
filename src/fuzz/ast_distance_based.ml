@@ -24,6 +24,11 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
   module Progress = CD.Progress (Coverage)
   module Opt = Oracle.Optimizer (Coverage)
 
+  let choice seed () =
+    let mode = if Seed.covers seed then MD.FOCUS else EXPAND in
+    let score = Seed.score seed |> Seed.Distance.to_int in
+    Mutation.Mutator.choose_mutation mode score
+
   let measure_optimizer_coverage llm =
     let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
     let filename = ALlvm.save_ll !Config.out_dir filename llm in
@@ -87,13 +92,8 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
         ALlvm.LLModuleSet.add llset llm ();
         None)
       else
-        let choice () =
-          let mode = if Seed.covers src then MD.FOCUS else EXPAND in
-          let score = Seed.score src |> Seed.Distance.to_int in
-          Mutation.Mutator.choose_mutation mode score
-        in
         let opcode_old, opcode_new, dst =
-          Mutation.Mutator.run llctx (Seed.llmodule src) choice
+          Mutation.Mutator.run llctx (Seed.llmodule src) (choice src)
         in
         match dst with
         | None ->
