@@ -84,7 +84,7 @@ module Mode = struct
     | Greybox -> "greybox"
     | Directed (file, lineno) ->
         "directed: " ^ file ^ ":" ^ string_of_int lineno
-    | Ast_distance_based path -> "ast-distance-based:" ^ path
+    | Ast_distance_based path -> "ast-distance:" ^ path
 
   let of_string s =
     match s with
@@ -96,8 +96,7 @@ module Mode = struct
         let target_file = target |> List.hd in
         let target_line = target |> List.tl |> List.hd in
         Directed (target_file, int_of_string target_line)
-    | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance-based:"
-      ->
+    | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance:" ->
         Ast_distance_based (String.sub s 19 (String.length s - 19))
     | _ -> failwith "Invalid mode"
 end
