@@ -23,6 +23,9 @@ let choose_mutation mode score =
 let create_binary llctx loc opcode o0 o1 =
   (OpCls.build_binary opcode) o0 o1 (builder_before llctx loc)
 
+let create_fbinary llctx loc opcode o0 o1 =
+  (OpCls.build_fbinary opcode) o0 o1 (builder_before llctx loc)
+
 let create_cast llctx loc opcode o ty =
   (OpCls.build_cast opcode) o ty (builder_before llctx loc)
 
@@ -41,6 +44,15 @@ let binary_exchange_operands llctx instr =
   replace_hard instr new_instr;
   new_instr
 
+let fbinary_exchange_operands llctx instr =
+  assert (OpCls.opcls_of instr = FBINARY);
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let loc = instr in
+  let new_instr = create_fbinary llctx loc (instr_opcode instr) right left in
+  replace_hard instr new_instr;
+  new_instr
+
 (* subst_[CLASS] llctx instr [args]+ substitutes the instruction [instr]
    into another possible instruction, with the same operands,
    without any extra keywords. Returns the new instruction. *)
@@ -49,6 +61,13 @@ let subst_binary llctx instr opcode =
   let left = operand instr 0 in
   let right = operand instr 1 in
   let new_instr = create_binary llctx instr opcode left right in
+  replace_hard instr new_instr;
+  new_instr
+
+let subst_fbinary llctx instr opcode =
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let new_instr = create_fbinary llctx instr opcode left right in
   replace_hard instr new_instr;
   new_instr
 
@@ -119,6 +138,15 @@ let unwrap_interest_int ty v =
   | Config.Interests.Normal i -> const_int_of_string ty i 10
   | Undef -> undef ty
   | Poison -> poison ty
+  | Float _ -> failwith "cannot unwrap floating point"
+
+let unwrap_interest_float ty v =
+  assert (classify_type ty != Integer);
+  match v with
+  | Config.Interests.Float fl -> const_float ty fl
+  | Undef -> undef ty
+  | Poison -> poison ty
+  | Normal _ -> failwith "cannot unwrap floating point"
 
 let unwrap_interest_vec ty v =
   assert (classify_type ty = Vector);
@@ -135,6 +163,11 @@ let get_rand_const ty =
       !Config.Interests.interesting_integers
       |> AUtil.choose_random
       |> unwrap_interest_int ty
+  (* | Half *)
+  | Float | Double | Fp128 ->
+      !Config.Interests.interesting_floats
+      |> AUtil.choose_random
+      |> unwrap_interest_float ty
   | Vector ->
       let l =
         List.filter
@@ -167,6 +200,8 @@ let get_opd_cands loc ty llm : Candidates.t =
     match classify_type ty with
     | Integer ->
         List.map (unwrap_interest_int ty) !Config.Interests.interesting_integers
+    | Float | Double | Fp128 ->
+        List.map (unwrap_interest_float ty) !Config.Interests.interesting_floats
     | Vector ->
         List.filter
           (fun v -> Array.length v = vector_size ty)
@@ -428,7 +463,8 @@ let create_rand_select llctx loc opd llm =
   let builder = builder_before llctx loc in
   let ty_opd = type_of opd in
   let tycls_opd = classify_type ty_opd in
-  assert (tycls_opd = Integer || tycls_opd = Vector);
+
+  (* assert (tycls_opd = Integer || tycls_opd = Vector); *)
 
   (* if opd is i1 or <n x i1>, it can be used as condition *)
   let use_opd_as_cond =
@@ -443,10 +479,9 @@ let create_rand_select llctx loc opd llm =
     |> Candidates.flatten
     |> List.filter (fun v ->
            let ty_v = type_of v in
-           if tycls_opd = Integer then classify_type ty_v = Integer
-           else
-             classify_type ty_v = Vector
-             && vector_size ty_opd = vector_size ty_v)
+           match (tycls_opd, classify_type ty_v) with
+           | Vector, Vector -> vector_size ty_opd = vector_size ty_v
+           | ty1, ty2 -> ty1 = ty2)
   in
 
   let aux cands =
@@ -463,8 +498,9 @@ let create_rand_select llctx loc opd llm =
     let () = L.debug "create_rand_select: use the operand as term" in
     let opd' = aux (List.filter (fun v -> type_of v = ty_opd) llvs_same_size) in
     let ty_i1 =
-      if tycls_opd = Integer then i1_type llctx
-      else vector_type (i1_type llctx) (vector_size ty_opd)
+      if tycls_opd = Vector then
+        vector_type (i1_type llctx) (vector_size ty_opd)
+      else i1_type llctx
     in
     let llvs_i1 = List.filter (fun v -> type_of v = ty_i1) llvs_same_size in
     let cond =
@@ -480,21 +516,25 @@ let rec get_cands_for_create loc i cands llm =
     let dst = operand loc i in
     let dst_ty = type_of dst in
     let opc =
-      (if classify_type dst_ty = Vector then
-         List.flatten
-           [
-             [ Opcode.ICmp; Select ];
-             Array.to_list OpCls.binary_arr;
-             Array.to_list OpCls.vec_arr;
-             Array.to_list OpCls.cast_arr;
-           ]
-       else
-         List.flatten
-           [
-             [ Opcode.ICmp; Select ];
-             Array.to_list OpCls.binary_arr;
-             Array.to_list OpCls.cast_arr;
-           ])
+      (match classify_type dst_ty with
+      | Vector ->
+          List.flatten
+            [
+              [ Opcode.ICmp; Select ];
+              Array.to_list OpCls.binary_arr;
+              Array.to_list OpCls.vec_arr;
+              Array.to_list OpCls.cast_arr;
+            ]
+      | Integer ->
+          List.flatten
+            [
+              [ Opcode.ICmp; Select ];
+              Array.to_list OpCls.binary_arr;
+              Array.to_list OpCls.cast_arr;
+            ]
+      | Float | Double | Fp128 ->
+          List.flatten [ [ Opcode.Select ]; Array.to_list OpCls.fbinary_arr ]
+      | _ -> failwith "unsupported type for create llv")
       |> AUtil.choose_random
     in
     let opds =
@@ -517,11 +557,8 @@ let rec get_cands_for_create loc i cands llm =
 
 (** [create_rand_llv llctx llm] creates a random instruction or gloabl variable. *)
 let create_rand_llv llctx llm =
-  if Random.int 4 = 0 then
-    let ty =
-      AUtil.choose_random
-        (pointer_type llctx :: !Config.Interests.interesting_types)
-    in
+  if Random.int 8 = 0 then
+    let ty = AUtil.choose_random !Config.Interests.interesting_types in
     let _ = declare_global ty "" llm in
     Some llm
   else
@@ -548,13 +585,14 @@ let create_rand_llv llctx llm =
       L.debug "operand: %s" (string_of_llvalue opd);
       let ty_dst = type_of (operand loc idx) in
       let ty_opd = type_of opd in
-      let tycls_opd = classify_type ty_opd in
-      assert (tycls_opd = Integer || tycls_opd = Vector);
       let new_instr =
         match OpCls.classify opc with
         | BINARY ->
             let opd' = get_rand_opd loc ty_opd llm in
             create_binary llctx loc opc opd opd'
+        | FBINARY ->
+            let opd' = get_rand_opd loc ty_opd llm in
+            create_fbinary llctx loc opc opd opd'
         | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
         | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
         | VEC ShuffleVector ->
@@ -592,6 +630,7 @@ let subst_rand_instr llctx learning opc_tbl llm =
   let is_tgt i =
     match OpCls.opcls_of i with
     | BINARY -> true
+    | FBINARY -> true
     | CAST -> instr_opcode i <> Trunc && instr_opcode i <> BitCast
     | ICMP -> true
     | _ -> false
@@ -615,6 +654,18 @@ let subst_rand_instr llctx learning opc_tbl llm =
         else (
           L.debug "opc_new: %s" (string_of_opcode opc_new);
           subst_binary llctx instr opc_new |> ignore;
+          (Some (Domain.OTHER opc_old), Some (Domain.OTHER opc_new), Some llm))
+    | FBINARY ->
+        let opc_new =
+          if learning then
+            let w_map = Domain.OpcodeMap.get (Domain.OTHER opc_old) opc_tbl in
+            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
+          else OpCls.random_fbinary_except opc_old
+        in
+        if opc_old = opc_new then (None, None, None)
+        else (
+          L.debug "opc_new: %s" (string_of_opcode opc_new);
+          subst_fbinary llctx instr opc_new |> ignore;
           (Some (Domain.OTHER opc_old), Some (Domain.OTHER opc_new), Some llm))
     | CAST ->
         let opc_new =
@@ -679,15 +730,7 @@ let subst_rand_opd llctx llm =
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
 
   (* choose target instruction, possible opcls are:
-     BINARY, CAST(Ext), ICMP *)
-  (* let is_tgt i = match OpCls.opcls_of i with TER _ -> false | _ -> true in
-     let cands_instr = List.filter is_tgt all_instrs in
-
-     let cands =
-       cands_instr
-       |> List.map (fun instr -> (instr, invest_opd_alts instr))
-       |> List.filter (fun (_, alts) -> alts <> [])
-     in *)
+     BINARY, FBINARY, CAST(Ext), ICMP *)
   let cands =
     all_instrs
     |> List.map (fun instr -> (instr, invest_opd_alts instr llm))
@@ -699,7 +742,10 @@ let subst_rand_opd llctx llm =
     L.debug "instr: %s" (string_of_llvalue instr);
     if is_noncommutative_binary instr && AUtil.rand_bool () then (
       L.debug "exchange two operands";
-      binary_exchange_operands llctx instr |> ignore;
+      (match instr |> instr_opcode |> OpcodeClass.classify with
+      | BINARY -> binary_exchange_operands llctx instr |> ignore
+      | FBINARY -> binary_exchange_operands llctx instr |> ignore
+      | _ -> failwith "opcode is not binary or fbinary");
       Some llm)
     else
       let alt = AUtil.choose_random alts in
@@ -809,7 +855,7 @@ and trav_llvs_used_by_curr curr ty_new accu =
       | CAST when opc = BitCast ->
           if check_cast_ty opc ty_new curr then accu else Retry
       | CAST -> trav_cast (operand curr 0) ty_new accu
-      | BINARY ->
+      | BINARY | FBINARY ->
           let opd0 = operand curr 0 in
           let opd1 = operand curr 1 in
           accu
@@ -867,7 +913,8 @@ and trav_llvs_using_curr curr ty_new accu =
             collect_ty_changing_llvs user ty_new accu
           else Retry
       | CAST -> trav_cast user ty_new accu
-      | BINARY | OTHER PHI -> collect_ty_changing_llvs user ty_new accu
+      | BINARY | FBINARY | OTHER PHI ->
+          collect_ty_changing_llvs user ty_new accu
       | OTHER Select ->
           let cond = operand user 0 in
           if cond = curr && ty_new <> type_of cond then Impossible
@@ -980,11 +1027,25 @@ let migrate_const_int llv_old ty_new =
   else if is_poison llv_old then poison ty_new
   else const_int_of_string ty_new (llv_old |> string_of_constint) 10
 
+let migrate_const_float llv_old ty_new =
+  assert (is_constant llv_old);
+  if is_undef llv_old then undef ty_new
+  else if is_poison llv_old then poison ty_new
+  else
+    match llv_old |> float_of_const with
+    | Some fl -> const_float ty_new fl
+    | None ->
+        failwith
+          (Printf.sprintf "Unsupported type migration (%s)"
+             (string_of_llvalue llv_old))
+
 let migrate_const llv_old ty_new =
   assert (is_constant llv_old);
   match (llv_old |> type_of |> classify_type, classify_type ty_new) with
   | Pointer, Pointer -> const_null ty_new
   | Integer, Integer -> migrate_const_int llv_old ty_new
+  | ft1, ft2 when is_realtype ft1 && is_realtype ft2 ->
+      migrate_const_float llv_old ty_new
   | Integer, Vector ->
       let el_ty = element_type ty_new in
       let vec_size = vector_size ty_new in
@@ -1055,6 +1116,38 @@ let migrate_binary builder instr_old typemap link_v =
         (opd0, opd1)
   in
   OpCls.build_binary opc opd0 opd1 builder
+
+let migrate_fbinary builder instr_old typemap link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  let opc = instr_opcode instr_old in
+
+  let opd0, opd1 =
+    match (is_constant opd0, is_constant opd1) with
+    | true, true -> (
+        match LLVMap.find_opt instr_old typemap with
+        | Some ty_new ->
+            let opd0 = migrate_to_other_ty opd0 ty_new link_v in
+            let opd1 = migrate_to_other_ty opd1 ty_new link_v in
+            (opd0, opd1)
+        | None ->
+            let opd0 = migrate_self opd0 link_v in
+            let opd1 = migrate_self opd1 link_v in
+            (opd0, opd1))
+    | true, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd0 = migrate_to_other_ty opd0 (type_of opd1) link_v in
+        (opd0, opd1)
+    | false, true ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
+        (opd0, opd1)
+    | false, false ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_self opd1 link_v in
+        (opd0, opd1)
+  in
+  OpCls.build_fbinary opc opd0 opd1 builder
 
 let migrate_extractelement builder instr_old link_v =
   let opd0 = operand instr_old 0 in
@@ -1229,6 +1322,7 @@ let migrate_instr builder instr_old typemap link_v link_b =
     match OpCls.opcls_of instr_old with
     | TER _ -> migrate_ter builder instr_old link_v link_b
     | BINARY -> migrate_binary builder instr_old typemap link_v
+    | FBINARY -> migrate_fbinary builder instr_old typemap link_v
     | VEC _ -> migrate_vec builder instr_old typemap link_v
     | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
@@ -1358,7 +1452,12 @@ let change_type llctx llm =
     (* decide type *)
     let ty_old = type_of target in
     let rec loop i =
-      let ty_new = AUtil.choose_random !Config.Interests.interesting_types in
+      let ty_new =
+        if ty_old |> classify_type |> is_realtype then
+          AUtil.choose_random !Config.Interests.interesting_float_types
+        else
+          AUtil.choose_random !Config.Interests.interesting_integer_vector_types
+      in
       L.debug "checking %s as new type..." (string_of_lltype ty_new);
       if i = 10 then None
       else if ty_old = ty_new then loop (i + 1)

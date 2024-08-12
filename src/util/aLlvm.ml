@@ -256,6 +256,12 @@ let is_assignment = function
       true
   | _ -> false
 
+let is_realtype typekind =
+  match typekind with
+  | TypeKind.Float | Double | X86fp80 | Fp128 -> true
+  | Half | Ppc_fp128 -> false (*TODO: support*)
+  | _ -> false
+
 let is_noncommutative_binary instr =
   match Llvm.instr_opcode instr with
   | Llvm.Opcode.Sub | FSub | UDiv | SDiv | FDiv | URem | SRem | FRem -> true
@@ -376,6 +382,7 @@ module OpcodeClass = struct
   type t =
     | TER of Opcode.t
     | BINARY
+    | FBINARY
     | VEC of Opcode.t
     | MEM of Opcode.t
     | CAST
@@ -402,6 +409,7 @@ module OpcodeClass = struct
       Xor;
     |]
 
+  let fbinary_arr = [| Opcode.FAdd; FSub; FMul; FDiv; FRem |]
   let vec_arr = [| Opcode.ExtractElement; InsertElement; ShuffleVector |]
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
@@ -413,7 +421,16 @@ module OpcodeClass = struct
 
   let total_arr =
     Array.concat
-      [ ter_arr; binary_arr; vec_arr; mem_arr; cast_arr; icmp_arr; other_arr ]
+      [
+        ter_arr;
+        binary_arr;
+        fbinary_arr;
+        vec_arr;
+        mem_arr;
+        cast_arr;
+        icmp_arr;
+        other_arr;
+      ]
 
   let classify opc =
     match opc with
@@ -421,6 +438,7 @@ module OpcodeClass = struct
     | Add | Sub | Mul | UDiv | SDiv | URem | SRem | Shl | LShr | AShr | And | Or
     | Xor ->
         BINARY
+    | FAdd | FSub | FMul | FDiv | FRem -> FBINARY
     | ExtractElement | InsertElement | ShuffleVector -> VEC opc
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt | BitCast -> CAST
@@ -437,6 +455,7 @@ module OpcodeClass = struct
       except [opcode]. *)
   let random_binary_except opcode = AUtil.arr_random_except binary_arr opcode
 
+  let random_fbinary_except opcode = AUtil.arr_random_except fbinary_arr opcode
   let random_icmp () = AUtil.choose_arr icmp_kind
   let random_icmp_except opcode = AUtil.arr_random_except icmp_kind opcode
 
@@ -458,6 +477,16 @@ module OpcodeClass = struct
     | _ -> invalid_arg (string_of_opcode opc ^ " is not a binary opcode."))
       o0 o1 "" llb
 
+  let build_fbinary opc o0 o1 llb =
+    (match opc with
+    | Opcode.FAdd -> build_fadd
+    | FSub -> build_fsub
+    | FMul -> build_fmul
+    | FDiv -> build_fdiv
+    | FRem -> build_frem
+    | _ -> invalid_arg (string_of_opcode opc ^ " is not a fbinary opcode."))
+      o0 o1 "" llb
+
   let build_cast opc o ty llb =
     (match opc with
     | Opcode.Trunc -> build_trunc
@@ -472,6 +501,7 @@ module OpcodeClass = struct
   let string_of_opcls = function
     | TER opc -> Printf.sprintf "TER (%s)" (string_of_opcode opc)
     | BINARY -> "BINARY"
+    | FBINARY -> "FBINARY"
     | VEC opc -> Printf.sprintf "VEC (%s)" (string_of_opcode opc)
     | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
@@ -702,6 +732,7 @@ module ChangeRetVal = struct
     then false
     else true
 
+  (** [copy_blocks llctx f_old f_new] copies all blocks of [f_old] to [f_new]. *)
   let copy_blocks llctx f_old f_new =
     assert (f_new |> basic_blocks |> Array.length = 1);
     let entry_new = entry_block f_new in
@@ -723,6 +754,13 @@ module ChangeRetVal = struct
     else
       match (llv_old |> type_of |> classify_type, classify_type ty_new) with
       | Pointer, _ -> const_null ty_new
+      | Float, Float -> (
+          match llv_old |> float_of_const with
+          | Some fl -> const_float ty_new fl
+          | None ->
+              failwith
+                (Printf.sprintf "Unsupported type migration (%s)"
+                   (string_of_llvalue llv_old)))
       | Integer, Integer ->
           const_int_of_string ty_new (llv_old |> string_of_constint) 10
       | Integer, Vector ->
@@ -777,6 +815,12 @@ module ChangeRetVal = struct
     let opd1 = migrate_self (operand instr_old 1) link_v in
     OpcodeClass.build_binary opc opd0 opd1 builder
 
+  let migrate_fbinary builder instr_old link_v =
+    let opc = instr_opcode instr_old in
+    let opd0 = migrate_self (operand instr_old 0) link_v in
+    let opd1 = migrate_self (operand instr_old 1) link_v in
+    OpcodeClass.build_fbinary opc opd0 opd1 builder
+
   let migrate_mem builder instr_old link_v =
     match instr_opcode instr_old with
     | Alloca -> build_alloca (get_allocated_type instr_old) "" builder
@@ -826,6 +870,7 @@ module ChangeRetVal = struct
       match OpcodeClass.opcls_of instr_old with
       | TER _ -> migrate_ter builder instr_old link_v link_b target
       | BINARY -> migrate_binary builder instr_old link_v
+      | FBINARY -> migrate_fbinary builder instr_old link_v
       | MEM _ -> migrate_mem builder instr_old link_v
       | CAST -> migrate_cast builder instr_old link_v
       | OTHER ICmp -> migrate_icmp builder instr_old link_v

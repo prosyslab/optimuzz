@@ -123,7 +123,7 @@ let log_level = ref L.ERROR
 (* mutation options *)
 
 module Interests = struct
-  type t = Normal of string | Undef | Poison
+  type t = Normal of string | Undef | Poison | Float of float
 
   (* mutation options *)
   let interesting_integers =
@@ -140,6 +140,9 @@ module Interests = struct
         Undef;
         Poison;
       ]
+
+  let interesting_floats =
+    ref [ Float 0.0; Float (-0.0); Float 1.0; Float (-1.0); Undef; Poison ]
 
   let interesting_vectors =
     ref
@@ -159,7 +162,9 @@ module Interests = struct
       ]
 
   let interesting_integer_types = ref []
+  let interesting_float_types = ref []
   let interesting_vector_types = ref []
+  let interesting_integer_vector_types = ref []
   let interesting_types = ref []
 
   let set_interesting_types llctx =
@@ -174,6 +179,13 @@ module Interests = struct
         integer_type llctx 64;
         integer_type llctx 128;
       ];
+    interesting_float_types :=
+      [
+        float_type llctx;
+        double_type llctx;
+        (* x86fp80_type llctx; *)
+        fp128_type llctx;
+      ];
     interesting_vector_types :=
       [
         vector_type (i1_type llctx) 1;
@@ -186,7 +198,12 @@ module Interests = struct
         vector_type (i32_type llctx) 2;
         vector_type (i32_type llctx) 4;
       ];
-    interesting_types := !interesting_integer_types @ !interesting_vector_types
+    interesting_integer_vector_types :=
+      !interesting_integer_types @ !interesting_vector_types;
+    interesting_types :=
+      (pointer_type llctx :: !interesting_integer_types)
+      @ !interesting_float_types
+      @ !interesting_vector_types
 end
 
 (* whitelist
