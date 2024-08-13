@@ -1,6 +1,6 @@
 (**
   The initializer outputs four different files
-   1. pcguards.cov: pairs of pc and guard
+   1. pcguards.cov: guard identifiers
    2. controlflow.cov: pc and its successors and called functions
    3. instrumentedblocks.cov: PCs of instrumented blocks
    4. targetblocks.cov: (filename, linenumber, pc)
@@ -10,6 +10,20 @@
 *)
 
 open Util
+
+module InstrumentedBlocks = struct
+  include Map.Make (Int)
+
+  let filename = "instrumentedblocks.cov"
+
+  let parse_line line =
+    match String.split_on_char ',' line with
+    | [ pc; is_entry ] -> (int_of_string pc, is_entry = "1")
+    | _ -> failwith "Malformed line detected"
+
+  let read filename =
+    AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+end
 
 module PCGuards = struct
   include Set.Make (Int64)
@@ -34,9 +48,11 @@ end
 module ControlFlow = struct
   include Map.Make (Int)
 
-  type t = { succs : int list }
+  type elt = { succs : int list; preds : int list }
+  (** pc -> successor-pc list *)
 
   let filename = "controlflow.cov"
+  let make_node succs preds = { succs; preds }
 
   let parse_section section =
     String.split_on_char ':' section
@@ -46,25 +62,28 @@ module ControlFlow = struct
   let parse_line line =
     match String.split_on_char ',' line with
     | [ pc; succs; _called ] ->
-        (int_of_string pc, { succs = parse_section succs })
+        (int_of_string pc, { succs = parse_section succs; preds = [] })
     | _ -> failwith "Malformed line detected"
 
+  (** fill predecessor edges in the cfg. should be called only once after reading the cfg *)
+  let compute_preds cfg =
+    fold
+      (fun pc { succs; _ } acc ->
+        List.fold_left
+          (fun acc succ ->
+            update succ
+              (function
+                | Some { succs; preds } -> Some { succs; preds = pc :: preds }
+                | None -> None (* this shouldn't happen *))
+              acc)
+          acc succs)
+      cfg cfg
+
   let read filename =
-    AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
-end
-
-module InstrumentedBlocks = struct
-  include Map.Make (Int)
-
-  let filename = "instrumentedblocks.cov"
-
-  let parse_line line =
-    match String.split_on_char ',' line with
-    | [ pc; is_entry ] -> (int_of_string pc, is_entry = "1")
-    | _ -> failwith "Malformed line detected"
-
-  let read filename =
-    AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+    let succs_map =
+      AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+    in
+    compute_preds succs_map
 end
 
 module TargetBlocks = struct
@@ -101,8 +120,34 @@ module CoverageFile = struct
     |> List.to_seq
 end
 
-let find_target_block_address targetblocks filename lineno =
-  let key = (filename, lineno) in
-  match TargetBlocks.find_opt key targetblocks with
-  | Some pc -> pc
-  | None -> failwith "Target block not found"
+module TB = TargetBlocks
+module PCG = PCGuards
+module CF = ControlFlow
+module IB = InstrumentedBlocks
+
+type pc = int
+type cfg = CF.elt CF.t
+
+(* trace back from the target_pc, slicing off unreachable edges on its way to the entry block *)
+let slice_cfg (cfg : cfg) (target_pc : pc) =
+  let module Visited = Set.Make (Int) in
+  let rec backward_slice queue visited sliced_cfg =
+    match queue with
+    | [] -> sliced_cfg
+    | current_pc :: rest -> (
+        if Visited.mem current_pc visited then
+          backward_slice rest visited sliced_cfg
+        else
+          let visited' = Visited.add current_pc visited in
+          match CF.find_opt current_pc cfg with
+          | None -> backward_slice rest visited' sliced_cfg
+          | Some { succs; preds } ->
+              let filtered_succs =
+                List.filter (fun s -> Visited.mem s visited') succs
+              in
+              let sliced_cfg' =
+                CF.add current_pc (CF.make_node filtered_succs preds) sliced_cfg
+              in
+              backward_slice (preds @ rest) visited' sliced_cfg')
+  in
+  backward_slice [ target_pc ] Visited.empty CF.empty
