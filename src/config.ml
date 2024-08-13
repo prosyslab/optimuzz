@@ -123,7 +123,12 @@ let log_level = ref L.ERROR
 (* mutation options *)
 
 module Interests = struct
-  type t = Normal of string | Undef | Poison | Float of float
+  type t =
+    | Normal of string
+    | Undef
+    | Poison
+    | Float of float
+    | Intrinsic of string
 
   (* mutation options *)
   let interesting_integers =
@@ -159,6 +164,57 @@ module Interests = struct
         [| Normal "0"; Normal "0"; Normal "0"; Normal "0" |];
         [| Normal "0"; Normal "1"; Normal "2"; Normal "3" |];
         [| Normal "0"; Undef; Undef; Normal "3" |];
+      ]
+
+  let interesting_unary_integer_intrinsics =
+    ref [ Intrinsic "llvm.bitreverse"; Intrinsic "llvm.ctpop" ]
+
+  let interesting_binary_integer_intrinsics =
+    ref
+      [
+        Intrinsic "llvm.smax";
+        Intrinsic "llvm.smin";
+        Intrinsic "llvm.umax";
+        Intrinsic "llvm.umin";
+        Intrinsic "llvm.sadd_sat";
+        Intrinsic "llvm.uadd_sat";
+        Intrinsic "llvm.ssub_sat";
+        Intrinsic "llvm.usub_sat";
+        Intrinsic "llvm.sshl_sat";
+        Intrinsic "llvm.ushl_sat";
+      ]
+
+  let interesting_unary_float_intrinsics =
+    ref
+      [
+        Intrinsic "llvm.sqrt";
+        Intrinsic "llvm.sin";
+        Intrinsic "llvm.cos";
+        Intrinsic "llvm.exp";
+        Intrinsic "llvm.exp2";
+        Intrinsic "llvm.log";
+        Intrinsic "llvm.log10";
+        Intrinsic "llvm.log2";
+        Intrinsic "llvm.fabs";
+        Intrinsic "llvm.floor";
+        Intrinsic "llvm.ceil";
+        Intrinsic "llvm.trunc";
+        Intrinsic "llvm.rint";
+        Intrinsic "llvm.nearbyint";
+        Intrinsic "llvm.round";
+        Intrinsic "llvm.roundeven";
+        Intrinsic "llvm.canonicalize";
+      ]
+
+  let interesting_binary_float_intrinsics =
+    ref
+      [
+        Intrinsic "llvm.pow";
+        Intrinsic "llvm.minnum";
+        Intrinsic "llvm.maxnum";
+        Intrinsic "llvm.minimum";
+        Intrinsic "llvm.maximum";
+        Intrinsic "llvm.copysign";
       ]
 
   let interesting_integer_types = ref []

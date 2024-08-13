@@ -139,6 +139,7 @@ let unwrap_interest_int ty v =
   | Undef -> undef ty
   | Poison -> poison ty
   | Float _ -> failwith "cannot unwrap floating point"
+  | Intrinsic _ -> failwith "cannot unwrap Intrinsic"
 
 let unwrap_interest_float ty v =
   assert (classify_type ty != Integer);
@@ -147,6 +148,7 @@ let unwrap_interest_float ty v =
   | Undef -> undef ty
   | Poison -> poison ty
   | Normal _ -> failwith "cannot unwrap floating point"
+  | Intrinsic _ -> failwith "cannot unwrap Intrinsic"
 
 let unwrap_interest_vec ty v =
   assert (classify_type ty = Vector);
@@ -358,6 +360,89 @@ let get_dst_tys opc ty_src =
   in
   let pred = if opc = Trunc then ( < ) else ( > ) in
   List.filter (fun t -> pred (bw t) (bw ty_src)) tys_whole
+
+let get_rand_integer_intrinsic llctx str loc ty_dst llm =
+  if Random.bool () then
+    match
+      AUtil.choose_random
+        !Config.Interests.interesting_binary_integer_intrinsics
+    with
+    | Config.Interests.Intrinsic fn ->
+        let fn = fn ^ "." ^ str in
+        let opd = get_rand_opd loc ty_dst llm in
+        let opd' = get_rand_opd loc ty_dst llm in
+        let param_types = [| type_of opd; type_of opd' |] in
+        let fnty = function_type ty_dst param_types in
+        let intrinsic = add_intrinsic_by_name llm fn fnty in
+        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+    | _ -> failwith "Not Intrinsic"
+  else
+    match
+      AUtil.choose_random !Config.Interests.interesting_unary_integer_intrinsics
+    with
+    | Config.Interests.Intrinsic fn ->
+        let fn = fn ^ "." ^ str in
+        let opd = get_rand_opd loc ty_dst llm in
+        let param_types = [| type_of opd |] in
+        let fnty = function_type ty_dst param_types in
+        let intrinsic = add_intrinsic_by_name llm fn fnty in
+        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+    | _ -> failwith "Not Intrinsic"
+
+let get_rand_float_intrinsic llctx str loc ty_dst llm =
+  if Random.bool () then
+    match
+      AUtil.choose_random !Config.Interests.interesting_binary_float_intrinsics
+    with
+    | Config.Interests.Intrinsic fn ->
+        let fn = fn ^ "." ^ str in
+        let opd = get_rand_opd loc ty_dst llm in
+        let opd' = get_rand_opd loc ty_dst llm in
+        let param_types = [| type_of opd; type_of opd' |] in
+        let fnty = function_type ty_dst param_types in
+        let intrinsic = add_intrinsic_by_name llm fn fnty in
+        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+    | _ -> failwith "Not Intrinsic"
+  else
+    match
+      AUtil.choose_random !Config.Interests.interesting_unary_float_intrinsics
+    with
+    | Config.Interests.Intrinsic fn ->
+        let fn = fn ^ "." ^ str in
+        let opd = get_rand_opd loc ty_dst llm in
+        let param_types = [| type_of opd |] in
+        let fnty = function_type ty_dst param_types in
+        let intrinsic = add_intrinsic_by_name llm fn fnty in
+        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+    | _ -> failwith "Not Intrinsic"
+
+let create_rand_instrinsic_by_ty llctx loc idx ty_dst llm =
+  match classify_type ty_dst with
+  | Integer ->
+      let bw = integer_bitwidth ty_dst in
+      let new_instr =
+        get_rand_integer_intrinsic llctx (string_of_int bw) loc ty_dst llm
+      in
+      set_operand loc idx new_instr;
+      Some llm
+  | Half ->
+      let new_instr = get_rand_float_intrinsic llctx "f16" loc ty_dst llm in
+      set_operand loc idx new_instr;
+      Some llm
+  | Float ->
+      let new_instr = get_rand_float_intrinsic llctx "f32" loc ty_dst llm in
+      set_operand loc idx new_instr;
+      Some llm
+  | Double ->
+      let new_instr = get_rand_float_intrinsic llctx "f64" loc ty_dst llm in
+      set_operand loc idx new_instr;
+      Some llm
+  | Fp128 ->
+      let new_instr = get_rand_float_intrinsic llctx "f128" loc ty_dst llm in
+      set_operand loc idx new_instr;
+      Some llm
+  | Vector -> None (* TODO*)
+  | _ -> None
 
 (* %0 = extractelement %VEC, %opd *)
 let create_rand_extractelement_int llctx loc opd llm =
@@ -574,47 +659,53 @@ let create_rand_llv llctx llm =
       |> AUtil.choose_random
     in
     L.debug "location: %s" (string_of_llvalue loc);
-    let cands = get_cands_for_create loc 0 [] llm in
-    if cands = [] then None
+    if Random.int 4 = 0 then
+      let idx = loc |> num_operands |> Random.int in
+      let dst = operand loc idx in
+      let ty_dst = type_of dst in
+      create_rand_instrinsic_by_ty llctx loc idx ty_dst llm
     else
-      let idx, opc, opds = AUtil.choose_random cands in
-      L.debug "idx: %s" (string_of_int idx);
-      L.debug "opcode: %s" (string_of_opcode opc);
-      let opd = Candidates.choose opds in
-      L.debug "operand: %s" (string_of_llvalue opd);
-      let ty_dst = type_of (operand loc idx) in
-      let ty_opd = type_of opd in
-      let new_instr =
-        match OpCls.classify opc with
-        | BINARY ->
-            let opd' = get_rand_opd loc ty_opd llm in
-            create_binary llctx loc opc opd opd'
-        | FBINARY ->
-            let opd' = get_rand_opd loc ty_opd llm in
-            create_fbinary llctx loc opc opd opd'
-        | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
-        | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
-        | VEC ShuffleVector ->
-            if opd |> type_of |> classify_type = Vector then
-              create_rand_shufflevector llctx loc opd llm
-            else (
-              L.debug
-                "ShuffleVector instruction does not require non-vector \
-                 operands.";
-              L.debug "This mutation will be ignored.";
-              loc)
-        | CAST -> create_cast llctx loc opc opd ty_dst
-        | ICMP ->
-            let cond = OpCls.random_icmp () in
-            let opd' = get_rand_opd loc ty_opd llm in
-            create_icmp llctx loc cond opd opd'
-        | OTHER Select -> create_rand_select llctx loc opd llm
-        | _ -> failwith "NEVER OCCUR"
-      in
-      if type_of new_instr == ty_dst then (
-        set_operand loc idx new_instr;
-        Some llm)
-      else None
+      let cands = get_cands_for_create loc 0 [] llm in
+      if cands = [] then None
+      else
+        let idx, opc, opds = AUtil.choose_random cands in
+        L.debug "idx: %s" (string_of_int idx);
+        L.debug "opcode: %s" (string_of_opcode opc);
+        let opd = Candidates.choose opds in
+        L.debug "operand: %s" (string_of_llvalue opd);
+        let ty_dst = type_of (operand loc idx) in
+        let ty_opd = type_of opd in
+        let new_instr =
+          match OpCls.classify opc with
+          | BINARY ->
+              let opd' = get_rand_opd loc ty_opd llm in
+              create_binary llctx loc opc opd opd'
+          | FBINARY ->
+              let opd' = get_rand_opd loc ty_opd llm in
+              create_fbinary llctx loc opc opd opd'
+          | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
+          | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
+          | VEC ShuffleVector ->
+              if opd |> type_of |> classify_type = Vector then
+                create_rand_shufflevector llctx loc opd llm
+              else (
+                L.debug
+                  "ShuffleVector instruction does not require non-vector \
+                   operands.";
+                L.debug "This mutation will be ignored.";
+                loc)
+          | CAST -> create_cast llctx loc opc opd ty_dst
+          | ICMP ->
+              let cond = OpCls.random_icmp () in
+              let opd' = get_rand_opd loc ty_opd llm in
+              create_icmp llctx loc cond opd opd'
+          | OTHER Select -> create_rand_select llctx loc opd llm
+          | _ -> failwith "NEVER OCCUR"
+        in
+        if type_of new_instr == ty_dst then (
+          set_operand loc idx new_instr;
+          Some llm)
+        else None
 
 (** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
