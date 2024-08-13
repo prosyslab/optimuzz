@@ -25,6 +25,10 @@ external string_of_constint : llvalue -> string = "llvm_string_of_constantint"
 external half_type : llcontext -> lltype = "llvm_half_type"
 (** [half_type c] returns the IEEE 16-bit floating point type in the context [c]. See [llvm::Type::HalfTy]. *)
 
+external add_intrinsic_by_name : llmodule -> string -> lltype -> llvalue
+  = "llvm_get_intrinsic_by_name"
+(** [add_intrinsic_by_name llm name fnty] returns the intrinsic function with [fnty]. *)
+
 let string_of_valuekind = function
   | ValueKind.NullValue -> "NullValue"
   | Argument -> "Argurmet"

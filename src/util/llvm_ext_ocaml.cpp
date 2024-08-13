@@ -18,6 +18,8 @@
 #include "caml/alloc.h"
 #include "caml/mlvalues.h"
 #include "caml/memory.h"
+#include "caml/fail.h"
+#include "caml/callback.h"
 
 using namespace llvm;
 
@@ -267,6 +269,11 @@ extern "C"
 
   value llvm_half_type(value Context) {
     return to_val(LLVMHalfTypeInContext(Context_val(Context)));
+  }
+
+    /* llmodule -> string -> lltype -> llvalue*/
+  value llvm_get_intrinsic_by_name(value M, value Name, value FnTy){
+    return to_val(LLVMAddFunction(Module_val(M), String_val(Name), Type_val(FnTy)));
   }
 
 }
