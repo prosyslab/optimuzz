@@ -22,6 +22,9 @@ external clean_module_data : llmodule -> unit = "llvm_clean_module_data"
 external string_of_constint : llvalue -> string = "llvm_string_of_constantint"
 (** [string_of_constint v] get value as string from [v] *)
 
+external half_type : llcontext -> lltype = "llvm_half_type"
+(** [half_type c] returns the IEEE 16-bit floating point type in the context [c]. See [llvm::Type::HalfTy]. *)
+
 let string_of_valuekind = function
   | ValueKind.NullValue -> "NullValue"
   | Argument -> "Argurmet"
@@ -259,7 +262,7 @@ let is_assignment = function
 let is_realtype typekind =
   match typekind with
   | TypeKind.Float | Double | X86fp80 | Fp128 -> true
-  | Half | Ppc_fp128 -> false (*TODO: support*)
+  | Ppc_fp128 -> false (*TODO: support*)
   | _ -> false
 
 let is_noncommutative_binary instr =

@@ -163,8 +163,7 @@ let get_rand_const ty =
       !Config.Interests.interesting_integers
       |> AUtil.choose_random
       |> unwrap_interest_int ty
-  (* | Half *)
-  | Float | Double | Fp128 ->
+  | Half | Float | Double | Fp128 ->
       !Config.Interests.interesting_floats
       |> AUtil.choose_random
       |> unwrap_interest_float ty
@@ -200,7 +199,7 @@ let get_opd_cands loc ty llm : Candidates.t =
     match classify_type ty with
     | Integer ->
         List.map (unwrap_interest_int ty) !Config.Interests.interesting_integers
-    | Float | Double | Fp128 ->
+    | Half | Float | Double | Fp128 ->
         List.map (unwrap_interest_float ty) !Config.Interests.interesting_floats
     | Vector ->
         List.filter
@@ -532,7 +531,7 @@ let rec get_cands_for_create loc i cands llm =
               Array.to_list OpCls.binary_arr;
               Array.to_list OpCls.cast_arr;
             ]
-      | Float | Double | Fp128 ->
+      | Half | Float | Double | Fp128 ->
           List.flatten [ [ Opcode.Select ]; Array.to_list OpCls.fbinary_arr ]
       | _ -> failwith "unsupported type for create llv")
       |> AUtil.choose_random

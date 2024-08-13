@@ -21,6 +21,8 @@
 
 using namespace llvm;
 
+#define Context_val(v) ((LLVMContextRef)from_val(v))
+
 value to_val(void *ptr)
 {
   assert((((value)ptr) & 1) == 0 &&
@@ -261,6 +263,10 @@ extern "C"
       }
     }
     return caml_copy_string(result.c_str());
+  }
+
+  value llvm_half_type(value Context) {
+    return to_val(LLVMHalfTypeInContext(Context_val(Context)));
   }
 
 }

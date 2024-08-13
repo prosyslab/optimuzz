@@ -9,7 +9,9 @@ let check_value_type_for_mutation llv =
        then false *)
   else
     match ALlvm.classify_type ty with
-    | Void | Half | Label | Integer | Function | Array | Metadata -> true
+    | Void | Half | Float | Double | Fp128 | Label | Integer | Function | Array
+    | Metadata ->
+        true
     | Vector when ty |> ALlvm.element_type |> ALlvm.classify_type = Integer ->
         true
     | Vector -> false
