@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain)
+ (modules domain sancov)
  (libraries unix util config))
