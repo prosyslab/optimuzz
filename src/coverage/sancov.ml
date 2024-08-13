@@ -11,19 +11,14 @@
 
 open Util
 
-let collect_guards = failwith "Not implemented" (* pcguards.cov *)
-let collect_blocks = failwith "Not implemented"
-let collect_cf = failwith "Not implemented"
-let collect_target_blocks = failwith "Not implemented"
-
 module PCGuards = struct
-  include Set.Make (Int)
+  include Set.Make (Int64)
 
   let filename = "pcguards.cov"
 
   (* NOTE: [int_of_string] parses an hex-string if the string begins with "0x" *)
   let read filename =
-    AUtil.read_lines filename |> List.map int_of_string |> of_list
+    AUtil.read_lines filename |> List.map Int64.of_string |> of_list
 end
 
 (*
@@ -39,7 +34,7 @@ end
 module ControlFlow = struct
   include Map.Make (Int)
 
-  type t = { succs : int list; called : int list }
+  type t = { succs : int list }
 
   let filename = "controlflow.cov"
 
@@ -50,9 +45,8 @@ module ControlFlow = struct
 
   let parse_line line =
     match String.split_on_char ',' line with
-    | [ pc; succs; called ] ->
-        ( int_of_string pc,
-          { succs = parse_section succs; called = parse_section called } )
+    | [ pc; succs; _called ] ->
+        (int_of_string pc, { succs = parse_section succs })
     | _ -> failwith "Malformed line detected"
 
   let read filename =
@@ -106,3 +100,9 @@ module CoverageFile = struct
            | _ -> failwith "Malformed line detected")
     |> List.to_seq
 end
+
+let find_target_block_address targetblocks filename lineno =
+  let key = (filename, lineno) in
+  match TargetBlocks.find_opt key targetblocks with
+  | Some pc -> pc
+  | None -> failwith "Target block not found"
