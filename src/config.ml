@@ -181,6 +181,7 @@ module Interests = struct
       ];
     interesting_float_types :=
       [
+        half_type llctx;
         float_type llctx;
         double_type llctx;
         (* x86fp80_type llctx; *)
