@@ -1,3 +1,4 @@
+open Util
 module F = Format
 
 (** represents a path in the AST branch tree *)
@@ -80,18 +81,7 @@ module AstCoverage = struct
   include Set.Make (Path)
 
   let read file =
-    let ic = open_in file in
-    let rec aux accu =
-      match input_line ic with
-      | line -> (
-          match Path.parse line with
-          | Some path -> add path accu |> aux
-          | None -> aux accu)
-      | exception End_of_file -> accu
-    in
-    let cov = aux empty in
-    close_in ic;
-    cov
+    AUtil.read_lines file |> List.filter_map Path.parse |> List.to_seq |> of_seq
 
   let cover_target = mem
 end
@@ -99,16 +89,7 @@ end
 module EdgeCoverage = struct
   include Set.Make (String)
 
-  let read file =
-    let ic = open_in file in
-    let rec aux accu =
-      match input_line ic with
-      | line -> add line accu |> aux
-      | exception End_of_file -> accu
-    in
-    let cov = aux empty in
-    close_in ic;
-    cov
+  let read file = AUtil.read_lines file |> List.to_seq |> of_seq
 end
 
 module type Distance = sig

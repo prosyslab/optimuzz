@@ -111,6 +111,11 @@ end
 module CoverageFile = struct
   let filename = "cov.cov"
 
+  (* read pairs of (pc, guard) *)
+  (* NOTE that [pc] here can be slightly greater than [pc] value in the CFG as
+     [pc] in the coverage file is recorded using `__builtin_return_address(0)`. See the callback function definition. *)
+  (* to match [pc] in the coverage file and the one in CFG, we should search for the closest but less than the [pc] value in the CFG *)
+  (* see the function below [find_correct_pc] *)
   let read filename =
     AUtil.read_lines filename
     |> List.map (fun line ->
@@ -122,8 +127,8 @@ end
 
 module TB = TargetBlocks
 module PCG = PCGuards
-module CF = ControlFlow
 module IB = InstrumentedBlocks
+module CF = ControlFlow
 
 type pc = int
 type cfg = CF.elt CF.t
@@ -151,3 +156,19 @@ let slice_cfg (cfg : cfg) (target_pc : pc) =
               backward_slice (preds @ rest) visited' sliced_cfg')
   in
   backward_slice [ target_pc ] Visited.empty CF.empty
+
+let probing_cache = Hashtbl.create 128
+
+let find_correct_pc (ib : _ InstrumentedBlocks.t) pc =
+  (* do linear probing to find the closest pc less than [pc] *)
+  let rec find_closest_less_than pc ib =
+    match InstrumentedBlocks.find_opt pc ib with
+    | Some _ -> pc
+    | None -> find_closest_less_than (pc - 1) ib
+  in
+
+  if Hashtbl.mem probing_cache pc then Hashtbl.find probing_cache pc
+  else
+    let pc' = find_closest_less_than pc ib in
+    Hashtbl.add probing_cache pc pc';
+    pc'
