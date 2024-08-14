@@ -8,6 +8,7 @@ module CD = Coverage.Domain
 let llctx = ALlvm.create_context ()
 
 let initialize () =
+  Printexc.record_backtrace true;
   ALlvm.set_opaque_pointers llctx true;
   Config.initialize llctx ();
   Random.self_init ()
@@ -59,6 +60,7 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   let open Oracle in
   let module SP = Seedcorpus.Sliced_cfg_edge_cov_based in
   let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
+  let module Progress = CD.Progress (CD.SancovEdgeCoverage) in
   AUtil.cmd [ "rm"; "*.cov" ] |> ignore;
   AUtil.cmd [ !Config.opt_bin; "--help"; ">"; "/dev/null" ] |> ignore;
 
@@ -78,15 +80,14 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   F.printf "target_pc: 0x%x@." target_pc;
 
   let sliced_cfg = CS.slice_cfg cfg target_pc in
+  let pp_print_hex_int_list = F.pp_print_list pp_print_hex_int in
+  sliced_cfg
+  |> CS.CF.iter (fun pc node ->
+         F.printf "pc: 0x%x, succs: [%a], preds: [%a]@." pc
+           pp_print_hex_int_list node.CS.CF.succs pp_print_hex_int_list
+           node.CS.CF.preds);
 
-  if !Config.dry_run then (
-    let pp_print_hex_int_list = F.pp_print_list pp_print_hex_int in
-    sliced_cfg
-    |> CS.CF.iter (fun pc node ->
-           F.printf "pc: 0x%x, succs: [%a], preds: [%a]@." pc
-             pp_print_hex_int_list node.CS.CF.succs pp_print_hex_int_list
-             node.CS.CF.preds);
-    exit 0);
+  if !Config.dry_run then exit 0;
 
   let selector = CS.selective_coverage ib sliced_cfg in
 
@@ -104,9 +105,10 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
          ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
          |> ignore);
 
-  (* let progress = ref Progress.empty in
-     progress := Progress.add_cov init_cov !progress;
-     seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress); *)
+  let progress = ref Progress.empty in
+  progress := Progress.add_cov init_cov !progress;
+  seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
+
   let _coverage = FZ.run selector seed_pool llctx llset in
   L.info "fuzzing campaign ends@."
 

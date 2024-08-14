@@ -21,7 +21,8 @@ let measure_optimizer_coverage selector llm =
   let optimization_res =
     Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
       filename
-    |> Result.map selector
+    |> Result.map
+         selector (* this filters out irrelevant coverage information *)
   in
 
   if !Config.no_tv then (
