@@ -109,6 +109,8 @@ module TargetBlocks = struct
 end
 
 module CoverageFile = struct
+  include Set.Make (Int)
+
   let filename = "cov.cov"
 
   (* read pairs of (pc, guard) *)
@@ -120,9 +122,9 @@ module CoverageFile = struct
     AUtil.read_lines filename
     |> List.map (fun line ->
            match String.split_on_char ',' line with
-           | [ pc; guard ] -> (int_of_string pc, int_of_string guard)
+           | [ pc; _guard ] -> int_of_string pc
            | _ -> failwith "Malformed line detected")
-    |> List.to_seq
+    |> of_list
 end
 
 module TB = TargetBlocks
@@ -172,3 +174,8 @@ let find_correct_pc (ib : _ InstrumentedBlocks.t) pc =
     let pc' = find_closest_less_than pc ib in
     Hashtbl.add probing_cache pc pc';
     pc'
+
+let selective_coverage ib sliced_cfg covfile =
+  covfile
+  |> CoverageFile.map (find_correct_pc ib)
+  |> CoverageFile.filter (fun pc -> CF.mem pc sliced_cfg)

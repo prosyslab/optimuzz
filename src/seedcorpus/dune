@@ -1,6 +1,12 @@
 (library
  (name seedcorpus)
- (modules prep seedpool domain ast_distance_based edge_cov_based)
+ (modules
+  prep
+  seedpool
+  domain
+  ast_distance_based
+  edge_cov_based
+  sliced_cfg_edge_cov_based)
  (libraries
   util
   llvm.irreader

@@ -99,7 +99,7 @@ module PriorityDistancedSeed (Dist : CD.Distance) = struct
   let closer old_seed new_seed = Seed.closer (snd old_seed) (snd new_seed)
 end
 
-(** Seed configuration unaware of ast-distance based directed fuzzing.
+(** Seed configuration only aware of llmodule data.
     It only contains llvm module data *)
 module NaiveSeed = struct
   type t = Llvm.llmodule

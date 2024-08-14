@@ -87,9 +87,16 @@ module AstCoverage = struct
 end
 
 module EdgeCoverage = struct
-  include Set.Make (String)
+  include Set.Make (Int)
 
-  let read file = AUtil.read_lines file |> List.to_seq |> of_seq
+  let read file =
+    AUtil.read_lines file |> List.map int_of_string |> List.to_seq |> of_seq
+end
+
+module SancovEdgeCoverage = struct
+  include Set.Make (Int)
+
+  let read file = Sancov.CoverageFile.read file
 end
 
 module type Distance = sig
