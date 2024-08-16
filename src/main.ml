@@ -79,19 +79,24 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   let target_pc = CS.TB.find (filename, lineno) tb in
   F.printf "target_pc: 0x%x@." target_pc;
 
-  let sliced_cfg = CS.slice_cfg cfg target_pc in
+  let sliced_cfg, distance_map = CS.slice_cfg cfg target_pc in
   let pp_print_hex_int_list = F.pp_print_list pp_print_hex_int in
+  F.printf "sliced_cfg: ";
   sliced_cfg
   |> CS.CF.iter (fun pc node ->
          F.printf "pc: 0x%x, succs: [%a], preds: [%a]@." pc
            pp_print_hex_int_list node.CS.CF.succs pp_print_hex_int_list
            node.CS.CF.preds);
+  F.printf "distance_map: ";
+  distance_map
+  |> CS.CF.iter (fun node distance ->
+         F.printf "node: 0x%x, distance %d\n" node distance);
 
   if !Config.dry_run then exit 0;
 
   let selector = CS.selective_coverage ib sliced_cfg in
 
-  let seed_pool, init_cov = SP.make llctx selector in
+  let seed_pool, init_cov = SP.make llctx selector distance_map in
   let sp_size = SP.length seed_pool in
 
   if sp_size = 0 then (
@@ -101,7 +106,7 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   let llset = ALlvm.LLModuleSet.create sp_size in
   seed_pool
   |> SP.iter (fun seed ->
-         let filename = SP.Seed.name seed in
+         let filename = SP.Seed.name (SP.Seed.llmodule seed) in
          ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
          |> ignore);
 
@@ -109,7 +114,7 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   progress := Progress.add_cov init_cov !progress;
   seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
 
-  let _coverage = FZ.run selector seed_pool llctx llset in
+  let _coverage = FZ.run selector seed_pool distance_map llctx llset in
   L.info "fuzzing campaign ends@."
 
 let llfuzz_edge_cov_based_greybox () =

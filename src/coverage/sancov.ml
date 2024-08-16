@@ -133,12 +133,16 @@ module IB = InstrumentedBlocks
 module CF = ControlFlow
 
 type pc = int
+type distance = int
 type cfg = CF.elt CF.t
+type preds_map = pc CF.t
+type distancemap = distance CF.t
 
 (* trace back from the target_pc, slicing off unreachable edges on its way to the entry block *)
 let slice_cfg (cfg : cfg) (target_pc : pc) =
   let module Visited = Set.Make (Int) in
-  let rec backward_slice queue visited sliced_cfg =
+  let module PredsMap = Map.Make (Int) in
+  let rec backward_slice (queue : pc list) visited sliced_cfg =
     match queue with
     | [] -> sliced_cfg
     | current_pc :: rest -> (
@@ -157,7 +161,50 @@ let slice_cfg (cfg : cfg) (target_pc : pc) =
               in
               backward_slice (preds @ rest) visited' sliced_cfg')
   in
-  backward_slice [ target_pc ] Visited.empty CF.empty
+  let rec bfs sliced_cfg queue visited preds_map =
+    match queue with
+    | [] -> (queue, visited, preds_map)
+    | current_pc :: rest -> (
+        match CF.find_opt current_pc cfg with
+        | None -> bfs sliced_cfg rest visited preds_map
+        | Some cf ->
+            let queue', visited', preds_map' =
+              List.fold_left
+                (fun (rest, visited, preds_map) pred ->
+                  if Visited.mem pred visited then (rest, visited, preds_map)
+                  else
+                    ( rest @ [ pred ],
+                      Visited.add pred visited,
+                      PredsMap.add pred current_pc preds_map ))
+                (rest, visited, preds_map) cf.preds
+            in
+            bfs sliced_cfg queue' visited' preds_map')
+  in
+  let rec get_distance_by_backtracking target_pc source_pc preds_map distance =
+    if source_pc = target_pc then distance
+    else
+      let pred = PredsMap.find source_pc preds_map in
+      get_distance_by_backtracking target_pc pred preds_map (distance + 1)
+  in
+
+  let get_distance_by_bfs sliced_cfg =
+    let _, _, preds_map =
+      bfs sliced_cfg [ target_pc ]
+        (Visited.add target_pc Visited.empty)
+        (PredsMap.empty : int PredsMap.t)
+    in
+    PredsMap.fold
+      (fun node _ distance_map ->
+        let distance =
+          get_distance_by_backtracking target_pc node preds_map 0
+        in
+        CF.add node distance distance_map)
+      preds_map
+      (CF.add target_pc 0 CF.empty)
+  in
+  let sliced_cfg = backward_slice [ target_pc ] Visited.empty CF.empty in
+  let distance_map = get_distance_by_bfs sliced_cfg in
+  (sliced_cfg, distance_map)
 
 let probing_cache = Hashtbl.create 128
 

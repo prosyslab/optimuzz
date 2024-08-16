@@ -118,3 +118,35 @@ module NaiveSeed = struct
           (AUtil.get_current_time ())
           hash parent_hash
 end
+
+module CfgSeed = struct
+  module Distance = CD.CfgDistance
+
+  type t = {
+    llm : Llvm.llmodule;
+    score : Distance.t;
+    covers : bool;
+    cov_set : CD.SancovEdgeCoverage.t;
+  }
+
+  let make llm coverage_set distance_map =
+    let score = Distance.distance_score coverage_set distance_map in
+    let covers = false in
+    let cov_set = coverage_set in
+    { llm; score; covers; cov_set }
+
+  let llmodule seed = seed.llm
+  let covers seed = seed.covers
+  let score seed = seed.score
+  let cov_set seed = seed.cov_set
+
+  let name ?(parent : int option) llm =
+    let hash = ALlvm.hash_llm llm in
+    match parent with
+    | None ->
+        Format.asprintf "date:%s,id:%010d.ll" (AUtil.get_current_time ()) hash
+    | Some parent_hash ->
+        Format.asprintf "date:%s,id:%010d,src:%010d.ll"
+          (AUtil.get_current_time ())
+          hash parent_hash
+end

@@ -1674,6 +1674,7 @@ let mutate_inner_bb times llctx learning opc_tbl llm choice_fn =
         | FLAG -> (None, None, modify_flag llctx llm)
         | TYPE -> (None, None, change_type llctx llm)
         | CUT -> (None, None, cut_below llctx llm)
+        (* | _ -> (None, None, None) *)
       in
       match mutation_result with
       | Some opc_old, Some opc_new, Some llm ->

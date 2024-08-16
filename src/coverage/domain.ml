@@ -158,6 +158,24 @@ module MinDistance : Distance with type t = int = struct
   let of_int = Fun.id
 end
 
+module SC = Sancov
+
+module CfgDistance = struct
+  type t = float
+
+  let distance_score (coverage_set : SancovEdgeCoverage.t) distance_map =
+    let distance_sum =
+      SancovEdgeCoverage.fold
+        (fun cov sum ->
+          let distance = SC.CF.find cov distance_map in
+          distance + sum)
+        coverage_set 0
+    in
+    let card = SancovEdgeCoverage.cardinal coverage_set in
+    if card = 0 then 65535.0
+    else Float.div (Int.to_float distance_sum) (Int.to_float card)
+end
+
 module type COVERAGE = sig
   type t
 

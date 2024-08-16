@@ -1,7 +1,7 @@
 open Util
 module L = Logger
 module D = Domain
-module Seed = Domain.NaiveSeed
+module Seed = Domain.CfgSeed
 module CD = Coverage.Domain
 module Coverage = CD.SancovEdgeCoverage
 module Opt = Oracle.Optimizer (Coverage)
@@ -30,9 +30,55 @@ let pop pool =
   let seed = pop pool in
   (seed, pool)
 
-let make llctx selector =
-  let seed_dir = !Config.seed_dir in
+let construct_seedpool ?(max_size : int = 100) seeds distance_map =
+  let open AUtil in
   let pool = create () in
+  let pool_covers, pool_noncovers =
+    List.fold_left
+      (fun (pool_covers, pool_noncovers) (_, llm, covs) ->
+        let seed = Seed.make llm covs distance_map in
+        if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
+        else (pool_covers, seed :: pool_noncovers))
+      ([], []) seeds
+  in
+  if pool_covers = [] then (
+    L.info "No covering seeds found. Using closest seeds.";
+    let pool_closest =
+      pool_noncovers
+      |> List.sort_uniq (fun a b ->
+             compare
+               (ALlvm.hash_llm (Seed.llmodule a))
+               (ALlvm.hash_llm (Seed.llmodule b)))
+      |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
+      |> take max_size
+    in
+    let init_cov =
+      List.fold_left
+        (fun accu seed -> Coverage.union accu (Seed.cov_set seed))
+        Coverage.empty pool_closest
+    in
+    pool_closest |> List.to_seq |> add_seq pool;
+    (pool, init_cov))
+  else (
+    (* if we have covering seeds, we use covering seeds only. *)
+    L.info "Covering seeds found. Using them only.";
+    let pool_covers =
+      pool_covers
+      |> List.sort_uniq (fun a b ->
+             compare
+               (ALlvm.hash_llm (Seed.llmodule a))
+               (ALlvm.hash_llm (Seed.llmodule b)))
+    in
+    let init_cov =
+      List.fold_left
+        (fun accu seed -> Coverage.union accu (Seed.cov_set seed))
+        Coverage.empty pool_covers
+    in
+    pool_covers |> List.to_seq |> add_seq pool;
+    (pool, init_cov))
+
+let make llctx selector distance_map =
+  let seed_dir = !Config.seed_dir in
 
   let seeds =
     Sys.readdir seed_dir
@@ -49,15 +95,6 @@ let make llctx selector =
   let cleaned_seeds =
     seeds
     |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
-    |> List.map (fun (_path, llm, _cov) -> llm)
   in
 
-  let init_cov =
-    List.fold_left
-      (fun accu (_, _, cov) -> Coverage.union accu cov)
-      Coverage.empty seeds
-  in
-
-  cleaned_seeds |> List.map Seed.make |> List.to_seq |> add_seq pool;
-
-  (pool, init_cov)
+  construct_seedpool cleaned_seeds distance_map

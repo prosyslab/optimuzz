@@ -56,11 +56,10 @@ let mutate_seed llctx llset seed =
   let mutant = ALlvm.read_ll llctx mut_filename in
   match mutant with
   | Ok mutant ->
-      if ALlvm.LLModuleSet.mem llset mutant then None
-      else Some (SeedPool.Seed.make mutant)
+      if ALlvm.LLModuleSet.mem llset mutant then None else Some mutant
   | Error _ -> None
 
-let run selector seed_pool llctx llset progress =
+let run selector seed_pool distance_map llctx llset progress =
   (* generate and deduplicate seeds *)
   let mutator = mutate_seed llctx llset in
 
@@ -74,7 +73,9 @@ let run selector seed_pool llctx llset progress =
 
   let rec campaign pool (progress : Progress.t) =
     let seed, pool_popped = SeedPool.pop pool in
-    let mutants = generate_uniq_mutants !Config.num_mutant seed in
+    let mutants =
+      generate_uniq_mutants !Config.num_mutant (SeedPool.Seed.llmodule seed)
+    in
     let interesting_mutants =
       mutants
       |> List.filter_map (fun mutant ->
@@ -92,9 +93,9 @@ let run selector seed_pool llctx llset progress =
 
     let new_pool =
       interesting_mutants
-      |> List.map fst
       |> List.fold_left
-           (fun pool mutant -> SeedPool.push mutant pool)
+           (fun pool (mutant, covs) ->
+             SeedPool.push (SeedPool.Seed.make mutant covs distance_map) pool)
            pool_popped
       |> SeedPool.push seed
     in
