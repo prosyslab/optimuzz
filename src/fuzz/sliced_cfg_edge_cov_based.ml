@@ -35,15 +35,18 @@ let measure_optimizer_coverage selector llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evalutate_mutant selector llm covset =
+let evalutate_mutant selector llm covset distance_map =
   let optim_res, _ = measure_optimizer_coverage selector llm in
   match optim_res with
   | Error _ -> None
   | Ok cov_mutant ->
       (* new edges are discovered? *)
       let new_points = Coverage.diff cov_mutant covset in
-      let interesting = not @@ Coverage.is_empty new_points in
-      if interesting then Some (llm, cov_mutant) else None
+      let new_seed = SeedPool.Seed.make llm cov_mutant distance_map in
+      let interesting =
+        (not (Coverage.is_empty new_points)) || SeedPool.Seed.covers new_seed
+      in
+      if interesting then Some new_seed else None
 
 let mutate_seed llctx llset seed =
   let muts = !Config.muts_dir in
@@ -59,52 +62,48 @@ let mutate_seed llctx llset seed =
       if ALlvm.LLModuleSet.mem llset mutant then None else Some mutant
   | Error _ -> None
 
+let update_progress progress seed =
+  let cov_set = SeedPool.Seed.cov_set seed in
+  progress |> Progress.add_cov cov_set |> Progress.inc_gen
+
 let run selector seed_pool distance_map llctx llset progress =
   (* generate and deduplicate seeds *)
   let mutator = mutate_seed llctx llset in
 
-  let rec generate_uniq_mutants times seed =
-    if times = 0 then []
+  let rec generate_mutant energy llm (progress : Progress.t) =
+    if energy = 0 then None
     else
-      match mutator seed with
-      | Some new_seed -> new_seed :: generate_uniq_mutants (times - 1) seed
-      | None -> generate_uniq_mutants (times - 1) seed
+      match mutator llm with
+      | Some mutated_llm -> (
+          match
+            evalutate_mutant selector mutated_llm progress.cov_sofar
+              distance_map
+          with
+          | Some new_seed -> Some new_seed
+          | None -> generate_mutant (energy - 1) mutated_llm progress)
+      | None -> generate_mutant (energy - 1) llm progress
+  in
+
+  let rec generate_interesting_mutants times energy llm pool progress =
+    if times = 0 then (pool, progress)
+    else
+      match generate_mutant energy llm progress with
+      | Some new_seed ->
+          let new_progress = update_progress progress new_seed in
+          let new_pool = SeedPool.push new_seed pool in
+          generate_interesting_mutants (times - 1) energy llm new_pool
+            new_progress
+      | None ->
+          generate_interesting_mutants (times - 1) energy llm pool progress
   in
 
   let rec campaign pool (progress : Progress.t) =
     let seed, pool_popped = SeedPool.pop pool in
-    let mutants =
-      generate_uniq_mutants !Config.num_mutant (SeedPool.Seed.llmodule seed)
+    let energy = SeedPool.Seed.get_energy seed in
+    let llm = SeedPool.Seed.llmodule seed in
+    let new_pool, new_progress =
+      generate_interesting_mutants energy energy llm pool_popped progress
     in
-    let interesting_mutants =
-      mutants
-      |> List.filter_map (fun mutant ->
-             evalutate_mutant selector mutant progress.cov_sofar)
-    in
-
-    let new_progress =
-      interesting_mutants
-      |> List.map snd
-      |> List.fold_left
-           (fun prog cov -> prog |> Progress.add_cov cov |> Progress.inc_gen)
-           progress
-    in
-    F.printf "progress: %a@." Progress.pp new_progress;
-
-    let new_pool =
-      interesting_mutants
-      |> List.fold_left
-           (fun pool (mutant, covs) ->
-             SeedPool.push (SeedPool.Seed.make mutant covs distance_map) pool)
-           pool_popped
-      |> SeedPool.push seed
-    in
-
-    interesting_mutants
-    |> List.iter (fun (mutant, _) ->
-           let llm = mutant in
-           let seed_name = SeedPool.Seed.name mutant in
-           ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore);
 
     campaign new_pool new_progress
   in

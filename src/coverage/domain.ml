@@ -174,6 +174,11 @@ module CfgDistance = struct
     let card = SancovEdgeCoverage.cardinal coverage_set in
     if card = 0 then 65535.0
     else Float.div (Int.to_float distance_sum) (Int.to_float card)
+
+  let get_cover (coverage_set : SancovEdgeCoverage.t) distance_map =
+    SancovEdgeCoverage.fold
+      (fun cov res -> if res then res else SC.CF.find cov distance_map = 0)
+      coverage_set false
 end
 
 module type COVERAGE = sig

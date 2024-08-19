@@ -22,7 +22,10 @@ let can_optimize seedfile =
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       Some (seedfile, coverage)
 
-let push seed pool =
+let push (seed : Seed.t) pool =
+  let llm = seed.llm in
+  let seed_name = Seed.name llm in
+  ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
   push seed pool;
   pool
 

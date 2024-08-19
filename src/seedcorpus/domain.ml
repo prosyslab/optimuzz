@@ -131,7 +131,7 @@ module CfgSeed = struct
 
   let make llm coverage_set distance_map =
     let score = Distance.distance_score coverage_set distance_map in
-    let covers = false in
+    let covers = Distance.get_cover coverage_set distance_map in
     let cov_set = coverage_set in
     { llm; score; covers; cov_set }
 
@@ -139,6 +139,7 @@ module CfgSeed = struct
   let covers seed = seed.covers
   let score seed = seed.score
   let cov_set seed = seed.cov_set
+  let get_energy seed = seed.score |> Float.mul 10.0 |> Float.to_int
 
   let name ?(parent : int option) llm =
     let hash = ALlvm.hash_llm llm in
