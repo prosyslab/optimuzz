@@ -78,18 +78,26 @@ let construct_seedpool ?(max_size : int = 100) seeds distance_map =
     (pool, init_cov))
 
 let make llctx selector distance_map =
+  let open AUtil in
   let seed_dir = !Config.seed_dir in
 
+  let filter_seed seed =
+    let* path, cov = can_optimize seed in
+    let cov = selector cov in
+    match ALlvm.read_ll llctx path with
+    | Error _ -> None
+    | Ok llm -> Some (path, llm, cov)
+  in
+
+  let seeds = Sys.readdir seed_dir in
+
+  L.info "%d seeds found" (Array.length seeds);
+
   let seeds =
-    Sys.readdir seed_dir
+    seeds
     |> Array.to_list
     |> List.map (Filename.concat seed_dir)
-    |> List.filter_map can_optimize
-    |> List.filter_map (fun (path, cov) ->
-           let cov = selector cov in
-           match ALlvm.read_ll llctx path with
-           | Error _ -> None
-           | Ok llm -> Some (path, llm, cov))
+    |> List.filter_map filter_seed
   in
 
   let cleaned_seeds =
