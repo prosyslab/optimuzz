@@ -253,8 +253,8 @@ module Cfg = struct
         let dist =
           try
             let _, length = dijk v in
-            length
-          with Not_found -> Float.infinity
+            Some length
+          with Not_found -> None
         in
         NodeMap.add v dist accu)
       cfg NodeMap.empty
@@ -269,12 +269,9 @@ let build_distmap cfg target_nodes =
     Float.of_int (FloatSet.cardinal fset) /. sum
   in
   target_nodes
-  |> List.map (fun target -> Cfg.compute_distances cfg target)
-  (* |> List.map (fun dmap ->
-         dmap
-         |> CD.Cfg.NodeMap.iter (fun node dist ->
-                F.printf "%a: %f@." CD.Cfg.V.pp node dist);
-         dmap) *)
+  |> List.map (fun target ->
+         Cfg.compute_distances cfg target
+         |> Cfg.NodeMap.filter_map (fun _k v -> v))
   |> List.map (fun distmap ->
          Cfg.NodeMap.map (fun d -> FloatSet.singleton d) distmap)
   |> List.fold_left
@@ -325,18 +322,20 @@ module CfgDistance = struct
       |> List.fold_left
            (fun sum addr ->
              let node = Cfg.NodeTable.find addr node_tbl in
-             let dist = Cfg.NodeMap.find node distmap in
-             dist +. sum)
+             let dist = Cfg.NodeMap.find_opt node distmap in
+             match dist with None -> sum | Some dist -> sum +. dist)
            0.0
     in
-    let size = List.length trace |> float_of_int in
-    if trace = [] then 65535.0 else dist_sum /. size
+    if trace = [] then 65535.0
+    else
+      let size = List.length trace |> float_of_int in
+      dist_sum /. size
 
   let get_cover (trace : BlockTrace.t) node_tbl distmap =
     List.exists
       (fun addr ->
         let node = Cfg.NodeTable.find addr node_tbl in
-        Cfg.NodeMap.find node distmap = 0.0)
+        Cfg.NodeMap.find_opt node distmap = Some 0.0)
       trace
 end
 
