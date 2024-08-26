@@ -34,7 +34,8 @@ let pop pool =
   let seed = pop pool in
   (seed, pool)
 
-let construct_seedpool ?(max_size : int = 100) seeds node_tbl distmap =
+let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
+    distmap =
   let open AUtil in
   let pool = create () in
   let pool_covers, pool_noncovers =
@@ -103,4 +104,4 @@ let make llctx node_tbl (distmap : CD.distmap) =
     |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
   in
 
-  construct_seedpool seeds node_tbl distmap
+  evaluate_seeds_and_construct_seedpool seeds node_tbl distmap

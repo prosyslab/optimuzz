@@ -194,7 +194,7 @@ module Cfg = struct
     let compare = Float.compare
   end
 
-  module G = Graph.Persistent.Graph.ConcreteLabeled (V) (E)
+  module G = Graph.Persistent.Digraph.ConcreteLabeled (V) (E)
 
   let label_node _ (attrs : Dot_ast.attr list) =
     let label =
@@ -247,7 +247,7 @@ module Cfg = struct
   module NodeTable = Map.Make (Int)
 
   let compute_distances cfg target =
-    let dijk = Dijk.shortest_path cfg target in
+    let dijk v = Dijk.shortest_path cfg v target in
     G.fold_vertex
       (fun v accu ->
         let dist =
@@ -261,6 +261,35 @@ module Cfg = struct
 end
 
 type distmap = float Cfg.NodeMap.t
+
+let build_distmap cfg target_nodes =
+  let module FloatSet = Set.Make (Float) in
+  let harmonic_avg fset =
+    let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
+    Float.of_int (FloatSet.cardinal fset) /. sum
+  in
+  target_nodes
+  |> List.map (fun target -> Cfg.compute_distances cfg target)
+  (* |> List.map (fun dmap ->
+         dmap
+         |> CD.Cfg.NodeMap.iter (fun node dist ->
+                F.printf "%a: %f@." CD.Cfg.V.pp node dist);
+         dmap) *)
+  |> List.map (fun distmap ->
+         Cfg.NodeMap.map (fun d -> FloatSet.singleton d) distmap)
+  |> List.fold_left
+       (Cfg.NodeMap.union (fun _k d1 d2 -> FloatSet.union d1 d2 |> Option.some))
+       Cfg.NodeMap.empty
+  |> Cfg.NodeMap.map
+       harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
+
+let parse_targets targets_file =
+  AUtil.read_lines targets_file
+  |> List.map (fun line ->
+         let chunks = String.split_on_char ':' line in
+         let filename = List.nth chunks 0 |> Filename.basename in
+         let lineno = List.nth chunks 1 |> int_of_string in
+         (filename, lineno))
 
 module BlockTrace = struct
   type t = int list

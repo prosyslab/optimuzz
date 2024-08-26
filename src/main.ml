@@ -68,12 +68,7 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   let module SP = Seedcorpus.Sliced_cfg_edge_cov_based in
   let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
   let module Progress = CD.Progress (CD.EdgeCoverage) in
-  let targets =
-    AUtil.read_lines targets_file
-    |> List.map (fun line ->
-           let chunks = String.split_on_char ':' line in
-           (List.nth chunks 0, int_of_string (List.nth chunks 1)))
-  in
+  let targets = CD.parse_targets targets_file in
 
   F.printf "[Input Targets]@.";
   targets
@@ -95,34 +90,7 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   F.printf "[Target Nodes]@.";
   target_nodes |> List.iter (fun node -> F.printf "%a@." CD.Cfg.V.pp node);
 
-  let module FloatSet = Set.Make (Float) in
-  let arith_avg fset =
-    let sum = FloatSet.fold (fun x accu -> accu +. x) fset 0.0 in
-    sum /. Float.of_int (FloatSet.cardinal fset)
-  in
-  let harmonic_avg fset =
-    let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
-    Float.of_int (FloatSet.cardinal fset) /. sum
-  in
-
-  let distmap : CD.distmap =
-    target_nodes
-    |> List.map (fun target -> CD.Cfg.compute_distances cfg target)
-    (* |> List.map (fun dmap ->
-           dmap
-           |> CD.Cfg.NodeMap.iter (fun node dist ->
-                  F.printf "%a: %f@." CD.Cfg.V.pp node dist);
-           dmap) *)
-    |> List.map (fun distmap ->
-           CD.Cfg.NodeMap.map (fun d -> FloatSet.singleton d) distmap)
-    |> List.fold_left
-         (CD.Cfg.NodeMap.union (fun _k d1 d2 ->
-              FloatSet.union d1 d2 |> Option.some))
-         CD.Cfg.NodeMap.empty
-    |> CD.Cfg.NodeMap.map
-         harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
-  in
-
+  let distmap = CD.build_distmap cfg target_nodes in
   let node_tbl =
     CD.Cfg.G.fold_vertex (fun v accu -> (v.address, v) :: accu) cfg []
     |> List.to_seq
@@ -133,7 +101,7 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   Format.printf "[Node Table]@.";
   node_tbl
   |> CD.Cfg.NodeTable.iter (fun addr node ->
-         F.printf "%a: %a@." pp_print_hex_int addr CD.Cfg.V.pp node);
+         F.printf "%a -> %a@." pp_print_hex_int addr CD.Cfg.V.pp node);
 
   Format.printf "[Distance Map]@.";
   distmap
