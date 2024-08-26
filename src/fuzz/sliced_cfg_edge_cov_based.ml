@@ -2,9 +2,10 @@ open Util
 module L = Logger
 module F = Format
 module CD = Coverage.Domain
-module Coverage = CD.SancovEdgeCoverage
+module Coverage = CD.EdgeCoverage
+module Trace = CD.BlockTrace
 module SeedPool = Seedcorpus.Sliced_cfg_edge_cov_based
-module Opt = Oracle.Optimizer (Coverage)
+module Opt = Oracle.Optimizer (Trace)
 module Progress = CD.Progress (Coverage)
 
 let choice () =
@@ -12,7 +13,7 @@ let choice () =
   let idx = Random.int (Array.length muts) in
   muts.(idx)
 
-let measure_optimizer_coverage selector llm =
+let measure_optimizer_coverage llm =
   let open Oracle in
   let filename = F.sprintf "id:%010d.ll" (ALlvm.hash_llm llm) in
   let filename = ALlvm.save_ll !Config.out_dir filename llm in
@@ -21,8 +22,6 @@ let measure_optimizer_coverage selector llm =
   let optimization_res =
     Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
       filename
-    |> Result.map
-         selector (* this filters out irrelevant coverage information *)
   in
 
   if !Config.no_tv then (
@@ -35,14 +34,15 @@ let measure_optimizer_coverage selector llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evalutate_mutant selector llm covset distance_map =
-  let optim_res, _ = measure_optimizer_coverage selector llm in
+let evalutate_mutant llm covset node_tbl distance_map =
+  let optim_res, _ = measure_optimizer_coverage llm in
   match optim_res with
   | Error _ -> None
   | Ok cov_mutant ->
       (* new edges are discovered? *)
-      let new_points = Coverage.diff cov_mutant covset in
-      let new_seed = SeedPool.Seed.make llm cov_mutant distance_map in
+      let cov = Coverage.of_trace cov_mutant in
+      let new_points = Coverage.diff cov covset in
+      let new_seed = SeedPool.Seed.make llm cov_mutant node_tbl distance_map in
       let interesting =
         (not (Coverage.is_empty new_points)) || SeedPool.Seed.covers new_seed
       in
@@ -63,10 +63,10 @@ let mutate_seed llctx llset seed =
   | Error _ -> None
 
 let update_progress progress seed =
-  let cov_set = SeedPool.Seed.cov_set seed in
+  let cov_set = SeedPool.Seed.edge_cov seed in
   progress |> Progress.add_cov cov_set |> Progress.inc_gen
 
-let run selector seed_pool distance_map llctx llset progress =
+let run seed_pool node_tbl distmap llctx llset progress =
   (* generate and deduplicate seeds *)
   let mutator = mutate_seed llctx llset in
 
@@ -76,8 +76,7 @@ let run selector seed_pool distance_map llctx llset progress =
       match mutator llm with
       | Some mutated_llm -> (
           match
-            evalutate_mutant selector mutated_llm progress.cov_sofar
-              distance_map
+            evalutate_mutant mutated_llm progress.cov_sofar node_tbl distmap
           with
           | Some new_seed -> Some new_seed
           | None -> generate_mutant (energy - 1) mutated_llm progress)

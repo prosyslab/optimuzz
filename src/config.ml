@@ -31,6 +31,7 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 
 type metric = Min_metric | Avg_metric
 type queue_type = Priority_queue | Fifo_queue
+type avg = Arith_avg | Harmonic_avg
 
 (** seedpool construction configuration *)
 type seedpool_opt =
@@ -76,14 +77,13 @@ module Mode = struct
   type t =
     | Blackbox
     | Greybox
-    | Directed of string * int
+    | Directed of string * string (* targets_file, cfg_file *)
     | Ast_distance_based of string
 
   let string_of = function
     | Blackbox -> "blackbox"
     | Greybox -> "greybox"
-    | Directed (file, lineno) ->
-        "directed: " ^ file ^ ":" ^ string_of_int lineno
+    | Directed (targets, cfg) -> "directed: " ^ targets ^ ":" ^ cfg
     | Ast_distance_based path -> "ast-distance:" ^ path
 
   let of_string s =
@@ -94,8 +94,8 @@ module Mode = struct
         (* direct option is of form `directed:file:lineno` *)
         let target = String.split_on_char ':' s |> List.tl in
         let target_file = target |> List.hd in
-        let target_line = target |> List.tl |> List.hd in
-        Directed (target_file, int_of_string target_line)
+        let cfg = target |> List.tl |> List.hd in
+        Directed (target_file, cfg)
     | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance:" ->
         Ast_distance_based (String.sub s 19 (String.length s - 19))
     | _ -> failwith "Invalid mode"
@@ -441,7 +441,8 @@ let setup_output cwd out_dir =
   let muts = Filename.concat out "muts" in
 
   if
-    !seedpool_option <> Resume
+    (not @@ !dry_run)
+    && !seedpool_option <> Resume
     && (Sys.file_exists crash || Sys.file_exists corpus)
   then (
     F.eprintf "It seems like the output directory already exists.@.";
@@ -505,11 +506,13 @@ let initialize llctx () =
   corpus_dir := corpus;
   muts_dir := muts;
 
-  L.from_file (Filename.concat !out_dir "fuzz.log");
-  L.set_level !log_level;
-  log_options opts;
+  if not @@ !dry_run then (
+    L.from_file (Filename.concat !out_dir "fuzz.log");
+    L.set_level !log_level;
+    log_options opts;
 
-  if Sys.file_exists !seed_dir |> not then
-    failwith ("Seed directory not found: " ^ !seed_dir);
+    if Sys.file_exists !seed_dir |> not then
+      failwith ("Seed directory not found: " ^ !seed_dir));
 
+  (* okay to pass this check if it is a dry-run*)
   Interests.set_interesting_types llctx

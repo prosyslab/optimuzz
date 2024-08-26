@@ -21,6 +21,7 @@ let test_edge_coverage () =
   ()
 
 let main () =
+  Printexc.record_backtrace true;
   (* If the filename starts with "edge" test edge coverage *)
   if String.sub Sys.argv.(1) 0 4 = "edge" then test_edge_coverage ()
   else test_ast_coverage ()
