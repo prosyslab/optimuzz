@@ -174,3 +174,11 @@ let take n lst =
     | hd :: tl -> aux (hd :: acc) (n - 1) tl
   in
   aux [] n lst
+
+let pairs lst =
+  let rec aux acc = function
+    | h1 :: h2 :: tl -> aux ((h1, h2) :: acc) (h2 :: tl)
+    | _ :: [] | [] -> acc
+  in
+
+  aux [] lst

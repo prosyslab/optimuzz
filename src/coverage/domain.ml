@@ -86,12 +86,12 @@ module AstCoverage = struct
   let cover_target = mem
 end
 
-module EdgeCoverage = struct
-  include Set.Make (Int)
+(* module EdgeCoverage = struct
+     include Set.Make (Int)
 
-  let read file =
-    AUtil.read_lines file |> List.map int_of_string |> List.to_seq |> of_seq
-end
+     let read file =
+       AUtil.read_lines file |> List.map int_of_string |> List.to_seq |> of_seq
+   end *)
 
 module SancovEdgeCoverage = struct
   include Set.Make (Int)
@@ -156,6 +156,75 @@ module MinDistance : Distance with type t = int = struct
   let of_string = int_of_string
   let to_int = Fun.id
   let of_int = Fun.id
+end
+
+module IntInt = struct
+  type t = int * int
+
+  let compare = compare
+  let equal = ( = )
+  let hash = Hashtbl.hash
+end
+
+let string_of_id = function
+  | Graph.Dot_ast.Ident s -> s
+  | Graph.Dot_ast.Number n -> n
+  | Graph.Dot_ast.String s -> s
+  | Graph.Dot_ast.Html s -> s
+
+module Cfg = struct
+  open Graph
+
+  module V = struct
+    type t = { filename : string; line_number : int; address : int }
+
+    let compare v1 v2 = Int.compare v1.address v2.address
+    let hash v = Hashtbl.hash v.address
+    let equal v1 v2 = v1.address = v2.address
+
+    let pp fmt v =
+      Format.fprintf fmt "%s:%d:0x%x" v.filename v.line_number v.address
+  end
+
+  module G = Graph.Imperative.Digraph.Concrete (V)
+
+  let label_node _ (attrs : Dot_ast.attr list) =
+    let label =
+      attrs
+      |> List.find_map (fun attr -> List.assoc (Dot_ast.Ident "label") attr)
+    in
+
+    match label with
+    | Some (Dot_ast.String s) ->
+        let s = String.sub s 1 (String.length s - 2) in
+        let chunks = String.split_on_char ':' s in
+        let filename = List.nth chunks 0 in
+        let line_number = List.nth chunks 1 |> int_of_string in
+        let address = "0x" ^ List.nth chunks 2 |> int_of_string in
+        G.V.create { filename; line_number; address }
+    | _ -> G.V.create { filename = "unknown"; line_number = 0; address = 0 }
+
+  module Parser =
+    Dot.Parse
+      (Builder.I
+         (G))
+         (struct
+           let node = label_node
+           let edge _ = ()
+         end)
+
+  let read = Parser.parse
+  let edges cfg = G.fold_edges (fun src dst accu -> (src, dst) :: accu) cfg []
+end
+
+module EdgeCoverage = struct
+  include Set.Make (IntInt)
+
+  let read file =
+    let open AUtil in
+    let nodes = read_lines file |> List.map int_of_string in
+    pairs nodes |> of_list
+  (* G.fold_edges (fun src dst accu -> add (src, dst) accu) graph empty *)
 end
 
 module SC = Sancov
