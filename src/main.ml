@@ -55,48 +55,93 @@ let llfuzz_ast_distanced_based (module SP : Seedcorpus.Ast_distance_based.POOL)
 
 let pp_print_hex_int ppf n = F.fprintf ppf "0x%x" n
 
-let llfuzz_cfg_slicing_based_directed filename lineno =
+(** takes
+    1. the filepath [targets_file] which contains a list of (filename:lineno) and
+    2. a filepath [cfg_file] which contains the control flow graph of the program
+*)
+let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
+  assert (Sys.file_exists targets_file);
+  assert (Sys.file_exists cfg_file);
+
   (* collect CFG information *)
   let open Oracle in
   let module SP = Seedcorpus.Sliced_cfg_edge_cov_based in
   let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
-  let module Progress = CD.Progress (CD.SancovEdgeCoverage) in
-  AUtil.cmd [ "rm"; "*.cov" ] |> ignore;
-  AUtil.cmd [ !Config.opt_bin; "--help"; ">"; "/dev/null" ] |> ignore;
+  let module Progress = CD.Progress (CD.EdgeCoverage) in
+  let targets =
+    AUtil.read_lines targets_file
+    |> List.map (fun line ->
+           let chunks = String.split_on_char ':' line in
+           (List.nth chunks 0, int_of_string (List.nth chunks 1)))
+  in
 
-  (* now the CFG information files are generated *)
-  let module CS = Coverage.Sancov in
-  (* control flow graph *)
-  let cfg = CS.CF.read CS.CF.filename in
-  (* target blocks table *)
-  let tb = CS.TB.read CS.TB.filename in
-  (* guards *)
-  let guards = CS.PCG.read CS.PCG.filename in
-  (* instrumented blocks *)
-  let ib = CS.IB.read CS.IB.filename in
+  F.printf "[Input Targets]@.";
+  targets
+  |> List.iter (fun (filename, lineno) ->
+         F.printf "target: %s:%d@." (Filename.basename filename) lineno);
 
-  (* TODO: this can raise Not_found exception *)
-  let target_pc = CS.TB.find (filename, lineno) tb in
-  F.printf "target_pc: 0x%x@." target_pc;
+  let cfg = CD.Cfg.read cfg_file in
+  let target_nodes =
+    targets
+    |> List.fold_left
+         (fun accu (filename, lineno) ->
+           let targets =
+             CD.Cfg.find_targets (Filename.basename filename, lineno) cfg
+           in
+           List.fold_left (fun accu v -> v :: accu) accu targets)
+         []
+  in
 
-  let sliced_cfg, distance_map = CS.slice_cfg cfg target_pc in
-  let pp_print_hex_int_list = F.pp_print_list pp_print_hex_int in
-  F.printf "sliced_cfg: ";
-  sliced_cfg
-  |> CS.CF.iter (fun pc node ->
-         F.printf "pc: 0x%x, succs: [%a], preds: [%a]@." pc
-           pp_print_hex_int_list node.CS.CF.succs pp_print_hex_int_list
-           node.CS.CF.preds);
-  F.printf "distance_map: ";
-  distance_map
-  |> CS.CF.iter (fun node distance ->
-         F.printf "node: 0x%x, distance %d\n" node distance);
+  F.printf "[Target Nodes]@.";
+  target_nodes |> List.iter (fun node -> F.printf "%a@." CD.Cfg.V.pp node);
+
+  let module FloatSet = Set.Make (Float) in
+  let arith_avg fset =
+    let sum = FloatSet.fold (fun x accu -> accu +. x) fset 0.0 in
+    sum /. Float.of_int (FloatSet.cardinal fset)
+  in
+  let harmonic_avg fset =
+    let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
+    Float.of_int (FloatSet.cardinal fset) /. sum
+  in
+
+  let distmap : CD.distmap =
+    target_nodes
+    |> List.map (fun target -> CD.Cfg.compute_distances cfg target)
+    (* |> List.map (fun dmap ->
+           dmap
+           |> CD.Cfg.NodeMap.iter (fun node dist ->
+                  F.printf "%a: %f@." CD.Cfg.V.pp node dist);
+           dmap) *)
+    |> List.map (fun distmap ->
+           CD.Cfg.NodeMap.map (fun d -> FloatSet.singleton d) distmap)
+    |> List.fold_left
+         (CD.Cfg.NodeMap.union (fun _k d1 d2 ->
+              FloatSet.union d1 d2 |> Option.some))
+         CD.Cfg.NodeMap.empty
+    |> CD.Cfg.NodeMap.map
+         harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
+  in
+
+  let node_tbl =
+    CD.Cfg.G.fold_vertex (fun v accu -> (v.address, v) :: accu) cfg []
+    |> List.to_seq
+    |> CD.Cfg.NodeTable.of_seq
+  in
+
+  (* print node_tbl and distmap *)
+  Format.printf "[Node Table]@.";
+  node_tbl
+  |> CD.Cfg.NodeTable.iter (fun addr node ->
+         F.printf "%a: %a@." pp_print_hex_int addr CD.Cfg.V.pp node);
+
+  Format.printf "[Distance Map]@.";
+  distmap
+  |> CD.Cfg.NodeMap.iter (fun node dists ->
+         F.printf "%a: %a@." CD.Cfg.V.pp node F.pp_print_float dists);
 
   if !Config.dry_run then exit 0;
-
-  let selector = CS.selective_coverage ib sliced_cfg in
-
-  let seed_pool, init_cov = SP.make llctx selector distance_map in
+  let seed_pool, init_cov = SP.make llctx node_tbl distmap in
   let sp_size = SP.length seed_pool in
 
   if sp_size = 0 then (
@@ -114,7 +159,7 @@ let llfuzz_cfg_slicing_based_directed filename lineno =
   progress := Progress.add_cov init_cov !progress;
   seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
 
-  let _coverage = FZ.run selector seed_pool distance_map llctx llset in
+  let _coverage = FZ.run seed_pool node_tbl distmap llctx llset in
   L.info "fuzzing campaign ends@."
 
 let llfuzz_edge_cov_based_greybox () =
@@ -177,9 +222,9 @@ let _ =
           let module AvgPriorityPool =
             SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
           llfuzz_ast_distanced_based (module AvgPriorityPool) target_path)
-  | Directed (filename, lineno) ->
+  | Directed (targets_file, cfg_file) ->
       F.printf "CFG slicing based directed mode@.";
-      llfuzz_cfg_slicing_based_directed filename lineno
+      llfuzz_cfg_slicing_based_directed targets_file cfg_file
   | Greybox ->
       F.printf "greybox mode@.";
       llfuzz_edge_cov_based_greybox ()

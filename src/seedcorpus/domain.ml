@@ -126,19 +126,18 @@ module CfgSeed = struct
     llm : Llvm.llmodule;
     score : Distance.t;
     covers : bool;
-    cov_set : CD.SancovEdgeCoverage.t;
+    edge_cov : CD.EdgeCoverage.t;
   }
 
-  let make llm coverage_set distance_map =
-    let score = Distance.distance_score coverage_set distance_map in
-    let covers = Distance.get_cover coverage_set distance_map in
-    let cov_set = coverage_set in
-    { llm; score; covers; cov_set }
+  let make llm trace node_tbl distmap =
+    let score = Distance.distance_score trace node_tbl distmap in
+    let covers = Distance.get_cover trace node_tbl distmap in
+    { llm; score; covers; edge_cov = CD.EdgeCoverage.of_trace trace }
 
   let llmodule seed = seed.llm
   let covers seed = seed.covers
   let score seed = seed.score
-  let cov_set seed = seed.cov_set
+  let edge_cov seed = seed.edge_cov
   let get_energy seed = seed.score |> Float.mul 10.0 |> Float.to_int
 
   let name ?(parent : int option) llm =

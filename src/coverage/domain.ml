@@ -92,12 +92,12 @@ end
      let read file =
        AUtil.read_lines file |> List.map int_of_string |> List.to_seq |> of_seq
    end *)
+(*
+   module SancovEdgeCoverage = struct
+     include Set.Make (Int)
 
-module SancovEdgeCoverage = struct
-  include Set.Make (Int)
-
-  let read file = Sancov.CoverageFile.read file
-end
+     let read file = Sancov.CoverageFile.read file
+   end *)
 
 module type Distance = sig
   type t
@@ -181,12 +181,20 @@ module Cfg = struct
     let compare v1 v2 = Int.compare v1.address v2.address
     let hash v = Hashtbl.hash v.address
     let equal v1 v2 = v1.address = v2.address
+    let address v = v.address
 
     let pp fmt v =
       Format.fprintf fmt "%s:%d:0x%x" v.filename v.line_number v.address
   end
 
-  module G = Graph.Imperative.Digraph.Concrete (V)
+  module E = struct
+    type t = float
+
+    let default = 1.0
+    let compare = Float.compare
+  end
+
+  module G = Graph.Persistent.Graph.ConcreteLabeled (V) (E)
 
   let label_node _ (attrs : Dot_ast.attr list) =
     let label =
@@ -206,48 +214,101 @@ module Cfg = struct
 
   module Parser =
     Dot.Parse
-      (Builder.I
+      (Builder.P
          (G))
          (struct
            let node = label_node
-           let edge _ = ()
+           let edge _ = E.default
          end)
+
+  module W = struct
+    type edge = G.E.t
+    type t = E.t
+
+    let weight e = G.E.label e
+    let compare = compare
+    let add = Float.add
+    let zero = 0.0
+  end
+
+  module Dijk = Path.Dijkstra (G) (W)
 
   let read = Parser.parse
   let edges cfg = G.fold_edges (fun src dst accu -> (src, dst) :: accu) cfg []
+
+  let find_targets (filename, lineno) cfg =
+    G.fold_vertex
+      (fun v accu ->
+        if v.filename = filename && v.line_number = lineno then v :: accu
+        else accu)
+      cfg []
+
+  module NodeMap = Map.Make (V)
+  module NodeTable = Map.Make (Int)
+
+  let compute_distances cfg target =
+    let dijk = Dijk.shortest_path cfg target in
+    G.fold_vertex
+      (fun v accu ->
+        let dist =
+          try
+            let _, length = dijk v in
+            length
+          with Not_found -> Float.infinity
+        in
+        NodeMap.add v dist accu)
+      cfg NodeMap.empty
+end
+
+type distmap = float Cfg.NodeMap.t
+
+module BlockTrace = struct
+  type t = int list
+
+  let read file = AUtil.read_lines file |> List.map int_of_string
+  let empty = []
+  let union = List.append
+  let diff _ _ = failwith "unneceesary"
+  let cardinal = List.length
 end
 
 module EdgeCoverage = struct
   include Set.Make (IntInt)
 
+  let of_trace trace = AUtil.pairs trace |> of_list
+
   let read file =
     let open AUtil in
-    let nodes = read_lines file |> List.map int_of_string in
+    let nodes = BlockTrace.read file in
     pairs nodes |> of_list
   (* G.fold_edges (fun src dst accu -> add (src, dst) accu) graph empty *)
 end
 
-module SC = Sancov
+(* module SC = Sancov *)
 
 module CfgDistance = struct
   type t = float
 
-  let distance_score (coverage_set : SancovEdgeCoverage.t) distance_map =
-    let distance_sum =
-      SancovEdgeCoverage.fold
-        (fun cov sum ->
-          let distance = SC.CF.find cov distance_map in
-          distance + sum)
-        coverage_set 0
+  (** computes distance of a trace *)
+  let distance_score (trace : BlockTrace.t) node_tbl distmap =
+    let dist_sum : float =
+      trace
+      |> List.fold_left
+           (fun sum addr ->
+             let node = Cfg.NodeTable.find addr node_tbl in
+             let dist = Cfg.NodeMap.find node distmap in
+             dist +. sum)
+           0.0
     in
-    let card = SancovEdgeCoverage.cardinal coverage_set in
-    if card = 0 then 65535.0
-    else Float.div (Int.to_float distance_sum) (Int.to_float card)
+    let size = List.length trace |> float_of_int in
+    if trace = [] then 65535.0 else dist_sum /. size
 
-  let get_cover (coverage_set : SancovEdgeCoverage.t) distance_map =
-    SancovEdgeCoverage.fold
-      (fun cov res -> if res then res else SC.CF.find cov distance_map = 0)
-      coverage_set false
+  let get_cover (trace : BlockTrace.t) node_tbl distmap =
+    List.exists
+      (fun addr ->
+        let node = Cfg.NodeTable.find addr node_tbl in
+        Cfg.NodeMap.find node distmap = 0.0)
+      trace
 end
 
 module type COVERAGE = sig

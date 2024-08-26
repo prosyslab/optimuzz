@@ -3,8 +3,9 @@ module L = Logger
 module D = Domain
 module Seed = Domain.CfgSeed
 module CD = Coverage.Domain
-module Coverage = CD.SancovEdgeCoverage
-module Opt = Oracle.Optimizer (Coverage)
+module Coverage = CD.EdgeCoverage
+module Trace = CD.BlockTrace
+module Opt = Oracle.Optimizer (Trace)
 include Queue
 
 let can_optimize seedfile =
@@ -33,13 +34,13 @@ let pop pool =
   let seed = pop pool in
   (seed, pool)
 
-let construct_seedpool ?(max_size : int = 100) seeds distance_map =
+let construct_seedpool ?(max_size : int = 100) seeds node_tbl distmap =
   let open AUtil in
   let pool = create () in
   let pool_covers, pool_noncovers =
     List.fold_left
-      (fun (pool_covers, pool_noncovers) (_, llm, covs) ->
-        let seed = Seed.make llm covs distance_map in
+      (fun (pool_covers, pool_noncovers) (_, llm, trace) ->
+        let seed = Seed.make llm trace node_tbl distmap in
         if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
         else (pool_covers, seed :: pool_noncovers))
       ([], []) seeds
@@ -57,7 +58,7 @@ let construct_seedpool ?(max_size : int = 100) seeds distance_map =
     in
     let init_cov =
       List.fold_left
-        (fun accu seed -> Coverage.union accu (Seed.cov_set seed))
+        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
         Coverage.empty pool_closest
     in
     pool_closest |> List.to_seq |> add_seq pool;
@@ -74,38 +75,32 @@ let construct_seedpool ?(max_size : int = 100) seeds distance_map =
     in
     let init_cov =
       List.fold_left
-        (fun accu seed -> Coverage.union accu (Seed.cov_set seed))
+        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
         Coverage.empty pool_covers
     in
     pool_covers |> List.to_seq |> add_seq pool;
     (pool, init_cov))
 
-let make llctx selector distance_map =
+let make llctx node_tbl (distmap : CD.distmap) =
   let open AUtil in
   let seed_dir = !Config.seed_dir in
 
   let filter_seed seed =
     let* path, cov = can_optimize seed in
-    let cov = selector cov in
     match ALlvm.read_ll llctx path with
     | Error _ -> None
     | Ok llm -> Some (path, llm, cov)
   in
 
-  let seeds = Sys.readdir seed_dir in
-
-  L.info "%d seeds found" (Array.length seeds);
-
   let seeds =
-    seeds
+    Sys.readdir seed_dir
+    |> (fun x ->
+         L.info "%d seeds found" (Array.length x);
+         x)
     |> Array.to_list
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map filter_seed
-  in
-
-  let cleaned_seeds =
-    seeds
     |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
   in
 
-  construct_seedpool cleaned_seeds distance_map
+  construct_seedpool seeds node_tbl distmap
