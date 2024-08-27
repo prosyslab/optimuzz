@@ -91,6 +91,9 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   target_nodes |> List.iter (fun node -> F.printf "%a@." CD.Cfg.V.pp node);
 
   let distmap = CD.build_distmap cfg target_nodes in
+  if CD.Cfg.NodeMap.is_empty distmap then (
+    F.printf "no distance map generated@.";
+    exit 0);
   let node_tbl =
     CD.Cfg.G.fold_vertex (fun v accu -> (v.address, v) :: accu) cfg []
     |> List.to_seq
