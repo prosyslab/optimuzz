@@ -90,6 +90,10 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   F.printf "[Target Nodes]@.";
   target_nodes |> List.iter (fun node -> F.printf "%a@." CD.Cfg.V.pp node);
 
+  if target_nodes = [] then (
+    F.printf "no target nodes found@.";
+    exit 0);
+
   let distmap = CD.build_distmap cfg target_nodes in
   if CD.Cfg.NodeMap.is_empty distmap then (
     F.printf "no distance map generated@.";
