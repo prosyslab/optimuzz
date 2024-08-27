@@ -1,7 +1,15 @@
 (library
  (name util)
  (modules aLlvm aUtil)
- (libraries llvm llvm.irreader str unix yojson logger)
+ (libraries
+  llvm
+  llvm.irreader
+  llvm.analysis
+  llvm.transform_utils
+  str
+  unix
+  yojson
+  logger)
  (foreign_stubs
   (language cxx)
   (flags

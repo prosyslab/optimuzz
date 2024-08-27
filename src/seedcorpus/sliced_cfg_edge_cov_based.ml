@@ -11,21 +11,21 @@ include Queue
 let can_optimize seedfile =
   match Opt.run ~passes:!Config.optimizer_passes seedfile with
   | Error Non_zero_exit | Error Hang ->
-      L.info "%s cannot be optimized" seedfile;
+      L.debug "%s cannot be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
   | Error Cov_not_generated ->
-      L.info "coverage of %s is not generated" seedfile;
+      L.debug "coverage of %s is not generated" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
   | Ok coverage ->
-      L.info "%s can be optimized" seedfile;
+      L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       Some (seedfile, coverage)
 
 let push (seed : Seed.t) pool =
   let llm = seed.llm in
-  let seed_name = Seed.name llm in
+  let seed_name = Seed.name seed in
   ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
   push seed pool;
   pool

@@ -140,13 +140,15 @@ module CfgSeed = struct
   let edge_cov seed = seed.edge_cov
   let get_energy seed = seed.score |> Float.mul 10.0 |> Float.to_int
 
-  let name ?(parent : int option) llm =
-    let hash = ALlvm.hash_llm llm in
+  let name ?(parent : int option) seed =
+    let hash = ALlvm.hash_llm seed.llm in
     match parent with
     | None ->
-        Format.asprintf "date:%s,id:%010d.ll" (AUtil.get_current_time ()) hash
-    | Some parent_hash ->
-        Format.asprintf "date:%s,id:%010d,src:%010d.ll"
+        Format.asprintf "date:%s,id:%010d,score:%f,covers:%b.ll"
           (AUtil.get_current_time ())
-          hash parent_hash
+          hash seed.score seed.covers
+    | Some parent_hash ->
+        Format.asprintf "date:%s,id:%010d,src:%010d,score:%f,covers:%b.ll"
+          (AUtil.get_current_time ())
+          hash parent_hash seed.score seed.covers
 end
