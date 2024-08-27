@@ -1,4 +1,5 @@
 open Util
+module L = Logger
 module F = Format
 
 (** represents a path in the AST branch tree *)
@@ -317,25 +318,35 @@ module CfgDistance = struct
 
   (** computes distance of a trace *)
   let distance_score (trace : BlockTrace.t) node_tbl distmap =
-    let dist_sum : float =
+    let nodes_in_trace =
       trace
+      |> List.filter_map (fun addr ->
+             match Cfg.NodeTable.find_opt addr node_tbl with
+             | Some node -> Some node
+             | None ->
+                 L.warn "node not found: 0x%x" addr;
+                 None)
+    in
+    let dist_sum : float =
+      nodes_in_trace
       |> List.fold_left
-           (fun sum addr ->
-             let node = Cfg.NodeTable.find addr node_tbl in
+           (fun sum node ->
              let dist = Cfg.NodeMap.find_opt node distmap in
              match dist with None -> sum | Some dist -> sum +. dist)
            0.0
     in
-    if trace = [] then 65535.0
+    if nodes_in_trace = [] then 65535.0
     else
-      let size = List.length trace |> float_of_int in
+      let size = List.length nodes_in_trace |> float_of_int in
       dist_sum /. size
 
   let get_cover (trace : BlockTrace.t) node_tbl distmap =
     List.exists
       (fun addr ->
-        let node = Cfg.NodeTable.find addr node_tbl in
-        Cfg.NodeMap.find_opt node distmap = Some 0.0)
+        let node = Cfg.NodeTable.find_opt addr node_tbl in
+        match node with
+        | None -> false
+        | Some node -> Cfg.NodeMap.find_opt node distmap = Some 0.0)
       trace
 end
 
