@@ -946,7 +946,10 @@ module ChangeRetVal = struct
       blocks_old
 end
 
-let hash_llm llm = string_of_llmodule llm |> Hashtbl.hash
+let hash_llm llm =
+  let llm = Llvm_transform_utils.clone_module llm in
+  clean_module_data llm;
+  string_of_llmodule llm |> Hashtbl.hash
 
 module LLModuleSet = struct
   include Hashtbl.Make (struct

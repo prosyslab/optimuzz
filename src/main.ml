@@ -119,15 +119,16 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   let llset = ALlvm.LLModuleSet.create sp_size in
   seed_pool
   |> SP.iter (fun seed ->
-         let filename = SP.Seed.name (SP.Seed.llmodule seed) in
+         let filename = SP.Seed.name seed in
          ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
          |> ignore);
 
   let progress = ref Progress.empty in
   progress := Progress.add_cov init_cov !progress;
   seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
+  L.debug "initial progress: %a" Progress.pp !progress;
 
-  let _coverage = FZ.run seed_pool node_tbl distmap llctx llset in
+  let _coverage = FZ.run seed_pool node_tbl distmap llctx llset !progress in
   L.info "fuzzing campaign ends@."
 
 let llfuzz_edge_cov_based_greybox () =

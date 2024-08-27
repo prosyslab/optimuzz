@@ -81,7 +81,7 @@ module Optimizer (Coverage : CD.COVERAGE) = struct
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
-    L.info "opt: %s -> %s"
+    L.debug "opt: %s -> %s"
       (Filename.basename filename)
       (Filename.basename output);
     try
