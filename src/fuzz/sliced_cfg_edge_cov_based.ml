@@ -114,7 +114,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
       generate_interesting_mutants energy energy llm pool_popped progress
     in
 
-    campaign new_pool new_progress
+    campaign (SeedPool.push seed new_pool) new_progress
   in
 
   campaign seed_pool progress
