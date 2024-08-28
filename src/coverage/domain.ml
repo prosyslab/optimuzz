@@ -302,7 +302,25 @@ end
 module EdgeCoverage = struct
   include Set.Make (IntInt)
 
-  let of_trace trace = AUtil.pairs trace |> of_list
+  (* need to handle a case the target function is reached many times *)
+  (* [A;B;C;D;A;B;C] -> [[A;B;C;D]; [A;B;C]]*)
+  let of_trace trace =
+    let entrypoint = List.hd trace in
+
+    let rec aux accu = function
+      | [] -> accu |> List.map List.rev
+      | hd :: tl when hd = entrypoint -> aux ([ hd ] :: accu) tl
+      | hd :: tl -> (
+          match accu with
+          | curr :: rest -> aux ((hd :: curr) :: rest) tl
+          | _ -> failwith "unreachable")
+    in
+
+    let traces = aux [] trace in
+    traces
+    |> List.map AUtil.pairs
+    |> List.map of_list
+    |> List.fold_left union empty
 
   let read file =
     let open AUtil in
@@ -335,6 +353,11 @@ module CfgDistance = struct
              match dist with None -> sum | Some dist -> sum +. dist)
            0.0
     in
+    (* let min_dist =
+         nodes_in_trace
+         |> List.filter_map (fun node -> Cfg.NodeMap.find_opt node distmap)
+         |> List.fold_left (fun accu dist -> Float.min accu dist) 65535.0
+       in *)
     if nodes_in_trace = [] then 65535.0
     else
       let size = List.length nodes_in_trace |> float_of_int in
