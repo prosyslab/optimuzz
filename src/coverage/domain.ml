@@ -338,6 +338,7 @@ module CfgDistance = struct
   let distance_score (trace : BlockTrace.t) node_tbl distmap =
     let nodes_in_trace =
       trace
+      |> List.sort_uniq compare
       |> List.filter_map (fun addr ->
              match Cfg.NodeTable.find_opt addr node_tbl with
              | Some node -> Some node
