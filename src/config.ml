@@ -12,6 +12,7 @@ let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "crash"
 let corpus_dir = ref "corpus"
+let covers_dir = ref "covers"
 let muts_dir = ref "muts"
 let cov_file = ref "cov.cov"
 let gcov_dir = ref "gcov"
@@ -417,7 +418,14 @@ let init_gcov_list () =
   |> fun x -> gcov_list := x
 
 type dependencies = { opt : string; alive_tv : string }
-type output = { out : string; crash : string; corpus : string; muts : string }
+
+type output = {
+  out : string;
+  crash : string;
+  corpus : string;
+  covers : string;
+  muts : string;
+}
 
 let lookup_dependencies cwd =
   let opt = Filename.concat cwd !opt_bin in
@@ -438,6 +446,8 @@ let setup_output cwd out_dir =
   (* cwd / llfuzz-out / corpus *)
   let corpus = Filename.concat out !corpus_dir in
   (* cwd / llfuzz-out / corpus *)
+  let covers = Filename.concat out !covers_dir in
+  (* cwd / llfuzz-out / corpus *)
   let muts = Filename.concat out "muts" in
 
   if
@@ -452,9 +462,10 @@ let setup_output cwd out_dir =
   (try Sys.mkdir out 0o755 with _ -> ());
   (try Sys.mkdir crash 0o755 with _ -> ());
   (try Sys.mkdir corpus 0o755 with _ -> ());
+  (try Sys.mkdir covers 0o755 with _ -> ());
   (try Sys.mkdir muts 0o755 with _ -> ());
 
-  { out; crash; corpus; muts }
+  { out; crash; corpus; covers; muts }
 
 let log_options opts =
   opts
@@ -500,19 +511,21 @@ let initialize llctx () =
   opt_bin := opt;
   alive_tv_bin := alive_tv;
 
-  let { out; crash; corpus; muts } = setup_output cwd !out_dir in
+  let { out; crash; corpus; covers; muts } = setup_output cwd !out_dir in
   out_dir := out;
   crash_dir := crash;
   corpus_dir := corpus;
+  covers_dir := covers;
   muts_dir := muts;
 
-  if not @@ !dry_run then (
-    L.from_file (Filename.concat !out_dir "fuzz.log");
-    L.set_level !log_level;
-    log_options opts;
+  if !dry_run then L.from_file "fuzz.log"
+  else L.from_file (Filename.concat !out_dir "fuzz.log");
 
-    if Sys.file_exists !seed_dir |> not then
-      failwith ("Seed directory not found: " ^ !seed_dir));
+  L.set_level !log_level;
+  log_options opts;
+
+  if Sys.file_exists !seed_dir |> not then
+    failwith ("Seed directory not found: " ^ !seed_dir);
 
   (* okay to pass this check if it is a dry-run*)
   Interests.set_interesting_types llctx

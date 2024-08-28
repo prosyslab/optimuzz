@@ -42,6 +42,8 @@ let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
     List.fold_left
       (fun (pool_covers, pool_noncovers) (_, llm, trace) ->
         let seed = Seed.make llm trace node_tbl distmap in
+        L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
+        L.debug "score: %s" (string_of_float (Seed.score seed));
         if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
         else (pool_covers, seed :: pool_noncovers))
       ([], []) seeds

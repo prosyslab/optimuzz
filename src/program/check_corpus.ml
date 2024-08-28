@@ -89,7 +89,7 @@ let _ =
   Config.alive_tv_bin := !tv_bin;
 
   let out_dir = !args |> List.hd in
-  let corpus_dir = Filename.concat out_dir "corpus" in
+  let covers_dir = Filename.concat out_dir "covers" in
   let crash_dir = Filename.concat out_dir "crash" in
   let tmp_dir = Filename.concat out_dir "tmp" in
 
@@ -101,8 +101,8 @@ let _ =
 
   let llfiles =
     match !re with
-    | None -> collect_module_files corpus_dir
-    | Some re -> collect_module_files ~predicate:(grep re) corpus_dir
+    | None -> collect_module_files covers_dir
+    | Some re -> collect_module_files ~predicate:(grep re) covers_dir
   in
 
   let num_files = Array.length llfiles in

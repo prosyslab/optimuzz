@@ -47,12 +47,13 @@ let evalutate_mutant llm covset node_tbl distance_map =
       in
       let cov = Coverage.of_trace trace in
       let new_points = Coverage.diff cov covset in
-      let new_seed = SeedPool.Seed.make llm trace node_tbl distance_map in
-      (* new edges are discovered? *)
-      (* or does it reach the target? *)
-      let interesting =
-        (not (Coverage.is_empty new_points)) || SeedPool.Seed.covers new_seed
+      let (new_seed : SeedPool.Seed.t) =
+        SeedPool.Seed.make llm trace node_tbl distance_map
       in
+      (if new_seed.covers then
+         let seed_name = SeedPool.Seed.name new_seed in
+         ALlvm.save_ll !Config.covers_dir seed_name llm |> ignore);
+      let interesting = not (Coverage.is_empty new_points) in
       if interesting then Some new_seed else None
 
 let mutate_seed llctx llset seed =
