@@ -38,11 +38,18 @@ let evalutate_mutant llm covset node_tbl distance_map =
   let optim_res, _ = measure_optimizer_coverage llm in
   match optim_res with
   | Error _ -> None
-  | Ok cov_mutant ->
-      (* new edges are discovered? *)
-      let cov = Coverage.of_trace cov_mutant in
+  | Ok trace ->
+      let trace =
+        trace (* filter out nodes out of the sliced cfg *)
+        |> List.filter (fun addr ->
+               let v = CD.Cfg.NodeTable.find addr node_tbl in
+               CD.Cfg.NodeMap.mem v distance_map)
+      in
+      let cov = Coverage.of_trace trace in
       let new_points = Coverage.diff cov covset in
-      let new_seed = SeedPool.Seed.make llm cov_mutant node_tbl distance_map in
+      let new_seed = SeedPool.Seed.make llm trace node_tbl distance_map in
+      (* new edges are discovered? *)
+      (* or does it reach the target? *)
       let interesting =
         (not (Coverage.is_empty new_points)) || SeedPool.Seed.covers new_seed
       in
