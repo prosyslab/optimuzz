@@ -67,12 +67,12 @@ module Validator = struct
       Errors)
 end
 
-(** [Optimizer] runs LLVM optimizer binary for specified passes and input IR.
-    The input can be a file or LLVM module. *)
-module Optimizer (Coverage : CD.COVERAGE) = struct
+(** [Optimizer] runs LLVM opt for specified passes and input IR.
+    The input is a file of LLVM Module (in IR). *)
+module Optimizer = struct
   type err_t =
     (* coverage file (cov.cov) is not generated -- probably the LLVM version is not instrumented? *)
-    | Cov_not_generated
+    | File_not_found
     (* optimizer exited with non-zero exit code *)
     | Non_zero_exit
     (* optimizer hangs -- timeout expired *)
@@ -93,11 +93,11 @@ module Optimizer (Coverage : CD.COVERAGE) = struct
           ]
       in
       try
-        let cov = Coverage.read !Config.cov_file in
-        if exit_state = 0 then Ok cov else Error Non_zero_exit
+        let lines = AUtil.read_lines !Config.cov_file in
+        if exit_state = 0 then Ok lines else Error Non_zero_exit
       with Sys_error _ ->
         (* cov.cov is not generated : the file did not trigger [passes] *)
         (* prerr_endline "Optimizer: cov.cov is not generated"; *)
-        Error Cov_not_generated
+        Error File_not_found
     with _ -> Error Non_zero_exit
 end

@@ -2,9 +2,9 @@ open Util
 module L = Logger
 module D = Domain
 module CD = Coverage.Domain
-module Coverage = CD.EdgeCoverage
+module Coverage = CD.PCGuardCoverage
 module Progress = CD.Progress (Coverage)
-module Opt = Oracle.Optimizer (Coverage)
+module Opt = Oracle.Optimizer
 module Seed = Domain.NaiveSeed
 
 let can_optimize file =
@@ -13,14 +13,14 @@ let can_optimize file =
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       None
-  | Error Cov_not_generated ->
+  | Error File_not_found ->
       L.info "coverage of %s is not generated" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       None
-  | Ok coverage ->
+  | Ok lines ->
       L.info "%s can be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
-      Some (file, coverage)
+      Some (file, lines)
 
 let collect_cleaned_seeds llctx seed_dir =
   assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
@@ -31,10 +31,12 @@ let collect_cleaned_seeds llctx seed_dir =
     seed_files
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map can_optimize
-    |> List.filter_map (fun (path, cov) ->
+    |> List.filter_map (fun (path, lines) ->
            match ALlvm.read_ll llctx path with
            | Error _ -> None
-           | Ok llm -> Some (path, llm, cov))
+           | Ok llm ->
+               let cov = Coverage.of_lines lines in
+               Some (path, llm, cov))
   in
   if optimizable_seeds = [] then (
     L.info "No optimizable seeds found.";

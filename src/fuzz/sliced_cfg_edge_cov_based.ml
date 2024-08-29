@@ -5,7 +5,7 @@ module CD = Coverage.Domain
 module Coverage = CD.EdgeCoverage
 module Trace = CD.BlockTrace
 module SeedPool = Seedcorpus.Sliced_cfg_edge_cov_based
-module Opt = Oracle.Optimizer (Trace)
+module Opt = Oracle.Optimizer
 module Progress = CD.Progress (Coverage)
 
 let choice () =
@@ -38,17 +38,19 @@ let evalutate_mutant llm covset node_tbl distance_map =
   let optim_res, _ = measure_optimizer_coverage llm in
   match optim_res with
   | Error _ -> None
-  | Ok trace ->
-      let trace =
-        trace (* filter out nodes out of the sliced cfg *)
-        |> List.filter (fun addr ->
-               let v = CD.Cfg.NodeTable.find addr node_tbl in
-               CD.Cfg.NodeMap.mem v distance_map)
+  | Ok lines ->
+      let traces =
+        (* filter out nodes out of the sliced cfg *)
+        Trace.of_lines lines
+        |> List.map
+             (List.filter (fun (addr : int) ->
+                  let v = CD.Cfg.NodeTable.find addr node_tbl in
+                  CD.Cfg.NodeMap.mem v distance_map))
       in
-      let cov = Coverage.of_trace trace in
+      let cov = Coverage.of_traces traces in
       let new_points = Coverage.diff cov covset in
       let (new_seed : SeedPool.Seed.t) =
-        SeedPool.Seed.make llm trace node_tbl distance_map
+        SeedPool.Seed.make llm traces node_tbl distance_map
       in
       (if new_seed.covers then
          let seed_name = SeedPool.Seed.name new_seed in

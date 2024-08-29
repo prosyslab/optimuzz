@@ -84,6 +84,9 @@ module AstCoverage = struct
   let read file =
     AUtil.read_lines file |> List.filter_map Path.parse |> List.to_seq |> of_seq
 
+  let of_lines lines =
+    lines |> List.filter_map Path.parse |> List.to_seq |> of_seq
+
   let cover_target = mem
 end
 
@@ -292,21 +295,10 @@ let parse_targets targets_file =
 module BlockTrace = struct
   type t = int list
 
-  let read file = AUtil.read_lines file |> List.map int_of_string
-  let empty = []
-  let union = List.append
-  let diff _ _ = failwith "unneceesary"
-  let cardinal = List.length
-end
-
-module EdgeCoverage = struct
-  include Set.Make (IntInt)
-
-  (* need to handle a case the target function is reached many times *)
-  (* [A;B;C;D;A;B;C] -> [[A;B;C;D]; [A;B;C]]*)
-  let of_trace trace =
-    let entrypoint = List.hd trace in
-
+  let of_lines lines =
+    (* SAFETY: if the file is generated, it has at least one line *)
+    let lines = lines |> List.map int_of_string in
+    let entrypoint = List.hd lines in
     let rec aux accu = function
       | [] -> accu |> List.map List.rev
       | hd :: tl when hd = entrypoint -> aux ([ hd ] :: accu) tl
@@ -316,7 +308,32 @@ module EdgeCoverage = struct
           | _ -> failwith "unreachable")
     in
 
-    let traces = aux [] trace in
+    (* [A;B;C;D;A;B;C] -> [[A;B;C;D]; [A;B;C]] *)
+    aux [] lines
+
+  (** Returns a list of traces. Note that a single coverage file (cov.cov)
+     can contains many traces *)
+  let read file =
+    let lines = AUtil.read_lines file in
+    of_lines lines
+
+  let empty = []
+  let union = List.append
+  let diff _ _ = failwith "unneceesary"
+  let cardinal = List.length
+end
+
+module PCGuardCoverage = struct
+  include Set.Make (Int)
+
+  let read file = AUtil.read_lines file |> List.map int_of_string |> of_list
+  let of_lines lines = List.map int_of_string lines |> of_list
+end
+
+module EdgeCoverage = struct
+  include Set.Make (IntInt)
+
+  let of_traces traces =
     traces
     |> List.map AUtil.pairs
     |> List.map of_list
@@ -324,9 +341,8 @@ module EdgeCoverage = struct
 
   let read file =
     let open AUtil in
-    let nodes = BlockTrace.read file in
-    pairs nodes |> of_list
-  (* G.fold_edges (fun src dst accu -> add (src, dst) accu) graph empty *)
+    let traces = BlockTrace.read file in
+    traces |> List.map pairs |> List.map of_list |> List.fold_left union empty
 end
 
 (* module SC = Sancov *)
@@ -335,9 +351,10 @@ module CfgDistance = struct
   type t = float
 
   (** computes distance of a trace *)
-  let distance_score (trace : BlockTrace.t) node_tbl distmap =
+  let distance_score (traces : BlockTrace.t list) node_tbl distmap =
     let nodes_in_trace =
-      trace
+      traces
+      |> List.flatten
       |> List.sort_uniq compare
       |> List.filter_map (fun addr ->
              match Cfg.NodeTable.find_opt addr node_tbl with
@@ -364,14 +381,14 @@ module CfgDistance = struct
       let size = List.length nodes_in_trace |> float_of_int in
       dist_sum /. size
 
-  let get_cover (trace : BlockTrace.t) node_tbl distmap =
-    List.exists
-      (fun addr ->
-        let node = Cfg.NodeTable.find_opt addr node_tbl in
-        match node with
-        | None -> false
-        | Some node -> Cfg.NodeMap.find_opt node distmap = Some 0.0)
-      trace
+  let get_cover (traces : BlockTrace.t list) node_tbl distmap =
+    traces
+    |> List.exists
+         (List.exists (fun addr ->
+              let node = Cfg.NodeTable.find_opt addr node_tbl in
+              match node with
+              | None -> false
+              | Some node -> Cfg.NodeMap.find_opt node distmap = Some 0.0))
 end
 
 module type COVERAGE = sig

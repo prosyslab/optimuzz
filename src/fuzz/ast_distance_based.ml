@@ -22,7 +22,7 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
   module Seed = SeedPool.Seed
   module Dist = Seed.Distance
   module Progress = CD.Progress (Coverage)
-  module Opt = Oracle.Optimizer (Coverage)
+  module Opt = Oracle.Optimizer
 
   let choice seed () =
     let mode = if Seed.covers seed then MD.FOCUS else EXPAND in
@@ -66,7 +66,8 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
     let optim_res, valid_res = measure_optimizer_coverage mutant in
     match optim_res with
     | Error _ -> Invalid
-    | Ok cov_mutant ->
+    | Ok lines_mutant ->
+        let cov_mutant = Coverage.of_lines lines_mutant in
         let new_seed = Seed.make mutant target_path cov_mutant in
         L.debug "mutant: %a\n" Seed.pp new_seed;
         let is_crash = valid_res = Oracle.Validator.Incorrect in
