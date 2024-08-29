@@ -90,19 +90,6 @@ module AstCoverage = struct
   let cover_target = mem
 end
 
-(* module EdgeCoverage = struct
-     include Set.Make (Int)
-
-     let read file =
-       AUtil.read_lines file |> List.map int_of_string |> List.to_seq |> of_seq
-   end *)
-(*
-   module SancovEdgeCoverage = struct
-     include Set.Make (Int)
-
-     let read file = Sancov.CoverageFile.read file
-   end *)
-
 module type Distance = sig
   type t
 
@@ -323,7 +310,7 @@ module BlockTrace = struct
   let cardinal = List.length
 end
 
-module PCGuardCoverage = struct
+module PCGuardEdgeCoverage = struct
   include Set.Make (Int)
 
   let read file = AUtil.read_lines file |> List.map int_of_string |> of_list

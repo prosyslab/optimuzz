@@ -2,7 +2,7 @@ open Util
 module L = Logger
 module D = Domain
 module CD = Coverage.Domain
-module Coverage = CD.PCGuardCoverage
+module Coverage = CD.PCGuardEdgeCoverage
 module Progress = CD.Progress (Coverage)
 module Opt = Oracle.Optimizer
 module Seed = Domain.NaiveSeed
