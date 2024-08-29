@@ -142,7 +142,7 @@ let llfuzz_edge_cov_based_greybox () =
   let open Oracle in
   let module SP = Seedcorpus.Edge_cov_based in
   let module FZ = Fuzz.Edge_cov_based in
-  let module Progress = CD.Progress (CD.PCGuardCoverage) in
+  let module Progress = CD.Progress (CD.PCGuardEdgeCoverage) in
   let seed_pool, init_cov = SP.make llctx in
 
   let sp_size = SP.length seed_pool in

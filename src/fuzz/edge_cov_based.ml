@@ -2,7 +2,7 @@ open Util
 module F = Format
 module CD = Coverage.Domain
 module MD = Mutation.Domain
-module Coverage = CD.PCGuardCoverage
+module Coverage = CD.PCGuardEdgeCoverage
 module SeedPool = Seedcorpus.Edge_cov_based
 module Opt = Oracle.Optimizer
 module Progress = CD.Progress (Coverage)
