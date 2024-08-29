@@ -3,7 +3,7 @@ module D = Domain
 module L = Logger
 module CD = Coverage.Domain
 module Coverage = CD.AstCoverage
-module Opt = Oracle.Optimizer (Coverage)
+module Opt = Oracle.Optimizer
 
 let can_optimize file =
   match Opt.run ~passes:!Config.optimizer_passes file with
@@ -11,7 +11,7 @@ let can_optimize file =
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       false
-  | Ok _ | Error Cov_not_generated ->
+  | Ok _ | Error File_not_found ->
       L.info "%s can be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       true
@@ -121,7 +121,7 @@ end
 module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
   module Seed = Seed
   include Make_fifo_queue (Seed)
-  module Opt = Oracle.Optimizer (Coverage)
+  module Opt = Oracle.Optimizer
 
   let run_opt llm =
     let h = ALlvm.hash_llm llm in
@@ -130,18 +130,19 @@ module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
     let res = Opt.run ~passes:!Config.optimizer_passes filename in
     AUtil.clean filename;
     match res with
-    | Error Opt.Cov_not_generated ->
+    | Error Opt.File_not_found ->
         Format.eprintf "Coverage not generated: %s@." filename;
         None
     | Error _ -> None
-    | Ok cov -> Some (h, cov)
+    | Ok lines -> Some (h, lines)
 
   let construct_seedpool ?(max_size : int = 100) target_path llmodules =
     let open AUtil in
     let seeds =
       llmodules
       |> List.filter_map (fun llm ->
-             let* _, cov = run_opt llm in
+             let* _, lines = run_opt llm in
+             let cov = Coverage.of_lines lines in
              Seed.make llm target_path cov |> Option.some)
     in
     let pool_covers, pool_noncovers =
@@ -193,7 +194,7 @@ end
 module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
   include Make_priority_queue (Seed)
   module Seed = Seed
-  module Opt = Oracle.Optimizer (Coverage)
+  module Opt = Oracle.Optimizer
 
   let run_opt llm =
     let h = ALlvm.hash_llm llm in
@@ -202,11 +203,11 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
     let res = Opt.run ~passes:!Config.optimizer_passes filename in
     AUtil.clean filename;
     match res with
-    | Error Opt.Cov_not_generated ->
+    | Error Opt.File_not_found ->
         Format.eprintf "Coverage not generated: %s@." filename;
         None
     | Error _ -> None
-    | Ok cov -> Some (h, cov)
+    | Ok lines -> Some (h, lines)
 
   let get_prio covers (score : Seed.Distance.t) =
     if covers then 0 else score |> Seed.Distance.to_priority
@@ -216,7 +217,8 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
     let seeds =
       llmodules
       |> List.filter_map (fun llm ->
-             let* _, cov = run_opt llm in
+             let* _, lines = run_opt llm in
+             let cov = Coverage.of_lines lines in
              Seed.make llm target_path cov |> Option.some)
     in
     let pool_covers, pool_noncovers =

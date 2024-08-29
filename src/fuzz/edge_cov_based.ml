@@ -2,9 +2,9 @@ open Util
 module F = Format
 module CD = Coverage.Domain
 module MD = Mutation.Domain
-module Coverage = CD.EdgeCoverage
+module Coverage = CD.PCGuardCoverage
 module SeedPool = Seedcorpus.Edge_cov_based
-module Opt = Oracle.Optimizer (Coverage)
+module Opt = Oracle.Optimizer
 module Progress = CD.Progress (Coverage)
 
 let choice () =
@@ -43,8 +43,9 @@ let evalutate_mutant mutant cov_sofar =
   let optim_res, _ = measure_optimizer_coverage mutant in
   match optim_res with
   | Error _ -> (false, Coverage.empty)
-  | Ok cov_mutant ->
+  | Ok lines_mutant ->
       (* new edges are discovered? *)
+      let cov_mutant = Coverage.of_lines lines_mutant in
       let new_points = Coverage.diff cov_mutant cov_sofar in
       let interesting = not @@ Coverage.is_empty new_points in
       (interesting, cov_mutant)

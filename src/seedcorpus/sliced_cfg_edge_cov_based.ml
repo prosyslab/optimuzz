@@ -5,7 +5,7 @@ module Seed = Domain.CfgSeed
 module CD = Coverage.Domain
 module Coverage = CD.EdgeCoverage
 module Trace = CD.BlockTrace
-module Opt = Oracle.Optimizer (Trace)
+module Opt = Oracle.Optimizer
 include Queue
 
 let can_optimize seedfile =
@@ -14,14 +14,14 @@ let can_optimize seedfile =
       L.debug "%s cannot be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
-  | Error Cov_not_generated ->
+  | Error File_not_found ->
       L.debug "coverage of %s is not generated" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
-  | Ok coverage ->
+  | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      Some (seedfile, coverage)
+      Some (seedfile, lines)
 
 let push (seed : Seed.t) pool =
   let llm = seed.llm in
@@ -40,8 +40,8 @@ let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
   let pool = create () in
   let pool_covers, pool_noncovers =
     List.fold_left
-      (fun (pool_covers, pool_noncovers) (_, llm, trace) ->
-        let seed = Seed.make llm trace node_tbl distmap in
+      (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
+        let seed = Seed.make llm traces node_tbl distmap in
         L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
         L.debug "score: %s" (string_of_float (Seed.score seed));
         if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
@@ -89,10 +89,12 @@ let make llctx node_tbl (distmap : CD.distmap) =
   let seed_dir = !Config.seed_dir in
 
   let filter_seed seed =
-    let* path, cov = can_optimize seed in
+    let* path, lines = can_optimize seed in
     match ALlvm.read_ll llctx path with
     | Error _ -> None
-    | Ok llm -> Some (path, llm, cov)
+    | Ok llm ->
+        let cov = lines |> Trace.of_lines in
+        Some (path, llm, cov)
   in
 
   let seeds =
@@ -103,7 +105,9 @@ let make llctx node_tbl (distmap : CD.distmap) =
     |> Array.to_list
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map filter_seed
-    |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
+    (* |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm) *)
   in
 
-  evaluate_seeds_and_construct_seedpool seeds node_tbl distmap
+  let pool = evaluate_seeds_and_construct_seedpool seeds node_tbl distmap in
+
+  pool

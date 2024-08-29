@@ -7,24 +7,24 @@ let run_opt llm =
   let h = ALlvm.hash_llm llm in
   let filename = Format.sprintf "id:%010d.ll" h in
   let filename = ALlvm.save_ll !Config.out_dir filename llm in
-  let module Opt = Oracle.Optimizer (CD.AstCoverage) in
+  let module Opt = Oracle.Optimizer in
   let res = Opt.run ~passes:!Config.optimizer_passes filename in
   AUtil.clean filename;
   match res with
-  | Error Opt.Cov_not_generated ->
+  | Error Opt.File_not_found ->
       Format.eprintf "Coverage not generated: %s@." filename;
       None
   | Error _ -> None
-  | Ok cov -> Some (h, cov)
+  | Ok lines -> Some (h, lines)
 
 let can_optimize file =
-  let module Opt = Oracle.Optimizer (CD.AstCoverage) in
+  let module Opt = Oracle.Optimizer in
   match Opt.run ~passes:!Config.optimizer_passes file with
   | Error Non_zero_exit | Error Hang ->
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       false
-  | Ok _ | Error Cov_not_generated ->
+  | Ok _ | Error File_not_found ->
       L.info "%s can be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       true
