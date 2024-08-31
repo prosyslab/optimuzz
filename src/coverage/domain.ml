@@ -149,6 +149,14 @@ module MinDistance : Distance with type t = int = struct
   let of_int = Fun.id
 end
 
+(** used for edge coverage based (naive greybox) fuzzing *)
+module PCGuardEdgeCoverage = struct
+  include Set.Make (Int)
+
+  let read file = AUtil.read_lines file |> List.map int_of_string |> of_list
+  let of_lines lines = List.map int_of_string lines |> of_list
+end
+
 module IntInt = struct
   type t = int * int
 
@@ -181,7 +189,7 @@ module Cfg = struct
   module E = struct
     type t = float
 
-    let default = 1.0
+    let default = 1.0 (* a single edge is counted as 1.0 *)
     let compare = Float.compare
   end
 
@@ -222,6 +230,7 @@ module Cfg = struct
     let zero = 0.0
   end
 
+  (* shortest path algorithm *)
   module Dijk = Path.Dijkstra (G) (W)
 
   let read = Parser.parse
@@ -237,6 +246,8 @@ module Cfg = struct
   module NodeMap = Map.Make (V)
   module NodeTable = Map.Make (Int)
 
+  (** Builds a map (node -> distance).
+      The distance is None if the node is unreachable *)
   let compute_distances cfg target =
     let dijk v = Dijk.shortest_path cfg v target in
     G.fold_vertex
@@ -263,8 +274,7 @@ let build_distmap cfg target_nodes =
   |> List.map (fun target ->
          Cfg.compute_distances cfg target
          |> Cfg.NodeMap.filter_map (fun _k v -> v))
-  |> List.map (fun distmap ->
-         Cfg.NodeMap.map (fun d -> FloatSet.singleton d) distmap)
+  |> List.map (Cfg.NodeMap.map (fun d -> FloatSet.singleton d))
   |> List.fold_left
        (Cfg.NodeMap.union (fun _k d1 d2 -> FloatSet.union d1 d2 |> Option.some))
        Cfg.NodeMap.empty
@@ -310,13 +320,6 @@ module BlockTrace = struct
   let cardinal = List.length
 end
 
-module PCGuardEdgeCoverage = struct
-  include Set.Make (Int)
-
-  let read file = AUtil.read_lines file |> List.map int_of_string |> of_list
-  let of_lines lines = List.map int_of_string lines |> of_list
-end
-
 module EdgeCoverage = struct
   include Set.Make (IntInt)
 
@@ -332,7 +335,12 @@ module EdgeCoverage = struct
     traces |> List.map pairs |> List.map of_list |> List.fold_left union empty
 end
 
-(* module SC = Sancov *)
+let is_in_slided_cfg addr node_tbl distmap =
+  match Cfg.NodeTable.find_opt addr node_tbl with
+  | None -> false (* not in CFG of the target function*)
+  | Some node ->
+      Cfg.NodeMap.find_opt node distmap
+      <> None (* unreachable node to target blocks *)
 
 module CfgDistance = struct
   type t = float
@@ -345,10 +353,8 @@ module CfgDistance = struct
       |> List.sort_uniq compare
       |> List.filter_map (fun addr ->
              match Cfg.NodeTable.find_opt addr node_tbl with
-             | Some node -> Some node
-             | None ->
-                 L.warn "node not found: 0x%x" addr;
-                 None)
+             | Some node when Cfg.NodeMap.mem node distmap -> Some node
+             | _ -> None)
     in
     let dist_sum : float =
       nodes_in_trace
