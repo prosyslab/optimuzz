@@ -115,7 +115,6 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   |> CD.Cfg.NodeMap.iter (fun node dists ->
          F.printf "%a: %a@." CD.Cfg.V.pp node F.pp_print_float dists);
 
-  if !Config.dry_run then exit 0;
   let seed_pool, init_cov = SP.make llctx node_tbl distmap in
   let sp_size = SP.length seed_pool in
 
@@ -129,6 +128,8 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
          let filename = SP.Seed.name seed in
          ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
          |> ignore);
+
+  if !Config.dry_run then exit 0;
 
   let progress = ref Progress.empty in
   progress := Progress.add_cov init_cov !progress;

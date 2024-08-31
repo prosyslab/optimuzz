@@ -105,7 +105,7 @@ let make llctx node_tbl (distmap : CD.distmap) =
     |> Array.to_list
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map filter_seed
-    (* |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm) *)
+    |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
   in
 
   let pool = evaluate_seeds_and_construct_seedpool seeds node_tbl distmap in
