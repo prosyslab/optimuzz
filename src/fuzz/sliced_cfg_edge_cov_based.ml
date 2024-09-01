@@ -34,7 +34,7 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evalutate_mutant llm covset node_tbl distance_map =
+let evaluate_mutant llm covset node_tbl distance_map =
   let optim_res, _ = measure_optimizer_coverage llm in
   match optim_res with
   | Error _ -> None
@@ -86,7 +86,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
       match mutator llm with
       | Some mutated_llm -> (
           match
-            evalutate_mutant mutated_llm progress.cov_sofar node_tbl distmap
+            evaluate_mutant mutated_llm progress.cov_sofar node_tbl distmap
           with
           | Some new_seed -> Some new_seed
           | None -> generate_mutant (energy - 1) mutated_llm progress)
