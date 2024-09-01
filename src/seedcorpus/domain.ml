@@ -140,8 +140,7 @@ module CfgSeed = struct
   let edge_cov seed = seed.edge_cov
 
   let get_energy seed =
-    if seed.covers then 10
-    else seed.score |> Float.mul 10.0 |> Float.to_int |> Int.sub 10
+    if seed.covers then 10 else (seed.score *. 10.0) -. 10.0 |> int_of_float
 
   let name ?(parent : int option) seed =
     let hash = ALlvm.hash_llm seed.llm in
@@ -154,4 +153,8 @@ module CfgSeed = struct
         Format.asprintf "date:%s,id:%010d,src:%010d,score:%f,covers:%b.ll"
           (AUtil.get_current_time ())
           hash parent_hash seed.score seed.covers
+
+  let pp fmt seed =
+    Format.fprintf fmt "score: %f, covers: %b,@.%s" seed.score seed.covers
+      (ALlvm.string_of_llmodule seed.llm)
 end
