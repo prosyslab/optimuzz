@@ -110,7 +110,10 @@ let run seed_pool node_tbl distmap llctx llset progress =
     let seed, pool_popped = SeedPool.pop pool in
     let energy = SeedPool.Seed.get_energy seed in
     let llm = SeedPool.Seed.llmodule seed in
-    L.debug "energy: %d" energy;
+    L.debug "campaign: seed popped (energy: %d): %a" energy SeedPool.Seed.pp
+      seed;
+
+    assert (energy >= 0);
 
     let new_pool, new_progress =
       generate_interesting_mutants energy energy llm pool_popped progress
