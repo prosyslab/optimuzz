@@ -41,7 +41,7 @@ let _ =
 
   Arg.parse opts (fun _ -> ()) "";
 
-  L.from_channel stdout;
+  L.from_file "llmutate.log";
   L.set_level L.DEBUG;
 
   let filename = Sys.argv.(1) in
