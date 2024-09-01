@@ -96,17 +96,18 @@ let run seed_pool node_tbl distmap llctx llset progress =
       | None -> generate_mutant (energy - 1) llm progress
   in
 
-  let rec generate_interesting_mutants times energy llm pool progress =
-    if times = 0 then (pool, progress)
-    else
-      match generate_mutant energy llm progress with
-      | Some new_seed ->
-          let new_progress = update_progress progress new_seed in
-          let new_pool = SeedPool.push new_seed pool in
-          generate_interesting_mutants (times - 1) energy llm new_pool
-            new_progress
-      | None ->
-          generate_interesting_mutants (times - 1) energy llm pool progress
+  let generate_interesting_mutants energy llm pool progress =
+    let rec aux times pool progress =
+      if times = 0 then (pool, progress)
+      else
+        match generate_mutant energy llm progress with
+        | Some new_seed ->
+            let new_progress = update_progress progress new_seed in
+            let new_pool = SeedPool.push new_seed pool in
+            aux (times - 1) new_pool new_progress
+        | None -> aux (times - 1) pool progress
+    in
+    aux energy pool progress
   in
 
   let rec campaign pool (progress : Progress.t) =
@@ -119,7 +120,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
     assert (energy >= 0);
 
     let new_pool, new_progress =
-      generate_interesting_mutants energy energy llm pool_popped progress
+      generate_interesting_mutants energy llm pool_popped progress
     in
 
     campaign (SeedPool.push seed new_pool) new_progress
