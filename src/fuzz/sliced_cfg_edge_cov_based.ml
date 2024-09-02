@@ -42,15 +42,12 @@ let evaluate_mutant llm covset node_tbl distance_map =
   | Error _ -> None
   | Ok lines ->
       let traces =
-        (* filter out nodes out of the sliced cfg *)
+        (* only use nodes in the sliced cfg *)
         Trace.of_lines lines
         |> List.map
-             (List.filter (fun (addr : int) ->
-                  match CD.Cfg.NodeTable.find_opt addr node_tbl with
-                  | Some v -> CD.Cfg.NodeMap.mem v distance_map
-                  | None ->
-                      L.warn "evaluate_mutant: 0x%x not found in node_tbl" addr;
-                      false))
+             (List.filter (fun addr ->
+                  CD.sliced_cfg_node_of_addr node_tbl distance_map addr
+                  |> Option.is_some))
       in
       let cov = Coverage.of_traces traces in
       let new_points = Coverage.diff cov covset in

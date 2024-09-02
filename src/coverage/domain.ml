@@ -340,12 +340,10 @@ module EdgeCoverage = struct
   let pp covset = iter (fun (i1, i2) -> L.debug "%d %d\n" i1 i2) covset
 end
 
-let is_in_slided_cfg addr node_tbl distmap =
+let sliced_cfg_node_of_addr node_tbl distmap addr =
   match Cfg.NodeTable.find_opt addr node_tbl with
-  | None -> false (* not in CFG of the target function*)
-  | Some node ->
-      Cfg.NodeMap.find_opt node distmap
-      <> None (* unreachable node to target blocks *)
+  | None -> None (* in CFG of a function other than the target function *)
+  | Some node -> if Cfg.NodeMap.mem node distmap then Some node else None
 
 module CfgDistance = struct
   type t = float
@@ -356,10 +354,7 @@ module CfgDistance = struct
       traces
       |> List.flatten
       |> List.sort_uniq compare
-      |> List.filter_map (fun addr ->
-             match Cfg.NodeTable.find_opt addr node_tbl with
-             | Some node when Cfg.NodeMap.mem node distmap -> Some node
-             | _ -> None)
+      |> List.filter_map (sliced_cfg_node_of_addr node_tbl distmap)
     in
     let dist_sum : float =
       nodes_in_trace
