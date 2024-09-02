@@ -140,7 +140,10 @@ module CfgSeed = struct
   let edge_cov seed = seed.edge_cov
 
   let get_energy seed =
-    if seed.covers then 10 else (seed.score *. 10.0) -. 10.0 |> int_of_float
+    let int_score = Float.to_int seed.score in
+    if seed.covers then 10
+    else if int_score >= 10 then 1
+    else Int.sub 10 int_score
 
   let name ?(parent : int option) seed =
     let hash = ALlvm.hash_llm seed.llm in
