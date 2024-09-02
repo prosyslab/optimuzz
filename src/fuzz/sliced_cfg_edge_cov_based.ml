@@ -103,6 +103,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
         match generate_mutant energy llm progress with
         | Some new_seed ->
             let new_progress = update_progress progress new_seed in
+            SeedPool.save new_seed;
             let new_pool = SeedPool.push new_seed pool in
             aux (times - 1) new_pool new_progress
         | None -> aux (times - 1) pool progress

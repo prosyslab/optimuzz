@@ -24,15 +24,17 @@ let can_optimize seedfile =
       Some (seedfile, lines)
 
 let push (seed : Seed.t) pool =
-  let llm = seed.llm in
-  let seed_name = Seed.name seed in
-  ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore;
   push seed pool;
   pool
 
 let pop pool =
   let seed = pop pool in
   (seed, pool)
+
+let save (seed : Seed.t) =
+  let llm = seed.llm in
+  let seed_name = Seed.name seed in
+  ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore
 
 let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
     distmap =
