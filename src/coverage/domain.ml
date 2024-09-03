@@ -295,18 +295,21 @@ module BlockTrace = struct
   let of_lines lines =
     (* SAFETY: if the file is generated, it has at least one line *)
     let lines = lines |> List.map int_of_string in
-    let entrypoint = List.hd lines in
-    let rec aux accu = function
-      | [] -> accu |> List.map List.rev
-      | hd :: tl when hd = entrypoint -> aux ([ hd ] :: accu) tl
-      | hd :: tl -> (
-          match accu with
-          | curr :: rest -> aux ((hd :: curr) :: rest) tl
-          | _ -> failwith "unreachable")
-    in
+    match lines with
+    | [] -> []
+    | _ ->
+        let entrypoint = List.hd lines in
+        let rec aux accu = function
+          | [] -> accu |> List.map List.rev
+          | hd :: tl when hd = entrypoint -> aux ([ hd ] :: accu) tl
+          | hd :: tl -> (
+              match accu with
+              | curr :: rest -> aux ((hd :: curr) :: rest) tl
+              | _ -> failwith "unreachable")
+        in
 
-    (* [A;B;C;D;A;B;C] -> [[A;B;C;D]; [A;B;C]] *)
-    aux [] lines
+        (* [A;B;C;D;A;B;C] -> [[A;B;C;D]; [A;B;C]] *)
+        aux [] lines
 
   (** Returns a list of traces. Note that a single coverage file (cov.cov)
      can contains many traces *)
@@ -333,6 +336,8 @@ module EdgeCoverage = struct
     let open AUtil in
     let traces = BlockTrace.read file in
     traces |> List.map pairs |> List.map of_list |> List.fold_left union empty
+
+  let pp covset = iter (fun (i1, i2) -> L.debug "%d %d\n" i1 i2) covset
 end
 
 let is_in_slided_cfg addr node_tbl distmap =

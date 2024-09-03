@@ -6,10 +6,15 @@ external set_opaque_pointers : llcontext -> bool -> unit
 external verify_module : llmodule -> bool = "wrap_llvm_verify_module"
 external get_allocated_type : llvalue -> lltype = "llvm_get_alloca_type"
 
-external clone_function : llvalue -> lltype -> llvalue
-  = "llvm_transforms_utils_clone_function"
-(** [clone_function func ret_ty] returns
+external clone_function_with_retty : llvalue -> lltype -> llvalue
+  = "llvm_transforms_utils_clone_function_with_retty"
+(** [clone_function_retty func ret_ty] returns
     a copy of [func] of return type [ret_ty] and add it to [func]'s module *)
+
+external clone_function_with_fnty : llvalue -> lltype -> llvalue
+  = "llvm_transforms_utils_clone_function_with_fnty"
+(** [clone_function_with_fnty func fn_ty] returns
+      a copy of [func] of function type [fn_ty] and add it to [func]'s module *)
 
 external transfer_instructions : llbasicblock -> llbasicblock -> unit
   = "llvm_bb_transfer_instructions"
@@ -24,6 +29,8 @@ external string_of_constint : llvalue -> string = "llvm_string_of_constantint"
 
 external half_type : llcontext -> lltype = "llvm_half_type"
 (** [half_type c] returns the IEEE 16-bit floating point type in the context [c]. See [llvm::Type::HalfTy]. *)
+
+external get_return_type : llvalue -> lltype = "llvm_get_return_type"
 
 external add_intrinsic_by_name : llmodule -> string -> lltype -> llvalue
   = "llvm_get_intrinsic_by_name"
@@ -712,6 +719,21 @@ let reset_fun_names llm =
       accu + 1)
     0 llm
   |> ignore
+
+(** [copy_blocks llctx f_old f_new] copies all blocks of [f_old] to [f_new]. *)
+let copy_blocks llctx f_old f_new =
+  assert (f_new |> basic_blocks |> Array.length = 1);
+  let entry_new = entry_block f_new in
+  let blocks_old = basic_blocks f_old in
+  let rec loop prev_block i =
+    if i >= Array.length blocks_old then ()
+    else
+      let block_old = Array.get blocks_old i in
+      let block_new = insert_block llctx (block_name block_old) entry_new in
+      move_block_after prev_block block_new;
+      loop block_new (i + 1)
+  in
+  loop entry_new 1
 
 module ChangeRetVal = struct
   let find_block_by_name f name =

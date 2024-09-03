@@ -36,6 +36,8 @@ let measure_optimizer_coverage llm =
 
 let evaluate_mutant llm covset node_tbl distance_map =
   let optim_res, _ = measure_optimizer_coverage llm in
+  L.debug "Mutant: ";
+  L.debug "%s" (ALlvm.string_of_llmodule llm);
   match optim_res with
   | Error _ -> None
   | Ok lines ->

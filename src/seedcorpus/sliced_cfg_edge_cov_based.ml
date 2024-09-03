@@ -90,12 +90,36 @@ let make llctx node_tbl (distmap : CD.distmap) =
   let open AUtil in
   let seed_dir = !Config.seed_dir in
 
+  let add_dummy_params llm =
+    let open ALlvm in
+    let f_alls = fold_left_functions (fun accu f -> f :: accu) [] llm in
+    let f_olds =
+      List.fold_left
+        (fun accu f_old ->
+          let dummy_params = [| i32_type llctx; pointer_type llctx |] in
+          let old_params = params f_old in
+          let param_tys =
+            Array.append (Array.map type_of old_params) dummy_params
+          in
+          let new_fnty = function_type (get_return_type f_old) param_tys in
+          let name = value_name f_old in
+          let f_new = clone_function_with_fnty f_old new_fnty in
+
+          set_value_name name f_new;
+          f_old :: accu)
+        [] f_alls
+    in
+    f_olds |> List.rev |> List.iter delete_function;
+    llm
+  in
+
   let filter_seed seed =
     let* path, lines = can_optimize seed in
     match ALlvm.read_ll llctx path with
     | Error _ -> None
     | Ok llm ->
         let cov = lines |> Trace.of_lines in
+        let llm = add_dummy_params llm in
         Some (path, llm, cov)
   in
 

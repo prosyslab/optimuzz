@@ -66,7 +66,7 @@ let check_exist_ret func =
   ALlvm.any_all_instr is_ret func
 
 let rec redef_fn llctx f_old wide instr =
-  let extra_param = [| ALlvm.i32_type llctx; ALlvm.i32_type llctx |] in
+  let extra_param = [| ALlvm.i32_type llctx; ALlvm.pointer_type llctx |] in
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param

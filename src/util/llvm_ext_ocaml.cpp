@@ -169,7 +169,7 @@ extern "C"
 
   // Reference:
   // https://github.com/llvm/llvm-project/blob/fe20a759fcd20e1755ea1b34c5e6447a787925dc/llvm/lib/Transforms/Utils/CloneFunction.cpp#L320
-  value llvm_transforms_utils_clone_function(value F, value RetTy) {
+  value llvm_transforms_utils_clone_function_with_retty(value F, value RetTy) {
     CAMLparam2(F, RetTy);
     Function *OldFunc = unwrap<Function>(Value_val(F));
     Type *RT = unwrap<Type>(Type_val(RetTy));
@@ -177,6 +177,29 @@ extern "C"
     std::vector<Type *> ArgTypes = OldFunc->getFunctionType()->params();
     bool IsVarArg = OldFunc->getFunctionType()->isVarArg();
     FunctionType *NewFTy = FunctionType::get(RT, ArgTypes, IsVarArg);
+
+    Module *M = OldFunc->getParent();
+    Function *NewFunc =
+        Function::Create(NewFTy, OldFunc->getLinkage(), OldFunc->getName(), M);
+
+    ValueToValueMapTy VMap;
+    Function::arg_iterator DestI = NewFunc->arg_begin();
+    for (const Argument &I : OldFunc->args()) {
+      DestI->setName(I.getName());
+      VMap[&I] = &*DestI++;
+    }
+
+    SmallVector<ReturnInst *, 8> Returns;
+    CloneFunctionInto(NewFunc, OldFunc, VMap,
+                      CloneFunctionChangeType::LocalChangesOnly, Returns, "",
+                      nullptr);
+    CAMLreturn(to_val(NewFunc));
+  }
+
+    value llvm_transforms_utils_clone_function_with_fnty(value F, value FnTy) {
+    CAMLparam2(F, FnTy);
+    Function *OldFunc = unwrap<Function>(Value_val(F));
+    FunctionType *NewFTy = unwrap<FunctionType>(Type_val(FnTy));
 
     Module *M = OldFunc->getParent();
     Function *NewFunc =
@@ -274,6 +297,12 @@ extern "C"
     /* llmodule -> string -> lltype -> llvalue*/
   value llvm_get_intrinsic_by_name(value M, value Name, value FnTy){
     return to_val(LLVMAddFunction(Module_val(M), String_val(Name), Type_val(FnTy)));
+  }
+
+  value llvm_get_return_type(value F){
+    Function *fn = unwrap<Function>(Value_val(F));
+
+    return to_val(fn->getReturnType());
   }
 
 }

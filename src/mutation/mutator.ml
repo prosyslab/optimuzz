@@ -281,6 +281,12 @@ let get_any_integer loc llm =
        ]
   |> Candidates.choose
 
+(** [get_any_pointer loc] returns all valid pointers at [loc], *)
+let get_any_pointer loc llm =
+  get_opd_cands_nonconst_allty loc llm
+  |> Candidates.filter_each (fun v -> v |> type_of |> classify_type = Pointer)
+  |> Candidates.choose
+
 (** [get_opd_cands_const_vecty ()] returns all constant vector operand
     candidates. *)
 let get_opd_cands_const_vecty () =
@@ -659,53 +665,61 @@ let create_rand_llv llctx llm =
       |> AUtil.choose_random
     in
     L.debug "location: %s" (string_of_llvalue loc);
-    if Random.int 4 = 0 then
-      let idx = loc |> num_operands |> Random.int in
-      let dst = operand loc idx in
-      let ty_dst = type_of dst in
-      create_rand_instrinsic_by_ty llctx loc idx ty_dst llm
-    else
-      let cands = get_cands_for_create loc 0 [] llm in
-      if cands = [] then None
-      else
-        let idx, opc, opds = AUtil.choose_random cands in
-        L.debug "idx: %s" (string_of_int idx);
-        L.debug "opcode: %s" (string_of_opcode opc);
-        let opd = Candidates.choose opds in
-        L.debug "operand: %s" (string_of_llvalue opd);
-        let ty_dst = type_of (operand loc idx) in
-        let ty_opd = type_of opd in
-        let new_instr =
-          match OpCls.classify opc with
-          | BINARY ->
-              let opd' = get_rand_opd loc ty_opd llm in
-              create_binary llctx loc opc opd opd'
-          | FBINARY ->
-              let opd' = get_rand_opd loc ty_opd llm in
-              create_fbinary llctx loc opc opd opd'
-          | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
-          | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
-          | VEC ShuffleVector ->
-              if opd |> type_of |> classify_type = Vector then
-                create_rand_shufflevector llctx loc opd llm
-              else (
-                L.debug
-                  "ShuffleVector instruction does not require non-vector \
-                   operands.";
-                L.debug "This mutation will be ignored.";
-                loc)
-          | CAST -> create_cast llctx loc opc opd ty_dst
-          | ICMP ->
-              let cond = OpCls.random_icmp () in
-              let opd' = get_rand_opd loc ty_opd llm in
-              create_icmp llctx loc cond opd opd'
-          | OTHER Select -> create_rand_select llctx loc opd llm
-          | _ -> failwith "NEVER OCCUR"
-        in
-        if type_of new_instr == ty_dst then (
-          set_operand loc idx new_instr;
-          Some llm)
-        else None
+    match Random.int 4 with
+    | 0 ->
+        (* Create intrinsic instruction *)
+        let idx = loc |> num_operands |> Random.int in
+        let dst = operand loc idx in
+        let ty_dst = type_of dst in
+        create_rand_instrinsic_by_ty llctx loc idx ty_dst llm
+    | 1 ->
+        (* Create store instruction *)
+        let opd = get_opd_cands_nonconst_allty loc llm |> Candidates.choose in
+        let ptr = get_any_pointer loc llm in
+        let _ = build_store opd ptr (builder_before llctx loc) in
+        Some llm
+    | _ ->
+        let cands = get_cands_for_create loc 0 [] llm in
+        if cands = [] then None
+        else
+          let idx, opc, opds = AUtil.choose_random cands in
+          L.debug "idx: %s" (string_of_int idx);
+          L.debug "opcode: %s" (string_of_opcode opc);
+          let opd = Candidates.choose opds in
+          L.debug "operand: %s" (string_of_llvalue opd);
+          let ty_dst = type_of (operand loc idx) in
+          let ty_opd = type_of opd in
+          let new_instr =
+            match OpCls.classify opc with
+            | BINARY ->
+                let opd' = get_rand_opd loc ty_opd llm in
+                create_binary llctx loc opc opd opd'
+            | FBINARY ->
+                let opd' = get_rand_opd loc ty_opd llm in
+                create_fbinary llctx loc opc opd opd'
+            | VEC ExtractElement -> create_rand_extractelement llctx loc opd llm
+            | VEC InsertElement -> create_rand_insertelement llctx loc opd llm
+            | VEC ShuffleVector ->
+                if opd |> type_of |> classify_type = Vector then
+                  create_rand_shufflevector llctx loc opd llm
+                else (
+                  L.debug
+                    "ShuffleVector instruction does not require non-vector \
+                     operands.";
+                  L.debug "This mutation will be ignored.";
+                  loc)
+            | CAST -> create_cast llctx loc opc opd ty_dst
+            | ICMP ->
+                let cond = OpCls.random_icmp () in
+                let opd' = get_rand_opd loc ty_opd llm in
+                create_icmp llctx loc cond opd opd'
+            | OTHER Select -> create_rand_select llctx loc opd llm
+            | _ -> failwith "NEVER OCCUR"
+          in
+          if type_of new_instr == ty_dst then (
+            set_operand loc idx new_instr;
+            Some llm)
+          else None
 
 (** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
@@ -1091,21 +1105,6 @@ let move_signature llctx f_old typemap =
   in
   let param_tys = f_old |> params |> Array.map (Fun.flip get_ty typemap) in
   (ret_ty, param_tys)
-
-(** [copy_blocks llctx f_old f_new] copies all blocks of [f_old] to [f_new]. *)
-let copy_blocks llctx f_old f_new =
-  assert (f_new |> basic_blocks |> Array.length = 1);
-  let entry_new = entry_block f_new in
-  let blocks_old = basic_blocks f_old in
-  let rec loop prev_block i =
-    if i >= Array.length blocks_old then ()
-    else
-      let block_old = Array.get blocks_old i in
-      let block_new = insert_block llctx (block_name block_old) entry_new in
-      move_block_after prev_block block_new;
-      loop block_new (i + 1)
-  in
-  loop entry_new 1
 
 let migrate_const_int llv_old ty_new =
   assert (is_constant llv_old);
@@ -1650,7 +1649,7 @@ let cut_below llctx llm =
 
             let new_ret_ty = ALlvm.type_of tgt in
             let name = value_name f_old in
-            let f_new = ALlvm.clone_function f_old new_ret_ty in
+            let f_new = ALlvm.clone_function_with_retty f_old new_ret_ty in
             ALlvm.delete_function f_old;
             set_value_name name f_new;
 
