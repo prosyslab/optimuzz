@@ -139,6 +139,7 @@ module Interests = struct
         Normal "0";
         Normal "1";
         Normal "2";
+        Normal "3";
         Normal "16";
         Normal "255" (*0xFF*);
         Normal "65535" (*0xFFFF*);
