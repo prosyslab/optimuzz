@@ -211,6 +211,12 @@ let get_opd_cands loc ty llm : Candidates.t =
     | Pointer -> [ ty |> type_context |> pointer_type |> const_null ]
     | _ -> []
   in
+  let cands_const =
+    if instr_opcode loc = Store then
+      List.filter (fun llv -> not (is_undef llv)) cands_const
+    else cands_const
+  in
+
   let cands_param =
     loc
     |> get_function
