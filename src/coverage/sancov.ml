@@ -22,7 +22,7 @@ module InstrumentedBlocks = struct
     | _ -> failwith "Malformed line detected"
 
   let read filename =
-    AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+    AUtil.readlines filename |> List.map parse_line |> List.to_seq |> of_seq
 end
 
 module PCGuards = struct
@@ -32,7 +32,7 @@ module PCGuards = struct
 
   (* NOTE: [int_of_string] parses an hex-string if the string begins with "0x" *)
   let read filename =
-    AUtil.read_lines filename |> List.map Int64.of_string |> of_list
+    AUtil.readlines filename |> List.map Int64.of_string |> of_list
 end
 
 (*
@@ -81,7 +81,7 @@ module ControlFlow = struct
 
   let read filename =
     let succs_map =
-      AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+      AUtil.readlines filename |> List.map parse_line |> List.to_seq |> of_seq
     in
     compute_preds succs_map
 end
@@ -105,7 +105,7 @@ module TargetBlocks = struct
     | _ -> failwith "Malformed line detected"
 
   let read filename =
-    AUtil.read_lines filename |> List.map parse_line |> List.to_seq |> of_seq
+    AUtil.readlines filename |> List.map parse_line |> List.to_seq |> of_seq
 end
 
 module CoverageFile = struct
@@ -119,7 +119,7 @@ module CoverageFile = struct
   (* to match [pc] in the coverage file and the one in CFG, we should search for the closest but less than the [pc] value in the CFG *)
   (* see the function below [find_correct_pc] *)
   let read filename =
-    AUtil.read_lines filename
+    AUtil.readlines filename
     |> List.map (fun line ->
            match String.split_on_char ',' line with
            | [ pc; _guard ] -> int_of_string pc

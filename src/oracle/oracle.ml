@@ -93,7 +93,7 @@ module Optimizer = struct
           ]
       in
       try
-        let lines = AUtil.read_lines !Config.cov_file in
+        let lines = AUtil.readlines !Config.cov_file in
         if exit_state = 0 then Ok lines else Error Non_zero_exit
       with Sys_error _ ->
         (* cov.cov is not generated : the file did not trigger [passes] *)

@@ -8,7 +8,7 @@ module Trace = CD.BlockTrace
 module Opt = Oracle.Optimizer
 include Queue
 
-let can_optimize seedfile =
+let can_optimize seedfile node_tbl distmap =
   match Opt.run ~passes:!Config.optimizer_passes seedfile with
   | Error Non_zero_exit | Error Hang ->
       L.debug "%s cannot be optimized" seedfile;
@@ -21,6 +21,13 @@ let can_optimize seedfile =
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
+      let lines =
+        lines
+        |> List.filter (fun line ->
+               let addr = int_of_string line in
+               CD.sliced_cfg_node_of_addr node_tbl distmap addr
+               |> Option.is_some)
+      in
       Some (seedfile, lines)
 
 let push (seed : Seed.t) pool =
@@ -118,7 +125,7 @@ let make llctx node_tbl (distmap : CD.distmap) =
   in
 
   let filter_seed seed =
-    let* path, lines = can_optimize seed in
+    let* path, lines = can_optimize seed node_tbl distmap in
     match ALlvm.read_ll llctx path with
     | Error _ -> None
     | Ok llm ->

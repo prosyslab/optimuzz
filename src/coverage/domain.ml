@@ -82,7 +82,7 @@ module AstCoverage = struct
   include Set.Make (Path)
 
   let read file =
-    AUtil.read_lines file |> List.filter_map Path.parse |> List.to_seq |> of_seq
+    AUtil.readlines file |> List.filter_map Path.parse |> List.to_seq |> of_seq
 
   let of_lines lines =
     lines |> List.filter_map Path.parse |> List.to_seq |> of_seq
@@ -153,7 +153,7 @@ end
 module PCGuardEdgeCoverage = struct
   include Set.Make (Int)
 
-  let read file = AUtil.read_lines file |> List.map int_of_string |> of_list
+  let read file = AUtil.readlines file |> List.map int_of_string |> of_list
   let of_lines lines = List.map int_of_string lines |> of_list
 end
 
@@ -282,7 +282,7 @@ let build_distmap cfg target_nodes =
        harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
 
 let parse_targets targets_file =
-  AUtil.read_lines targets_file
+  AUtil.readlines targets_file
   |> List.map (fun line ->
          let chunks = String.split_on_char ':' line in
          let filename = List.nth chunks 0 |> Filename.basename in
@@ -294,7 +294,15 @@ module BlockTrace = struct
 
   let of_lines lines =
     (* SAFETY: if the file is generated, it has at least one line *)
-    let lines = lines |> List.map int_of_string in
+    let lines =
+      lines
+      |> List.map (fun line ->
+             match int_of_string_opt line with
+             | Some n -> n
+             | None ->
+                 F.eprintf "BlockTrace.of_lines: invalid line %s" line;
+                 exit 1)
+    in
     match lines with
     | [] -> []
     | _ ->
@@ -314,7 +322,7 @@ module BlockTrace = struct
   (** Returns a list of traces. Note that a single coverage file (cov.cov)
      can contains many traces *)
   let read file =
-    let lines = AUtil.read_lines file in
+    let lines = AUtil.readlines file in
     of_lines lines
 
   let empty = []

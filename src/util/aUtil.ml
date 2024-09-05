@@ -23,18 +23,6 @@ let name_opted_ver filename =
     String.sub filename 0 (String.length filename - 3) ^ ".opt.ll"
   else filename ^ ".opt.ll"
 
-let read_lines filename =
-  let ic = open_in filename in
-  let try_read () = try Some (input_line ic) with End_of_file -> None in
-  let rec loop acc =
-    match try_read () with
-    | Some s -> loop (s :: acc)
-    | None ->
-        close_in ic;
-        List.rev acc
-  in
-  loop []
-
 let increase_numbers entry =
   let numbers =
     entry |> Yojson.Basic.Util.member "numbers" |> Yojson.Basic.Util.to_int

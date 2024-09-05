@@ -25,7 +25,7 @@ let measure_optimizer_coverage llm =
 
   (if !Config.record_cov then
      try
-       let cov_strings = AUtil.read_lines !Config.cov_file in
+       let cov_strings = AUtil.readlines !Config.cov_file in
        AUtil.update_numbers_with_cov !Config.json_file cov_strings
      with Sys_error _ -> ());
 
