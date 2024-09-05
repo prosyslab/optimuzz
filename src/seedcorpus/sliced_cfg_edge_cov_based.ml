@@ -109,7 +109,11 @@ let make llctx node_tbl (distmap : CD.distmap) =
           f_old :: accu)
         [] f_alls
     in
-    f_olds |> List.rev |> List.iter delete_function;
+    f_olds
+    |> List.rev
+    |> List.iter (fun f_old ->
+           replace_all_uses_with f_old (undef (pointer_type llctx));
+           delete_function f_old);
     llm
   in
 
