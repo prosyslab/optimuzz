@@ -199,6 +199,24 @@ let string_of_icmp = function
   | Slt -> "slt"
   | Sle -> "sle"
 
+let string_of_fcmp = function
+  | Fcmp.False -> "false"
+  | Oeq -> "oeq"
+  | Ogt -> "ogt"
+  | Oge -> "oge"
+  | Olt -> "olt"
+  | Ole -> "ole"
+  | One -> "one"
+  | Ord -> "ord"
+  | Uno -> "uno"
+  | Ueq -> "ueq"
+  | Ugt -> "ugt"
+  | Uge -> "uge"
+  | Ult -> "ult"
+  | Ule -> "ule"
+  | Une -> "une"
+  | True -> "true"
+
 external get_shufflevector_mask_inner : llvalue -> llvalue
   = "llvm_get_shufflevector_mask"
 (** [transfer_instructions src dst] moves all instructions
@@ -402,6 +420,7 @@ module OpcodeClass = struct
     | CAST
     | OTHER of Opcode.t
     | ICMP
+    | FCMP
     | UNSUPPORTED
 
   let ter_arr = [| Opcode.Ret; Br |]
@@ -428,10 +447,31 @@ module OpcodeClass = struct
   let mem_arr = [| Opcode.Alloca; Load; Store |]
   let cast_arr = [| Opcode.Trunc; ZExt; SExt |]
   let icmp_arr = [| Opcode.ICmp |]
+  let fcmp_arr = [| Opcode.FCmp |]
   let other_arr = [| Opcode.PHI; Select |]
 
   (* helper for cmp instruction *)
   let icmp_kind = [| Icmp.Eq; Ne; Ugt; Uge; Ult; Ule; Sgt; Sge; Slt; Sle |]
+
+  let fcmp_kind =
+    [|
+      Fcmp.False;
+      Oeq;
+      Ogt;
+      Oge;
+      Olt;
+      Ole;
+      One;
+      Ord;
+      Uno;
+      Ueq;
+      Ugt;
+      Uge;
+      Ult;
+      Ule;
+      Une;
+      True;
+    |]
 
   let total_arr =
     Array.concat
@@ -443,6 +483,7 @@ module OpcodeClass = struct
         mem_arr;
         cast_arr;
         icmp_arr;
+        fcmp_arr;
         other_arr;
       ]
 
@@ -457,6 +498,7 @@ module OpcodeClass = struct
     | Alloca | Load | Store -> MEM opc
     | Trunc | ZExt | SExt | BitCast -> CAST
     | ICmp -> ICMP
+    | FCmp -> FCMP
     | PHI | Select -> OTHER opc
     | _ -> UNSUPPORTED
 
@@ -471,7 +513,9 @@ module OpcodeClass = struct
 
   let random_fbinary_except opcode = AUtil.arr_random_except fbinary_arr opcode
   let random_icmp () = AUtil.choose_arr icmp_kind
-  let random_icmp_except opcode = AUtil.arr_random_except icmp_kind opcode
+  let random_icmp_except pred = AUtil.arr_random_except icmp_kind pred
+  let random_fcmp () = AUtil.choose_arr fcmp_kind
+  let random_fcmp_except pred = AUtil.arr_random_except fcmp_kind pred
 
   let build_binary opc o0 o1 llb =
     (match opc with
@@ -510,7 +554,8 @@ module OpcodeClass = struct
     | _ -> invalid_arg (string_of_opcode opc ^ " is not a cast opcode."))
       o ty "" llb
 
-  let build_icmp icmp o0 o1 llb = build_icmp icmp o0 o1 "" llb
+  let build_icmp pred o0 o1 llb = build_icmp pred o0 o1 "" llb
+  let build_fcmp pred o0 o1 llb = build_fcmp pred o0 o1 "" llb
 
   let string_of_opcls = function
     | TER opc -> Printf.sprintf "TER (%s)" (string_of_opcode opc)
@@ -520,6 +565,7 @@ module OpcodeClass = struct
     | MEM opc -> Printf.sprintf "MEM (%s)" (string_of_opcode opc)
     | CAST -> "CAST"
     | ICMP -> "ICMP"
+    | FCMP -> "FCMP"
     | OTHER opc -> Printf.sprintf "OTHER (%s)" (string_of_opcode opc)
     | UNSUPPORTED -> "UNSUPPORTED"
 end
@@ -883,6 +929,16 @@ module ChangeRetVal = struct
     in
     build_icmp opd0 opd1
 
+  let migrate_fcmp builder instr_old link_v =
+    let opd0 = migrate_self (operand instr_old 0) link_v in
+    let opd1 = migrate_self (operand instr_old 1) link_v in
+    let build_fcmp o0 o1 =
+      OpcodeClass.build_fcmp
+        (fcmp_predicate instr_old |> Option.get)
+        o0 o1 builder
+    in
+    build_fcmp opd0 opd1
+
   let migrate_phi builder instr_old =
     let ty = type_of instr_old in
     build_empty_phi ty "" builder
@@ -903,6 +959,7 @@ module ChangeRetVal = struct
       | MEM _ -> migrate_mem builder instr_old link_v
       | CAST -> migrate_cast builder instr_old link_v
       | OTHER ICmp -> migrate_icmp builder instr_old link_v
+      | OTHER FCmp -> migrate_fcmp builder instr_old link_v
       | OTHER PHI -> migrate_phi builder instr_old
       | OTHER Select -> migrate_select builder instr_old link_v
       | _ -> failwith "Unsupported instruction"

@@ -29,8 +29,11 @@ let create_fbinary llctx loc opcode o0 o1 =
 let create_cast llctx loc opcode o ty =
   (OpCls.build_cast opcode) o ty (builder_before llctx loc)
 
-let create_icmp llctx loc icmp o0 o1 =
-  (OpCls.build_icmp icmp) o0 o1 (builder_before llctx loc)
+let create_icmp llctx loc pred o0 o1 =
+  (OpCls.build_icmp pred) o0 o1 (builder_before llctx loc)
+
+let create_fcmp llctx loc pred o0 o1 =
+  (OpCls.build_fcmp pred) o0 o1 (builder_before llctx loc)
 
 (** [binary_exchange_operands llctx instr] exchanges the two operands of the binary
     instruction [instr], without any extra keywords.
@@ -84,6 +87,13 @@ let subst_icmp llctx instr cond =
   let left = operand instr 0 in
   let right = operand instr 1 in
   let new_instr = create_icmp llctx instr cond left right in
+  replace_hard instr new_instr;
+  new_instr
+
+let subst_fcmp llctx instr cond =
+  let left = operand instr 0 in
+  let right = operand instr 1 in
+  let new_instr = create_fcmp llctx instr cond left right in
   replace_hard instr new_instr;
   new_instr
 
@@ -719,6 +729,10 @@ let create_rand_llv llctx llm =
                 let cond = OpCls.random_icmp () in
                 let opd' = get_rand_opd loc ty_opd llm in
                 create_icmp llctx loc cond opd opd'
+            | FCMP ->
+                let cond = OpCls.random_fcmp () in
+                let opd' = get_rand_opd loc ty_opd llm in
+                create_fcmp llctx loc cond opd opd'
             | OTHER Select -> create_rand_select llctx loc opd llm
             | _ -> failwith "NEVER OCCUR"
           in
@@ -743,6 +757,7 @@ let subst_rand_instr llctx learning opc_tbl llm =
     | FBINARY -> true
     | CAST -> instr_opcode i <> Trunc && instr_opcode i <> BitCast
     | ICMP -> true
+    | FCMP -> true
     | _ -> false
   in
   let cands_instr = List.filter is_tgt all_instrs in
@@ -806,6 +821,18 @@ let subst_rand_instr llctx learning opc_tbl llm =
         else (
           subst_icmp llctx instr pred_new |> ignore;
           (Some (Domain.ICMP pred_old), Some (ICMP pred_new), Some llm))
+    | FCMP ->
+        let pred_old = fcmp_predicate instr |> Option.get in
+        let pred_new =
+          if learning then
+            let w_map = Domain.OpcodeMap.get (FCMP pred_old) opc_tbl in
+            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_fcmp
+          else OpCls.random_fcmp_except pred_old
+        in
+        if pred_old = pred_new then (None, None, None)
+        else (
+          subst_fcmp llctx instr pred_new |> ignore;
+          (Some (Domain.FCMP pred_old), Some (FCMP pred_new), Some llm))
     | _ -> failwith "NEVER OCCUR"
 
 let count_const_opds instr =
@@ -919,7 +946,8 @@ let rec check_const_flow llv res =
   if res then res
   else
     match classify_value llv with
-    | Instruction opc when opc = ICmp -> true
+    | Instruction ICmp -> true
+    | Instruction FCmp -> true
     | Instruction _ ->
         let opd_num = num_operands llv in
         let rec aux i res =
@@ -1067,6 +1095,14 @@ and trav_llvs_using_curr curr ty_new accu =
           |> collect_ty_changing_llvs opd0 ty_new
           |> collect_ty_changing_llvs opd1 ty_new
           |> trav_llvs_using_curr user (type_of user)
+      | FCMP ->
+          (* preserve type equality of both operands *)
+          let opd0 = operand user 0 in
+          let opd1 = operand user 1 in
+          accu
+          |> collect_ty_changing_llvs opd0 ty_new
+          |> collect_ty_changing_llvs opd1 ty_new
+          |> trav_llvs_using_curr user (type_of user)
       | _ -> failwith "NEVER OCCUR")
     accu curr
 
@@ -1081,6 +1117,7 @@ and collect_ty_changing_llvs llv ty_new accu =
       match classify_value llv with
       | Instruction opc ->
           if opc = ICmp then Impossible
+          else if opc = FCmp then Impossible
           else if opc = ExtractElement && classify_type ty_new <> Integer then
             Impossible
           else if opc = InsertElement && classify_type ty_new <> Vector then
@@ -1375,6 +1412,30 @@ let migrate_icmp builder instr_old link_v =
   in
   build_icmp opd0 opd1
 
+let migrate_fcmp builder instr_old link_v =
+  let opd0 = operand instr_old 0 in
+  let opd1 = operand instr_old 1 in
+  let build_fcmp o0 o1 =
+    OpCls.build_fcmp (fcmp_predicate instr_old |> Option.get) o0 o1 builder
+  in
+
+  let opd0, opd1 =
+    match (is_constant opd0, is_constant opd1) with
+    | true, true | false, false ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_self opd1 link_v in
+        (opd0, opd1)
+    | true, false ->
+        let opd1 = migrate_self opd1 link_v in
+        let opd0 = migrate_to_other_ty opd0 (type_of opd1) link_v in
+        (opd0, opd1)
+    | false, true ->
+        let opd0 = migrate_self opd0 link_v in
+        let opd1 = migrate_to_other_ty opd1 (type_of opd0) link_v in
+        (opd0, opd1)
+  in
+  build_fcmp opd0 opd1
+
 let migrate_phi builder instr_old typemap =
   let phi_ty = get_ty instr_old typemap in
   build_empty_phi phi_ty "" builder
@@ -1422,6 +1483,7 @@ let migrate_instr builder instr_old typemap link_v link_b =
     | MEM _ -> migrate_mem builder instr_old typemap link_v
     | CAST -> migrate_cast builder instr_old typemap link_v
     | ICMP -> migrate_icmp builder instr_old link_v
+    | FCMP -> migrate_fcmp builder instr_old link_v
     | OTHER PHI -> migrate_phi builder instr_old typemap
     | OTHER Select -> migrate_select builder instr_old typemap link_v
     | _ ->
@@ -1531,6 +1593,7 @@ let check_target_for_change_type target f =
     else if target |> type_of |> classify_type = Pointer then false
     else if classify_value target = Argument then true
     else if OpCls.opcls_of target = ICMP then false
+    else if OpCls.opcls_of target = FCMP then false
     else true
   else false
 

@@ -1,6 +1,10 @@
 open Util
 
-type opcode_t = ICMP of ALlvm.Icmp.t | OTHER of ALlvm.Opcode.t
+type opcode_t =
+  | ICMP of ALlvm.Icmp.t
+  | FCMP of ALlvm.Fcmp.t
+  | OTHER of ALlvm.Opcode.t
+
 type mode_t = EXPAND | FOCUS
 type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
 
@@ -44,17 +48,19 @@ let focus_mutations =
 let pp_opcode fmt opc =
   match opc with
   | ICMP pred -> Format.fprintf fmt "ICmp %s" (ALlvm.string_of_icmp pred)
+  | FCMP pred -> Format.fprintf fmt "FCmp %s" (ALlvm.string_of_fcmp pred)
   | OTHER opc -> Format.fprintf fmt "%s" (ALlvm.string_of_opcode opc)
 
 let get_icmp opc =
-  match opc with
-  | ICMP pred -> pred
-  | OTHER _ -> failwith "opdoce_t is not ICMP"
+  match opc with ICMP pred -> pred | _ -> failwith "opdoce_t is not ICMP"
+
+let get_fcmp opc =
+  match opc with FCMP pred -> pred | _ -> failwith "opdoce_t is not ICMP"
 
 let get_other opc =
   match opc with
   | OTHER opc_new -> opc_new
-  | ICMP _ -> failwith "opdoce_t is not OTHER"
+  | _ -> failwith "opdoce_t is not OTHER"
 
 module OpcodeWeightMap = struct
   module OpcMap = Map.Make (struct
@@ -85,6 +91,11 @@ module OpcodeWeightMap = struct
     |> Array.to_seq
     |> OpcMap.of_seq
 
+  let initilize_fcmp =
+    Array.map (fun pred_tgt -> (FCMP pred_tgt, 100)) ALlvm.OpcodeClass.fcmp_kind
+    |> Array.to_seq
+    |> OpcMap.of_seq
+
   let initilize_opcode opc =
     match ALlvm.OpcodeClass.classify opc with
     | BINARY ->
@@ -102,6 +113,7 @@ module OpcodeWeightMap = struct
   let initialize opc =
     match opc with
     | ICMP _ -> initilize_icmp
+    | FCMP _ -> initilize_fcmp
     | OTHER opc -> initilize_opcode opc
 
   let update opc w_inc m =
@@ -116,6 +128,9 @@ module OpcodeWeightMap = struct
         match k with
         | ICMP pred ->
             Format.fprintf fmt " |-> %s@." (ALlvm.string_of_icmp pred);
+            Format.fprintf fmt " |-> %d@." v
+        | FCMP pred ->
+            Format.fprintf fmt " |-> %s@." (ALlvm.string_of_fcmp pred);
             Format.fprintf fmt " |-> %d@." v
         | OTHER opc ->
             Format.fprintf fmt " |-> %s@." (ALlvm.string_of_opcode opc);
