@@ -386,7 +386,7 @@ let get_rand_integer_intrinsic llctx str loc ty_dst llm =
         let param_types = [| type_of opd; type_of opd' |] in
         let fnty = function_type ty_dst param_types in
         let intrinsic = add_intrinsic_by_name llm fn fnty in
-        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+        build_call fnty intrinsic [| opd; opd' |] "" (builder_before llctx loc)
     | _ -> failwith "Not Intrinsic"
   else
     match
@@ -413,7 +413,7 @@ let get_rand_float_intrinsic llctx str loc ty_dst llm =
         let param_types = [| type_of opd; type_of opd' |] in
         let fnty = function_type ty_dst param_types in
         let intrinsic = add_intrinsic_by_name llm fn fnty in
-        build_call fnty intrinsic [| opd |] "" (builder_before llctx loc)
+        build_call fnty intrinsic [| opd; opd' |] "" (builder_before llctx loc)
     | _ -> failwith "Not Intrinsic"
   else
     match
