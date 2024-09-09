@@ -100,6 +100,10 @@ let _ =
   L.from_file log_file;
   L.set_level L.ERROR;
 
+  F.printf "out-dir: %s@." out_dir;
+  F.printf "passes: %s@." (String.concat "," !optimizer_passes);
+  F.printf "ntasks: %d@." !ntasks;
+
   let llfiles =
     match !re with
     | None ->
