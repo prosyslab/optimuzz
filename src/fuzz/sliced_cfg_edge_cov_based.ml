@@ -34,7 +34,7 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evaluate_mutant llm covset node_tbl distance_map =
+let evaluate_mutant parent_llm llm covset node_tbl distance_map =
   let optim_res, _ = measure_optimizer_coverage llm in
   L.debug "Mutant: ";
   L.debug "%s" (ALlvm.string_of_llmodule llm);
@@ -55,7 +55,9 @@ let evaluate_mutant llm covset node_tbl distance_map =
         SeedPool.Seed.make llm traces node_tbl distance_map
       in
       (if new_seed.covers then
-         let seed_name = SeedPool.Seed.name new_seed in
+         let seed_name =
+           SeedPool.Seed.name ~parent:(ALlvm.hash_llm parent_llm) new_seed
+         in
          ALlvm.save_ll !Config.covers_dir seed_name llm |> ignore);
       let interesting = not (Coverage.is_empty new_points) in
       if interesting then Some new_seed else None
@@ -88,7 +90,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
       match mutator llm with
       | Some mutated_llm -> (
           match
-            evaluate_mutant mutated_llm progress.cov_sofar node_tbl distmap
+            evaluate_mutant llm mutated_llm progress.cov_sofar node_tbl distmap
           with
           | Some new_seed -> Some new_seed
           | None -> generate_mutant (energy - 1) mutated_llm progress)
@@ -102,7 +104,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
         match generate_mutant energy llm progress with
         | Some new_seed ->
             let new_progress = update_progress progress new_seed in
-            SeedPool.save new_seed;
+            SeedPool.save ~parent:(ALlvm.hash_llm llm) new_seed;
             let new_pool = SeedPool.push new_seed pool in
             aux (times - 1) new_pool new_progress
         | None -> aux (times - 1) pool progress
