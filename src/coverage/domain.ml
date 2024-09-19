@@ -193,7 +193,7 @@ module Cfg = struct
     let compare = Float.compare
   end
 
-  module G = Graph.Persistent.Digraph.ConcreteLabeled (V) (E)
+  module G = Graph.Imperative.Digraph.ConcreteLabeled (V) (E)
 
   let label_node _ (attrs : Dot_ast.attr list) =
     let label =
@@ -202,18 +202,23 @@ module Cfg = struct
     in
 
     match label with
-    | Some (Dot_ast.String s) ->
+    | Some (Dot_ast.String s) -> (
         let s = String.sub s 1 (String.length s - 2) in
+        prerr_endline s;
         let chunks = String.split_on_char ':' s in
-        let filename = List.nth chunks 0 in
-        let line_number = List.nth chunks 1 |> int_of_string in
-        let address = "0x" ^ List.nth chunks 2 |> int_of_string in
-        G.V.create { filename; line_number; address }
+        try
+          let filename = List.nth chunks 0 in
+          let line_number = List.nth chunks 1 |> int_of_string in
+          let address = "0x" ^ List.nth chunks 2 |> int_of_string in
+          G.V.create { filename; line_number; address }
+        with _ ->
+          let msg = Format.asprintf "invalid label format: %s" s in
+          raise (Invalid_argument msg))
     | _ -> G.V.create { filename = "unknown"; line_number = 0; address = 0 }
 
   module Parser =
     Dot.Parse
-      (Builder.P
+      (Builder.I
          (G))
          (struct
            let node = label_node
@@ -233,8 +238,21 @@ module Cfg = struct
   (* shortest path algorithm *)
   module Dijk = Path.Dijkstra (G) (W)
 
-  let read = Parser.parse
-  let edges cfg = G.fold_edges (fun src dst accu -> (src, dst) :: accu) cfg []
+  type t = { name : string; graph : G.t }
+
+  let read filename =
+    (* read the first line of the file. the name of the graph is there. *)
+    (* let lines = AUtil.readlines filename in
+       (* digraph "CFG for '_ZN4llvm16InstCombinerImpl9visitURemERNS_14BinaryOperatorE' function" { *)
+       let graph_name = List.hd lines in
+       let chunks = String.split_on_char ' ' graph_name in
+       let func_name = List.nth chunks 3 in
+       let func_name = String.sub func_name 1 (String.length func_name - 2) in *)
+    try Parser.parse filename
+    with e ->
+      F.eprintf "Failed to parse CFG: %s" filename;
+      F.eprintf "%s" (Printexc.to_string e);
+      exit 1
 
   let find_targets (filename, lineno) cfg =
     G.fold_vertex
@@ -245,22 +263,39 @@ module Cfg = struct
 
   module NodeMap = Map.Make (V)
   module NodeTable = Map.Make (Int)
+  module CfgTable = Map.Make (String)
+
+  let conversion_table cfg =
+    G.fold_vertex
+      (fun v accu -> NodeTable.add v.address v accu)
+      cfg NodeTable.empty
 
   (** Builds a map (node -> distance).
       The distance is None if the node is unreachable *)
   let compute_distances cfg target =
-    let dijk v = Dijk.shortest_path cfg v target in
+    let dijk v =
+      try
+        let path, length = Dijk.shortest_path cfg v target in
+        Some (path, length)
+      with Not_found -> None
+    in
     G.fold_vertex
       (fun v accu ->
-        let dist =
-          try
-            let _, length = dijk v in
-            Some length
-          with Not_found -> None
-        in
+        let dist = dijk v |> Option.map snd in
         NodeMap.add v dist accu)
       cfg NodeMap.empty
 end
+
+let load_cfgs_from_dir dir =
+  let cfgs =
+    Sys.readdir dir
+    |> Array.to_list
+    |> List.filter (fun filename -> Filename.check_suffix filename ".dot")
+    |> List.map (fun filename -> Filename.concat dir filename)
+    |> List.map Cfg.read
+  in
+
+  cfgs
 
 type distmap = float Cfg.NodeMap.t
 
@@ -288,6 +323,50 @@ let parse_targets targets_file =
          let filename = List.nth chunks 0 |> Filename.basename in
          let lineno = List.nth chunks 1 |> int_of_string in
          (filename, lineno))
+
+let merge_cfgs cfgs =
+  let graph = Cfg.G.create () in
+
+  cfgs
+  |> List.iter (fun cfg ->
+         cfg |> Cfg.G.iter_vertex (fun v -> Cfg.G.add_vertex graph v));
+
+  cfgs
+  |> List.iter (fun cfg ->
+         cfg |> Cfg.G.iter_edges (fun src dst -> Cfg.G.add_edge graph src dst));
+
+  graph
+
+let read_callgraph filename fullcfg =
+  let converter = Cfg.conversion_table fullcfg in
+  let convert addr = Cfg.NodeTable.find_opt addr converter in
+  AUtil.readlines filename
+  |> List.map (fun line -> String.split_on_char ' ' line)
+  |> List.map (function
+       | caller :: called_fn :: _ ->
+           F.eprintf "caller: %s, called_fn: %s\n" caller called_fn;
+           let edge = (int_of_string caller, called_fn) in
+           edge
+       | _ -> failwith "invalid callgraph format")
+  |> List.filter_map (fun (caller, callee) ->
+         match (convert caller, callee) with
+         | Some caller, callee -> Some (caller, callee)
+         | _ -> None)
+
+let build_fullgraph cfgs cfg_table cfg_dir =
+  let cfg = merge_cfgs cfgs in
+  let cg = read_callgraph (Filename.concat cfg_dir "callgraph.txt") cfg in
+
+  cg
+  |> List.iter (fun (caller, callee) ->
+         F.eprintf "caller: %a, callee: %s\n" Cfg.V.pp caller callee);
+
+  (* call edge is weighted as 10.0 *)
+  (* cg
+     |> List.iter (fun (caller, callee) ->
+            let e = Cfg.G.E.create caller 10.0 callee in
+            Cfg.G.add_edge_e cfg e); *)
+  cfg
 
 module BlockTrace = struct
   type t = int list

@@ -56,12 +56,16 @@ let llfuzz_ast_distanced_based (module SP : Seedcorpus.Ast_distance_based.POOL)
 let pp_print_hex_int ppf n = F.fprintf ppf "0x%x" n
 
 (** takes
-    1. the filepath [targets_file] which contains a list of (filename:lineno) and
-    2. a filepath [cfg_file] which contains the control flow graph of the program
+    1. [targets_file] which contains a list of (filename:lineno) and
+    2-1. if not selective, a directory [cfg_dir] which contains CFGs of functions of the program and the call graph among them
+    2-2. if selective, a directory [cfg_dir] which only contains the CFG of the target function
 *)
-let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
+let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
+    =
   assert (Sys.file_exists targets_file);
-  assert (Sys.file_exists cfg_file);
+  assert (Sys.file_exists cfg_dir);
+  assert (Sys.is_directory targets_file |> not);
+  assert (Sys.is_directory cfg_dir);
 
   (* collect CFG information *)
   let open Oracle in
@@ -75,7 +79,38 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);
 
-  let cfg = CD.Cfg.read cfg_file in
+  let cfgs = CD.load_cfgs_from_dir cfg_dir in
+
+  F.printf "%d CFGs are loaded@." (List.length cfgs);
+
+  (* If selective, only use CFG of the target function *)
+  (* Otherwise, construct the full graph of CFGs and the call graph *)
+  let cfg =
+    if not selective then
+      let cfg = CD.merge_cfgs cfgs in
+      let cg =
+        CD.read_callgraph (Filename.concat cfg_dir "callgraph.txt") cfg
+      in
+
+      (* cg
+         |> List.iter (fun (caller, callee) ->
+                let e = CD.Cfg.G.E.create caller 10.0 callee in
+                CD.Cfg.G.add_edge_e cfg e); *)
+      cfg
+    else
+      (* choose the cfg which contains the target nodes *)
+      let cfg =
+        cfgs
+        |> List.find (fun cfg ->
+               targets
+               |> List.exists (fun (filename, lineno) ->
+                      cfg
+                      |> CD.Cfg.find_targets (Filename.basename filename, lineno)
+                      <> []))
+      in
+
+      cfg
+  in
   let target_nodes =
     targets
     |> List.fold_left
@@ -118,9 +153,8 @@ let llfuzz_cfg_slicing_based_directed targets_file cfg_file =
   let seed_pool, init_cov = SP.make llctx node_tbl distmap in
   let sp_size = SP.length seed_pool in
 
-  if sp_size = 0 then (
-    F.printf "no seed loaded@.";
-    exit 0);
+  F.printf "[Seeds] %d are loaded@." sp_size;
+  if sp_size = 0 then exit 0;
 
   let llset = ALlvm.LLModuleSet.create sp_size in
   seed_pool
@@ -178,11 +212,11 @@ let llfuzz_edge_cov_based_greybox () =
 let _ =
   initialize ();
   match !Config.mode with
-  | Config.Mode.Ast_distance_based s -> (
+  | Config.Mode.Ast_distance_based (metric, path) -> (
       F.printf "ast-distance based directed mode@.";
-      let target_path = CD.Path.parse s |> Option.get in
+      let target_path = CD.Path.parse path |> Option.get in
       let module SA = Seedcorpus.Ast_distance_based in
-      match (!Config.metric, !Config.queue) with
+      match (metric, !Config.queue) with
       | Config.Min_metric, Config.Fifo_queue ->
           let module MinFifoPool =
             SA.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
@@ -199,9 +233,10 @@ let _ =
           let module AvgPriorityPool =
             SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
           llfuzz_ast_distanced_based (module AvgPriorityPool) target_path)
-  | Directed (targets_file, cfg_file) ->
+  | Directed (selective, targets_file, cfg_file) ->
       F.printf "CFG slicing based directed mode@.";
-      llfuzz_cfg_slicing_based_directed targets_file cfg_file
+      F.printf "selective: %b@." selective;
+      llfuzz_cfg_slicing_based_directed ~selective targets_file cfg_file
   | Greybox ->
       F.printf "greybox mode@.";
       llfuzz_edge_cov_based_greybox ()

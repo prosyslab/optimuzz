@@ -78,28 +78,26 @@ module Mode = struct
   type t =
     | Blackbox
     | Greybox
-    | Directed of string * string (* targets_file, cfg_file *)
-    | Ast_distance_based of string
+    | Directed of bool * string * string (* targets_file, cfg_file *)
+    | Ast_distance_based of metric * string
 
   let string_of = function
     | Blackbox -> "blackbox"
     | Greybox -> "greybox"
-    | Directed (targets, cfg) -> "directed: " ^ targets ^ ":" ^ cfg
-    | Ast_distance_based path -> "ast-distance:" ^ path
+    | Directed (selective, targets, cfg_dir) ->
+        Format.asprintf "directed (selective:%b, target-file:%s, cfg-dir:%s)"
+          selective targets cfg_dir
+    | Ast_distance_based (metric, path) ->
+        Format.asprintf "ast-distance (%s, %s)" (string_of_metric metric) path
 
   let of_string s =
     match s with
     | "blackbox" -> Blackbox
     | "greybox" -> Greybox
-    | _ when String.length s >= 9 && String.sub s 0 9 = "directed:" ->
-        (* direct option is of form `directed:file:lineno` *)
-        let target = String.split_on_char ':' s |> List.tl in
-        let target_file = target |> List.hd in
-        let cfg = target |> List.tl |> List.hd in
-        Directed (target_file, cfg)
+    | "directed" -> Directed (false, "", "")
     | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance:" ->
-        Ast_distance_based (String.sub s 19 (String.length s - 19))
-    | _ -> failwith "Invalid mode"
+        Ast_distance_based (Min_metric, String.sub s 19 (String.length s - 19))
+    | s -> Format.asprintf "Can't parse mode (%s)" s |> failwith
 end
 
 let mode = ref Mode.Blackbox
@@ -114,7 +112,6 @@ let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
 let record_cov = ref false
-let metric = ref Min_metric
 let queue = ref Fifo_queue
 let no_learn = ref true
 let learn_inc = ref 20
@@ -281,10 +278,42 @@ let fuzzing_opts =
   [
     ( "-mode",
       Arg.String (fun s -> mode := Mode.of_string s),
-      "(blackbox, greybox, directed:<file>:<lineno>)" );
+      "one of (blackbox, greybox, directed)" );
+    ( "-targets",
+      Arg.String
+        (fun filename ->
+          match !mode with
+          | Mode.Directed (selective, _, cfg) ->
+              mode := Mode.Directed (selective, filename, cfg)
+          | _ ->
+              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
+              |> failwith),
+      "Targets file for CFG-based directed fuzzing" );
+    ( "-cfg-dir",
+      Arg.String
+        (fun cfg ->
+          match !mode with
+          | Mode.Directed (selective, targets, _) ->
+              mode := Mode.Directed (selective, targets, cfg)
+          | _ ->
+              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
+              |> failwith),
+      "CFG directory for CFG-based directed fuzzing" );
+    ( "-selinst",
+      Arg.Unit
+        (fun () ->
+          match !mode with
+          | Mode.Directed (_, targets, cfg) ->
+              mode := Mode.Directed (true, targets, cfg)
+          | _ ->
+              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
+              |> failwith),
+      "Turn on selective instrumentation for CFG-based directed fuzzing" );
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
-    ("-no-tv", Arg.Set no_tv, "Turn off translation validation");
+    ( "-no-tv",
+      Arg.Set no_tv,
+      "Do not translate-validate during a fuzzing campaign" );
     (* ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
        ( "-learn-inc",
          Arg.Set_int learn_inc,
@@ -294,10 +323,19 @@ let fuzzing_opts =
          "Penalty for incorrect mutation during learning" ); *)
     ( "-metric",
       Arg.String
-        (function
-        | "min" -> metric := Min_metric
-        | "avg" -> metric := Avg_metric
-        | _ -> failwith "Invalid metric"),
+        (fun s ->
+          let met =
+            match s with
+            | "min" -> Min_metric
+            | "avg" -> Avg_metric
+            | _ -> failwith "Invalid metric"
+          in
+          match !mode with
+          | Mode.Ast_distance_based (_, path) ->
+              mode := Mode.Ast_distance_based (met, path)
+          | _ ->
+              Format.asprintf "Invalid mode (%s)" (Mode.string_of !mode)
+              |> failwith),
       "Metric to give a score to an AST coverage" );
     ( "-queue",
       Arg.String
@@ -475,8 +513,11 @@ let log_options opts =
          | Arg.Set b -> L.info "%s: %b" name !b
          | Arg.Set_string s -> L.info "%s: %s" name !s
          | Arg.Set_int i -> L.info "%s: %d" name !i
-         | Arg.String _ when name = "-metric" ->
-             L.info "%s: %s" name (string_of_metric !metric)
+         | Arg.String _ when name = "-metric" -> (
+             match !mode with
+             | Mode.Ast_distance_based (metric, _) ->
+                 L.info "%s: %s" name (string_of_metric metric)
+             | _ -> L.info "%s: <unset>" name)
          | Arg.String _ when name = "-queue" ->
              L.info "%s: %s" name (string_of_queue_type !queue)
          | Arg.String _ when name = "-log-level" ->
@@ -487,7 +528,7 @@ let log_options opts =
              L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
          | Arg.String _ when name = "-mode" ->
              L.info "%s: %s" name (Mode.string_of !mode)
-         | _ -> failwith "not implemented");
+         | _ -> L.info "%s: <unset>" name);
 
   L.flush ()
 
