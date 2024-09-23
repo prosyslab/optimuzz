@@ -25,7 +25,6 @@ let check_value_type_for_mutation llv =
           false
         with Not_found ->
           llv |> ALlvm.type_of |> ALlvm.address_space = 0
-          && (not (ALlvm.is_global_constant llv))
           && not (ALlvm.is_null llv))
     | _ -> false
 

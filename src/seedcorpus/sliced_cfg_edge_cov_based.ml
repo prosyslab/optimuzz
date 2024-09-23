@@ -19,6 +19,17 @@ let can_optimize seedfile node_tbl distmap =
       L.debug "coverage of %s is not generated" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
+  | Assert lines ->
+      L.debug "Opt %s failed by Assertion Error" seedfile;
+      AUtil.name_opted_ver seedfile |> AUtil.clean;
+      let lines =
+        lines
+        |> List.filter (fun line ->
+               let addr = int_of_string line in
+               CD.sliced_cfg_node_of_addr node_tbl distmap addr
+               |> Option.is_some)
+      in
+      Some (seedfile, lines)
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
@@ -108,7 +119,7 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
     let f_olds =
       List.fold_left
         (fun accu f_old ->
-          let dummy_params = [| i32_type llctx; pointer_type llctx |] in
+          let dummy_params = [| pointer_type llctx |] in
           let old_params = params f_old in
           let param_tys =
             Array.append (Array.map type_of old_params) dummy_params
@@ -131,11 +142,13 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
 
   let filter_seed seed =
     let* path, lines = can_optimize seed node_tbl distmap in
+    L.debug "filter seed: %s " path;
     match ALlvm.read_ll llctx path with
     | Error _ -> None
     | Ok llm ->
         let cov = lines |> Trace.of_lines in
         let llm = add_dummy_params llm in
+        L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
         Some (path, llm, cov)
   in
 

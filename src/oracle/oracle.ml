@@ -78,6 +78,8 @@ module Optimizer = struct
     (* optimizer hangs -- timeout expired *)
     | Hang
 
+  type res_t = Ok of string list | Assert of string list | Error of err_t
+
   let run ~passes ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
@@ -89,12 +91,22 @@ module Optimizer = struct
       let exit_state =
         AUtil.cmd
           [
-            "timeout 5s"; !Config.opt_bin; filename; "-S"; passes; "-o"; output;
+            "timeout 5s";
+            !Config.opt_bin;
+            filename;
+            (* "--mtriple=x86_64-unknown-linux-gnu"; *)
+            "-S";
+            passes;
+            "-o";
+            output;
           ]
       in
       try
         let lines = AUtil.readlines !Config.cov_file in
-        if exit_state = 0 then Ok lines else Error Non_zero_exit
+        match exit_state with
+        | 0 -> Ok lines
+        | 134 -> Assert lines
+        | _ -> Error Non_zero_exit
       with Sys_error _ ->
         (* cov.cov is not generated : the file did not trigger [passes] *)
         (* prerr_endline "Optimizer: cov.cov is not generated"; *)

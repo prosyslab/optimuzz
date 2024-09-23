@@ -11,6 +11,10 @@ let can_optimize file =
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       false
+  | Assert _ ->
+      L.info "Assertion failed: %s" file;
+      AUtil.name_opted_ver file |> AUtil.clean;
+      false
   | Ok _ | Error File_not_found ->
       L.info "%s can be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
@@ -134,6 +138,7 @@ module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
         Format.eprintf "Coverage not generated: %s@." filename;
         None
     | Error _ -> None
+    | Assert _ -> None
     | Ok lines -> Some (h, lines)
 
   let construct_seedpool ?(max_size : int = 100) target_path llmodules =
@@ -207,6 +212,7 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
         Format.eprintf "Coverage not generated: %s@." filename;
         None
     | Error _ -> None
+    | Assert _ -> None
     | Ok lines -> Some (h, lines)
 
   let get_prio covers (score : Seed.Distance.t) =

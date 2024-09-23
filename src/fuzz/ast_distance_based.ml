@@ -65,7 +65,7 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
   let check_mutant mutant target_path (seed : Seed.t) progress =
     let optim_res, valid_res = measure_optimizer_coverage mutant in
     match optim_res with
-    | Error _ -> Invalid
+    | Error _ | Assert _ -> Invalid
     | Ok lines_mutant ->
         let cov_mutant = Coverage.of_lines lines_mutant in
         let new_seed = Seed.make mutant target_path cov_mutant in

@@ -141,9 +141,9 @@ module CfgSeed = struct
 
   let get_energy seed =
     let int_score = Float.to_int seed.score in
-    if seed.covers then 10
-    else if int_score >= 10 then 1
-    else Int.sub 10 int_score
+    if seed.covers then 12
+    else if int_score >= 10 then 3
+    else Int.sub 12 int_score
 
   let name ?(parent : int option) seed =
     let hash = ALlvm.hash_llm seed.llm in

@@ -35,20 +35,22 @@ let measure_optimizer_coverage llm =
     (optimization_res, validation_res)
 
 let evaluate_mutant parent_llm llm covset node_tbl distance_map =
+  let get_traces lines =
+    (* only use nodes in the sliced cfg *)
+    Trace.of_lines lines
+    |> List.map
+         (List.filter (fun addr ->
+              CD.sliced_cfg_node_of_addr node_tbl distance_map addr
+              |> Option.is_some))
+  in
+
   let optim_res, _ = measure_optimizer_coverage llm in
   L.debug "Mutant: ";
   L.debug "%s" (ALlvm.string_of_llmodule llm);
   match optim_res with
   | Error _ -> None
   | Ok lines ->
-      let traces =
-        (* only use nodes in the sliced cfg *)
-        Trace.of_lines lines
-        |> List.map
-             (List.filter (fun addr ->
-                  CD.sliced_cfg_node_of_addr node_tbl distance_map addr
-                  |> Option.is_some))
-      in
+      let traces = get_traces lines in
       let cov = Coverage.of_traces traces in
       let new_points = Coverage.diff cov covset in
       let (new_seed : SeedPool.Seed.t) =
@@ -61,6 +63,14 @@ let evaluate_mutant parent_llm llm covset node_tbl distance_map =
          ALlvm.save_ll !Config.covers_dir seed_name llm |> ignore);
       let interesting = not (Coverage.is_empty new_points) in
       if interesting then Some new_seed else None
+  | Assert _ (*lines*) ->
+      (* let traces = get_traces lines in
+         let (new_seed : SeedPool.Seed.t) =
+           SeedPool.Seed.make llm traces node_tbl distance_map
+         in
+         let seed_name = SeedPool.Seed.name new_seed in
+         ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore; *)
+      None
 
 let mutate_seed llctx llset seed =
   let muts = !Config.muts_dir in

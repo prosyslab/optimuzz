@@ -681,7 +681,7 @@ let create_rand_llv llctx llm =
       |> AUtil.choose_random
     in
     L.debug "location: %s" (string_of_llvalue loc);
-    match Random.int 4 with
+    match Random.int 10 with
     | 0 ->
         (* Create intrinsic instruction *)
         let idx = loc |> num_operands |> Random.int in
@@ -1138,14 +1138,10 @@ let get_ty llv_old typemap =
   | Some ty -> ty
   | None -> type_of llv_old
 
-(** [move_signature llctx f_old typemap] returns new signature of [f_old]
+(** [move_signature f_old typemap] returns new signature of [f_old]
     according to [typemap]. *)
-let move_signature llctx f_old typemap =
-  let ret = get_return_instr f_old |> Option.get in
-  let ret_ty =
-    if num_operands ret = 0 then void_type llctx
-    else get_ty (operand ret 0) typemap
-  in
+let move_signature f_old typemap =
+  let ret_ty = get_return_type f_old in
   let param_tys = f_old |> params |> Array.map (Fun.flip get_ty typemap) in
   (ret_ty, param_tys)
 
@@ -1562,7 +1558,7 @@ let migrate llctx f_old f_new typemap =
 (** [redef_fn llctx f_old typemap] redefines and returns new version of [f_old]
     according to [typemap]. *)
 let redef_fn llctx f_old typemap =
-  let ret_ty, param_tys = move_signature llctx f_old typemap in
+  let ret_ty, param_tys = move_signature f_old typemap in
   let f_new =
     define_function "" (function_type ret_ty param_tys) (global_parent f_old)
   in

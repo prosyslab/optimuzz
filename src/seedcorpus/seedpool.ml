@@ -15,6 +15,7 @@ let run_opt llm =
       Format.eprintf "Coverage not generated: %s@." filename;
       None
   | Error _ -> None
+  | Assert _ -> None
   | Ok lines -> Some (h, lines)
 
 let can_optimize file =
@@ -22,6 +23,10 @@ let can_optimize file =
   match Opt.run ~passes:!Config.optimizer_passes file with
   | Error Non_zero_exit | Error Hang ->
       L.info "%s cannot be optimized" file;
+      AUtil.name_opted_ver file |> AUtil.clean;
+      false
+  | Assert _ ->
+      L.info "Assertion failed: %s" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       false
   | Ok _ | Error File_not_found ->
