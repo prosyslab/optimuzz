@@ -3,6 +3,7 @@ module L = Logger
 module D = Domain
 module Seed = Domain.CfgSeed
 module CD = Coverage.Domain
+module Aflgo = Coverage.Aflgo
 module Coverage = CD.EdgeCoverage
 module Trace = CD.BlockTrace
 module Opt = Oracle.Optimizer
@@ -97,7 +98,7 @@ let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
     pool_covers |> List.to_seq |> add_seq pool;
     (pool, init_cov))
 
-let make llctx node_tbl (distmap : CD.distmap) =
+let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
   let open AUtil in
   let seed_dir = !Config.seed_dir in
 

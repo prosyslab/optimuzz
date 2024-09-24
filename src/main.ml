@@ -67,11 +67,18 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   assert (Sys.is_directory targets_file |> not);
   assert (Sys.is_directory cfg_dir);
 
-  (* collect CFG information *)
   let open Oracle in
   let module SP = Seedcorpus.Sliced_cfg_edge_cov_based in
   let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
   let module Progress = CD.Progress (CD.EdgeCoverage) in
+  let module G = Coverage.Aflgo.G in
+  let module CFG = Coverage.Aflgo.ControlFlowGraph in
+  let module CG = Coverage.Aflgo.CallGraph in
+  let module FG = Coverage.Aflgo.FullGraph in
+  let module Node = Coverage.Aflgo.Node in
+  let module Edge = Coverage.Aflgo.Edge in
+  let module NT = Coverage.Aflgo.NodeTable in
+  let module DT = Coverage.Aflgo.DistanceTable in
   let targets = CD.parse_targets targets_file in
 
   F.printf "[Input Targets]@.";
@@ -79,7 +86,13 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);
 
-  let cfgs = CD.load_cfgs_from_dir cfg_dir in
+  let cfgs =
+    Sys.readdir cfg_dir
+    |> Array.to_list
+    |> List.map (fun filename -> Filename.concat cfg_dir filename)
+    |> List.filter (fun filename -> Filename.check_suffix filename ".dot")
+    |> List.filter_map CFG.of_dot_file
+  in
 
   F.printf "%d CFGs are loaded@." (List.length cfgs);
 
@@ -87,25 +100,20 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   (* Otherwise, construct the full graph of CFGs and the call graph *)
   let cfg =
     if not selective then
-      let cfg = CD.merge_cfgs cfgs in
-      let cg =
-        CD.read_callgraph (Filename.concat cfg_dir "callgraph.txt") cfg
-      in
+      let calledges = CG.read (Filename.concat cfg_dir "callgraph.txt") in
+      let fg = FG.of_cfgs_and_calledges cfgs calledges in
 
-      (* cg
-         |> List.iter (fun (caller, callee) ->
-                let e = CD.Cfg.G.E.create caller 10.0 callee in
-                CD.Cfg.G.add_edge_e cfg e); *)
-      cfg
+      fg
     else
       (* choose the cfg which contains the target nodes *)
       let cfg =
         cfgs
+        |> List.map CFG.graph
         |> List.find (fun cfg ->
                targets
                |> List.exists (fun (filename, lineno) ->
                       cfg
-                      |> CD.Cfg.find_targets (Filename.basename filename, lineno)
+                      |> FG.find_targets (Filename.basename filename, lineno)
                       <> []))
       in
 
@@ -116,39 +124,37 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
     |> List.fold_left
          (fun accu (filename, lineno) ->
            let targets =
-             CD.Cfg.find_targets (Filename.basename filename, lineno) cfg
+             FG.find_targets (Filename.basename filename, lineno) cfg
            in
            List.fold_left (fun accu v -> v :: accu) accu targets)
          []
   in
 
   F.printf "[Target Nodes]@.";
-  target_nodes |> List.iter (fun node -> F.printf "%a@." CD.Cfg.V.pp node);
+  target_nodes |> List.iter (fun node -> F.printf "%a@." Node.pp node);
 
   if target_nodes = [] then (
     F.printf "no target nodes found@.";
     exit 0);
 
-  let distmap = CD.build_distmap cfg target_nodes in
-  if CD.Cfg.NodeMap.is_empty distmap then (
+  let distmap = DT.build_distmap cfg target_nodes in
+  if DT.is_empty distmap then (
     F.printf "no distance map generated@.";
     exit 0);
   let node_tbl =
-    CD.Cfg.G.fold_vertex (fun v accu -> (v.address, v) :: accu) cfg []
-    |> List.to_seq
-    |> CD.Cfg.NodeTable.of_seq
+    G.fold_vertex (fun v accu -> (v.addr, v) :: accu) cfg [] |> NT.of_assoc
   in
 
   (* print node_tbl and distmap *)
   Format.printf "[Node Table]@.";
   node_tbl
-  |> CD.Cfg.NodeTable.iter (fun addr node ->
-         F.printf "%a -> %a@." pp_print_hex_int addr CD.Cfg.V.pp node);
+  |> NT.iter (fun addr node ->
+         F.printf "%a -> %a@." pp_print_hex_int addr Node.pp node);
 
   Format.printf "[Distance Map]@.";
   distmap
-  |> CD.Cfg.NodeMap.iter (fun node dists ->
-         F.printf "%a: %a@." CD.Cfg.V.pp node F.pp_print_float dists);
+  |> DT.iter (fun node dists ->
+         F.printf "%a: %a@." Node.pp node F.pp_print_float dists);
 
   let seed_pool, init_cov = SP.make llctx node_tbl distmap in
   let sp_size = SP.length seed_pool in

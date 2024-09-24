@@ -165,157 +165,6 @@ module IntInt = struct
   let hash = Hashtbl.hash
 end
 
-let string_of_id = function
-  | Graph.Dot_ast.Ident s -> s
-  | Graph.Dot_ast.Number n -> n
-  | Graph.Dot_ast.String s -> s
-  | Graph.Dot_ast.Html s -> s
-
-module Cfg = struct
-  open Graph
-
-  module V = struct
-    type t = { filename : string; line_number : int; address : int }
-
-    let compare v1 v2 = Int.compare v1.address v2.address
-    let hash v = Hashtbl.hash v.address
-    let equal v1 v2 = v1.address = v2.address
-    let address v = v.address
-
-    let pp fmt v =
-      Format.fprintf fmt "%s:%d:0x%x" v.filename v.line_number v.address
-  end
-
-  module E = struct
-    type t = float
-
-    let default = 1.0 (* a single edge is counted as 1.0 *)
-    let compare = Float.compare
-  end
-
-  module G = Graph.Imperative.Digraph.ConcreteLabeled (V) (E)
-
-  let label_node _ (attrs : Dot_ast.attr list) =
-    let label =
-      attrs
-      |> List.find_map (fun attr -> List.assoc (Dot_ast.Ident "label") attr)
-    in
-
-    match label with
-    | Some (Dot_ast.String s) -> (
-        let s = String.sub s 1 (String.length s - 2) in
-        prerr_endline s;
-        let chunks = String.split_on_char ':' s in
-        try
-          let filename = List.nth chunks 0 in
-          let line_number = List.nth chunks 1 |> int_of_string in
-          let address = "0x" ^ List.nth chunks 2 |> int_of_string in
-          G.V.create { filename; line_number; address }
-        with _ ->
-          let msg = Format.asprintf "invalid label format: %s" s in
-          raise (Invalid_argument msg))
-    | _ -> G.V.create { filename = "unknown"; line_number = 0; address = 0 }
-
-  module Parser =
-    Dot.Parse
-      (Builder.I
-         (G))
-         (struct
-           let node = label_node
-           let edge _ = E.default
-         end)
-
-  module W = struct
-    type edge = G.E.t
-    type t = E.t
-
-    let weight e = G.E.label e
-    let compare = compare
-    let add = Float.add
-    let zero = 0.0
-  end
-
-  (* shortest path algorithm *)
-  module Dijk = Path.Dijkstra (G) (W)
-
-  type t = { name : string; graph : G.t }
-
-  let read filename =
-    (* read the first line of the file. the name of the graph is there. *)
-    (* let lines = AUtil.readlines filename in
-       (* digraph "CFG for '_ZN4llvm16InstCombinerImpl9visitURemERNS_14BinaryOperatorE' function" { *)
-       let graph_name = List.hd lines in
-       let chunks = String.split_on_char ' ' graph_name in
-       let func_name = List.nth chunks 3 in
-       let func_name = String.sub func_name 1 (String.length func_name - 2) in *)
-    try Parser.parse filename
-    with e ->
-      F.eprintf "Failed to parse CFG: %s" filename;
-      F.eprintf "%s" (Printexc.to_string e);
-      exit 1
-
-  let find_targets (filename, lineno) cfg =
-    G.fold_vertex
-      (fun v accu ->
-        if v.filename = filename && v.line_number = lineno then v :: accu
-        else accu)
-      cfg []
-
-  module NodeMap = Map.Make (V)
-  module NodeTable = Map.Make (Int)
-  module CfgTable = Map.Make (String)
-
-  let conversion_table cfg =
-    G.fold_vertex
-      (fun v accu -> NodeTable.add v.address v accu)
-      cfg NodeTable.empty
-
-  (** Builds a map (node -> distance).
-      The distance is None if the node is unreachable *)
-  let compute_distances cfg target =
-    let dijk v =
-      try
-        let path, length = Dijk.shortest_path cfg v target in
-        Some (path, length)
-      with Not_found -> None
-    in
-    G.fold_vertex
-      (fun v accu ->
-        let dist = dijk v |> Option.map snd in
-        NodeMap.add v dist accu)
-      cfg NodeMap.empty
-end
-
-let load_cfgs_from_dir dir =
-  let cfgs =
-    Sys.readdir dir
-    |> Array.to_list
-    |> List.filter (fun filename -> Filename.check_suffix filename ".dot")
-    |> List.map (fun filename -> Filename.concat dir filename)
-    |> List.map Cfg.read
-  in
-
-  cfgs
-
-type distmap = float Cfg.NodeMap.t
-
-let build_distmap cfg target_nodes =
-  let module FloatSet = Set.Make (Float) in
-  let harmonic_avg fset =
-    let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
-    Float.of_int (FloatSet.cardinal fset) /. sum
-  in
-  target_nodes
-  |> List.map (fun target ->
-         Cfg.compute_distances cfg target
-         |> Cfg.NodeMap.filter_map (fun _k v -> v))
-  |> List.map (Cfg.NodeMap.map (fun d -> FloatSet.singleton d))
-  |> List.fold_left
-       (Cfg.NodeMap.union (fun _k d1 d2 -> FloatSet.union d1 d2 |> Option.some))
-       Cfg.NodeMap.empty
-  |> Cfg.NodeMap.map
-       harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
-
 let parse_targets targets_file =
   AUtil.readlines targets_file
   |> List.map (fun line ->
@@ -324,49 +173,12 @@ let parse_targets targets_file =
          let lineno = List.nth chunks 1 |> int_of_string in
          (filename, lineno))
 
-let merge_cfgs cfgs =
-  let graph = Cfg.G.create () in
-
-  cfgs
-  |> List.iter (fun cfg ->
-         cfg |> Cfg.G.iter_vertex (fun v -> Cfg.G.add_vertex graph v));
-
-  cfgs
-  |> List.iter (fun cfg ->
-         cfg |> Cfg.G.iter_edges (fun src dst -> Cfg.G.add_edge graph src dst));
-
-  graph
-
-let read_callgraph filename fullcfg =
-  let converter = Cfg.conversion_table fullcfg in
-  let convert addr = Cfg.NodeTable.find_opt addr converter in
-  AUtil.readlines filename
-  |> List.map (fun line -> String.split_on_char ' ' line)
-  |> List.map (function
-       | caller :: called_fn :: _ ->
-           F.eprintf "caller: %s, called_fn: %s\n" caller called_fn;
-           let edge = (int_of_string caller, called_fn) in
-           edge
-       | _ -> failwith "invalid callgraph format")
-  |> List.filter_map (fun (caller, callee) ->
-         match (convert caller, callee) with
-         | Some caller, callee -> Some (caller, callee)
-         | _ -> None)
-
-let build_fullgraph cfgs cfg_table cfg_dir =
-  let cfg = merge_cfgs cfgs in
-  let cg = read_callgraph (Filename.concat cfg_dir "callgraph.txt") cfg in
-
-  cg
-  |> List.iter (fun (caller, callee) ->
-         F.eprintf "caller: %a, callee: %s\n" Cfg.V.pp caller callee);
-
-  (* call edge is weighted as 10.0 *)
-  (* cg
-     |> List.iter (fun (caller, callee) ->
-            let e = Cfg.G.E.create caller 10.0 callee in
-            Cfg.G.add_edge_e cfg e); *)
-  cfg
+let load_cfgs_from_dir cfg_dir =
+  Sys.readdir cfg_dir
+  |> Array.to_list
+  |> List.map (fun filename -> Filename.concat cfg_dir filename)
+  |> List.filter (fun filename -> Filename.check_suffix filename ".dot")
+  |> List.filter_map Aflgo.ControlFlowGraph.of_dot_file
 
 module BlockTrace = struct
   type t = int list
@@ -428,9 +240,10 @@ module EdgeCoverage = struct
 end
 
 let sliced_cfg_node_of_addr node_tbl distmap addr =
-  match Cfg.NodeTable.find_opt addr node_tbl with
+  match Aflgo.NodeTable.find_opt node_tbl addr with
   | None -> None (* in CFG of a function other than the target function *)
-  | Some node -> if Cfg.NodeMap.mem node distmap then Some node else None
+  | Some node ->
+      if Aflgo.DistanceTable.mem node distmap then Some node else None
 
 module CfgDistance = struct
   type t = float
@@ -447,7 +260,7 @@ module CfgDistance = struct
       nodes_in_trace
       |> List.fold_left
            (fun sum node ->
-             let dist = Cfg.NodeMap.find_opt node distmap in
+             let dist = Aflgo.DistanceTable.find_opt node distmap in
              match dist with None -> sum | Some dist -> sum +. dist)
            0.0
     in
@@ -465,10 +278,11 @@ module CfgDistance = struct
     traces
     |> List.exists
          (List.exists (fun addr ->
-              let node = Cfg.NodeTable.find_opt addr node_tbl in
+              let node = Aflgo.NodeTable.find_opt node_tbl addr in
               match node with
               | None -> false
-              | Some node -> Cfg.NodeMap.find_opt node distmap = Some 0.0))
+              | Some node ->
+                  Aflgo.DistanceTable.find_opt node distmap = Some 0.0))
 end
 
 module type COVERAGE = sig

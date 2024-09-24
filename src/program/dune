@@ -22,3 +22,8 @@
  (name llmutate)
  (modules llmutate)
  (libraries mutation util))
+
+(executable
+ (name distance)
+ (modules distance)
+ (libraries coverage util))
