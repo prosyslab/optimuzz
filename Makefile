@@ -14,6 +14,7 @@ all: fmt
 	$(LN) _build/default/src/program/pattern_check.exe pattern-check
 	$(LN) _build/default/src/program/clean.exe clean
 	$(LN) _build/default/src/program/llmutate.exe llmutate
+	$(LN) _build/default/src/program/distance.exe distance
 
 test: all
 	$(DUNE) test

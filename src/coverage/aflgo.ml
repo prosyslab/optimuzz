@@ -37,11 +37,12 @@ module NodeTable = struct
 end
 
 module Edge = struct
-  type t = float
+  type t = Call | Flow
   type vertex = Node.t
 
-  let default = 1.0
-  let compare = Float.compare
+  let default = Flow
+  let compare = compare
+  let to_val = function Call -> 10.0 | Flow -> 1.0
 end
 
 module G = Graph.Imperative.Digraph.ConcreteLabeled (Node) (Edge)
@@ -120,23 +121,27 @@ end = struct
     let v = G.fold_vertex (fun node _ -> Some node.func_name) g None in
     match v with Some func_name -> Some { func_name; g } | None -> None
 
+  let choose_first_node g =
+    let nodes = G.fold_vertex (fun node accu -> node :: accu) g [] in
+    nodes |> List.find (fun (node : Node.t) -> node.order = 0)
+
   let merge_cfgs cfgs =
     let nb_nodes =
       cfgs |> List.map (fun { g; _ } -> G.nb_vertex g) |> List.fold_left ( + ) 0
     in
-    let tbl = Hashtbl.create nb_nodes in
-    let merged = G.create () in
+    let funcname_to_node = Hashtbl.create nb_nodes in
+    let merged_cfg = G.create () in
 
     cfgs
     |> List.iter (fun { func_name; g } ->
-           G.iter_vertex
-             (fun v ->
-               Hashtbl.add tbl func_name v;
-               G.add_vertex merged v)
-             g;
-           G.iter_edges_e (fun edge -> G.add_edge_e merged edge) g);
+           let first_node = choose_first_node g in
+           if not @@ Hashtbl.mem funcname_to_node func_name then
+             Hashtbl.add funcname_to_node func_name first_node;
 
-    (tbl, merged)
+           G.iter_vertex (G.add_vertex merged_cfg) g;
+           G.iter_edges_e (G.add_edge_e merged_cfg) g);
+
+    (funcname_to_node, merged_cfg)
 end
 
 module CallGraph : sig
@@ -178,7 +183,7 @@ module FullGraph = struct
     calledges
     |> List.iter (fun (caller_node, called_fn) ->
            let called_node = Hashtbl.find func_to_node called_fn in
-           let edge = G.E.create caller_node 10.0 called_node in
+           let edge = G.E.create caller_node Edge.Call called_node in
            G.add_edge_e cfg edge);
     cfg
 
@@ -205,7 +210,7 @@ end = struct
         type edge = G.E.t
         type t = float
 
-        let weight e = G.E.label e
+        let weight e = G.E.label e |> Edge.to_val
         let compare = compare
         let add = Float.add
         let zero = 0.0
