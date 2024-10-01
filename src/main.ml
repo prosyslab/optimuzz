@@ -77,11 +77,10 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   let module FG = Coverage.Aflgo.FullGraph in
   let module Node = Coverage.Aflgo.Node in
   let module Edge = Coverage.Aflgo.Edge in
-  let module NT = Coverage.Aflgo.NodeTable in
+  let module A2N = Coverage.Aflgo.AddrToNode in
   let module DT = Coverage.Aflgo.DistanceTable in
-  let targets = CD.parse_targets targets_file in
-
   F.printf "[Input Targets]@.";
+  let targets = CD.parse_targets targets_file in
   targets
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);
@@ -98,7 +97,7 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
 
   (* If selective, only use CFG of the target function *)
   (* Otherwise, construct the full graph of CFGs and the call graph *)
-  let cfg =
+  let fullgraph =
     if not selective then
       let calledges = CG.read (Filename.concat cfg_dir "callgraph.txt") in
       let fg = FG.of_cfgs_and_calledges cfgs calledges in
@@ -121,13 +120,9 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   in
   let target_nodes =
     targets
-    |> List.fold_left
-         (fun accu (filename, lineno) ->
-           let targets =
-             FG.find_targets (Filename.basename filename, lineno) cfg
-           in
-           List.fold_left (fun accu v -> v :: accu) accu targets)
-         []
+    |> List.map (fun (filename, lineno) ->
+           FG.find_targets (Filename.basename filename, lineno) fullgraph)
+    |> List.flatten
   in
 
   F.printf "[Target Nodes]@.";
@@ -137,26 +132,27 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
     F.printf "no target nodes found@.";
     exit 0);
 
-  let distmap = DT.build_distmap cfg target_nodes in
+  let distmap = DT.build_distmap fullgraph target_nodes in
   if DT.is_empty distmap then (
     F.printf "no distance map generated@.";
     exit 0);
-  let node_tbl =
-    G.fold_vertex (fun v accu -> (v.addr, v) :: accu) cfg [] |> NT.of_assoc
+  let addr_to_node =
+    G.fold_vertex (fun v accu -> (v.addr, v) :: accu) fullgraph []
+    |> A2N.of_assoc
   in
 
   (* print node_tbl and distmap *)
   Format.printf "[Node Table]@.";
-  node_tbl
-  |> NT.iter (fun addr node ->
-         F.printf "%a -> %a@." pp_print_hex_int addr Node.pp node);
+  addr_to_node
+  |> A2N.iter (fun addr node -> L.debug "%x -> %a@." addr Node.pp node);
 
   Format.printf "[Distance Map]@.";
   distmap
   |> DT.iter (fun node dists ->
-         F.printf "%a: %a@." Node.pp node F.pp_print_float dists);
+         F.printf "%a: %a@." Node.pp node F.pp_print_float dists;
+         L.info "%a: %a" Node.pp node F.pp_print_float dists);
 
-  let seed_pool, init_cov = SP.make llctx node_tbl distmap in
+  let seed_pool, init_cov = SP.make llctx addr_to_node distmap in
   let sp_size = SP.length seed_pool in
 
   F.printf "[Seeds] %d are loaded@." sp_size;
@@ -176,7 +172,7 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
   L.debug "initial progress: %a" Progress.pp !progress;
 
-  let _coverage = FZ.run seed_pool node_tbl distmap llctx llset !progress in
+  let _coverage = FZ.run seed_pool addr_to_node distmap llctx llset !progress in
   L.info "fuzzing campaign ends@."
 
 let llfuzz_edge_cov_based_greybox () =

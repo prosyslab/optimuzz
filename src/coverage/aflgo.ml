@@ -22,7 +22,7 @@ module Node = struct
       n.addr
 end
 
-module NodeTable = struct
+module AddrToNode = struct
   include Hashtbl.Make (struct
     type t = int
 

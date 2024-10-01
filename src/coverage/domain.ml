@@ -240,7 +240,7 @@ module EdgeCoverage = struct
 end
 
 let sliced_cfg_node_of_addr node_tbl distmap addr =
-  match Aflgo.NodeTable.find_opt node_tbl addr with
+  match Aflgo.AddrToNode.find_opt node_tbl addr with
   | None -> None (* in CFG of a function other than the target function *)
   | Some node ->
       if Aflgo.DistanceTable.mem node distmap then Some node else None
@@ -278,7 +278,7 @@ module CfgDistance = struct
     traces
     |> List.exists
          (List.exists (fun addr ->
-              let node = Aflgo.NodeTable.find_opt node_tbl addr in
+              let node = Aflgo.AddrToNode.find_opt node_tbl addr in
               match node with
               | None -> false
               | Some node ->
