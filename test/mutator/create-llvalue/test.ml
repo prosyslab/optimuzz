@@ -10,9 +10,9 @@ let main () =
   Random.init 1004;
 
   Logger.debug "before:\n%s" (ALlvm.string_of_llmodule llm);
-  (match Mutation.Mutator.create_rand_llv llctx llm with
-  | None -> Logger.debug "no mutation"
-  | Some llm' -> Logger.debug "mutated:\n%s" (ALlvm.string_of_llmodule llm'));
+  (match Mutation.Mutator.create_rand_llv llctx [] llm with
+  | _, None -> Logger.debug "no mutation"
+  | _, Some llm' -> Logger.debug "mutated:\n%s" (ALlvm.string_of_llmodule llm'));
 
   Logger.flush ();
   Logger.finalize ();

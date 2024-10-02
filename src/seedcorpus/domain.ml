@@ -127,12 +127,19 @@ module CfgSeed = struct
     score : Distance.t;
     covers : bool;
     edge_cov : CD.EdgeCoverage.t;
+    importants : string;
   }
 
-  let make llm (traces : CD.BlockTrace.t list) node_tbl distmap =
+  let make llm (traces : CD.BlockTrace.t list) importants node_tbl distmap =
     let score = Distance.distance_score traces node_tbl distmap in
     let covers = Distance.get_cover traces node_tbl distmap in
-    { llm; score; covers; edge_cov = CD.EdgeCoverage.of_traces traces }
+    {
+      llm;
+      score;
+      covers;
+      edge_cov = CD.EdgeCoverage.of_traces traces;
+      importants;
+    }
 
   let llmodule seed = seed.llm
   let covers seed = seed.covers

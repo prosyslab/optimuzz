@@ -35,8 +35,8 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
     let optimized_ir_filename = AUtil.name_opted_ver filename in
 
     let optimization_res =
-      Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
-        filename
+      Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple
+        ~output:optimized_ir_filename filename
     in
 
     (if !Config.record_cov then
@@ -93,8 +93,8 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
         ALlvm.LLModuleSet.add llset llm ();
         None)
       else
-        let opcode_old, opcode_new, dst =
-          Mutation.Mutator.run llctx (Seed.llmodule src) (choice src)
+        let _, dst =
+          Mutation.Mutator.run llctx (Seed.llmodule src) [] (choice src)
         in
         match dst with
         | None ->
@@ -113,7 +113,6 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
                     let llm = Seed.llmodule new_seed in
                     ALlvm.LLModuleSet.add llset llm ();
                     (* update mutation table *)
-                    if learning then update_mut_tbl opcode_old opcode_new;
                     let seed_name = Seed.name ~parent new_seed in
                     if is_crash then
                       ALlvm.save_ll !Config.crash_dir seed_name llm |> ignore

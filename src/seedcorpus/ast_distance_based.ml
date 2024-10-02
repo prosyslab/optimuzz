@@ -6,7 +6,9 @@ module Coverage = CD.AstCoverage
 module Opt = Oracle.Optimizer
 
 let can_optimize file =
-  match Opt.run ~passes:!Config.optimizer_passes file with
+  match
+    Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple file
+  with
   | Error Non_zero_exit | Error Hang ->
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
@@ -131,7 +133,9 @@ module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
     let h = ALlvm.hash_llm llm in
     let filename = Format.sprintf "id:%010d.ll" h in
     let filename = ALlvm.save_ll !Config.out_dir filename llm in
-    let res = Opt.run ~passes:!Config.optimizer_passes filename in
+    let res =
+      Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple filename
+    in
     AUtil.clean filename;
     match res with
     | Error Opt.File_not_found ->
@@ -205,7 +209,9 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
     let h = ALlvm.hash_llm llm in
     let filename = Format.sprintf "id:%010d.ll" h in
     let filename = ALlvm.save_ll !Config.out_dir filename llm in
-    let res = Opt.run ~passes:!Config.optimizer_passes filename in
+    let res =
+      Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple filename
+    in
     AUtil.clean filename;
     match res with
     | Error Opt.File_not_found ->

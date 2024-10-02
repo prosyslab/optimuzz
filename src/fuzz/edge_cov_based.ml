@@ -19,8 +19,8 @@ let measure_optimizer_coverage llm =
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res =
-    Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
-      filename
+    Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple
+      ~output:optimized_ir_filename filename
   in
 
   (if !Config.record_cov then
@@ -42,7 +42,7 @@ let measure_optimizer_coverage llm =
 let evalutate_mutant mutant cov_sofar =
   let optim_res, _ = measure_optimizer_coverage mutant in
   match optim_res with
-  | Error _ -> (false, Coverage.empty)
+  | Error _ | Assert _ -> (false, Coverage.empty)
   | Ok lines_mutant ->
       (* new edges are discovered? *)
       let cov_mutant = Coverage.of_lines lines_mutant in

@@ -100,6 +100,9 @@ let readlines filename =
 let clean filename =
   cmd [ "rm"; filename; "> /dev/null"; "2> /dev/null" ] |> ignore
 
+let cp orig tgt_dir tgt_name =
+  cmd [ "cp"; orig; Filename.concat tgt_dir tgt_name ] |> ignore
+
 module PrioQueue = struct
   type priority = int
   type 'a queue = Empty | Node of priority * 'a * 'a queue * 'a queue

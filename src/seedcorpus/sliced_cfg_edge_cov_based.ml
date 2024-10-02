@@ -10,7 +10,9 @@ module Opt = Oracle.Optimizer
 include Queue
 
 let can_optimize seedfile node_tbl distmap =
-  match Opt.run ~passes:!Config.optimizer_passes seedfile with
+  match
+    Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple seedfile
+  with
   | Error Non_zero_exit | Error Hang ->
       L.debug "%s cannot be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
@@ -19,17 +21,18 @@ let can_optimize seedfile node_tbl distmap =
       L.debug "coverage of %s is not generated" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
-  | Assert lines ->
+  | Assert _ ->
       L.debug "Opt %s failed by Assertion Error" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      let lines =
-        lines
-        |> List.filter (fun line ->
-               let addr = int_of_string line in
-               CD.sliced_cfg_node_of_addr node_tbl distmap addr
-               |> Option.is_some)
-      in
-      Some (seedfile, lines)
+      (* let lines =
+           lines
+           |> List.filter (fun line ->
+                  let addr = int_of_string line in
+                  CD.sliced_cfg_node_of_addr node_tbl distmap addr
+                  |> Option.is_some)
+         in
+         Some (seedfile, lines) *)
+      None
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
@@ -57,6 +60,12 @@ let save ?(parent : int option) (seed : Seed.t) =
     | None -> Seed.name seed
     | Some parent -> Seed.name ~parent seed
   in
+  let mutated_filename =
+    Filename.concat !Config.corpus_dir
+      (Filename.chop_suffix seed_name ".ll" ^ ".mutated")
+  in
+  Out_channel.with_open_text mutated_filename (fun line ->
+      Printf.fprintf line "%s" seed.importants);
   ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore
 
 let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
@@ -66,7 +75,7 @@ let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
   let pool_covers, pool_noncovers =
     List.fold_left
       (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
-        let seed = Seed.make llm traces node_tbl distmap in
+        let seed = Seed.make llm traces "" node_tbl distmap in
         L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
         L.debug "score: %s" (string_of_float (Seed.score seed));
         if Seed.covers seed then (seed :: pool_covers, pool_noncovers)

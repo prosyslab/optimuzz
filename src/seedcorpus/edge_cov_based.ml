@@ -8,13 +8,19 @@ module Opt = Oracle.Optimizer
 module Seed = Domain.NaiveSeed
 
 let can_optimize file =
-  match Opt.run ~passes:!Config.optimizer_passes file with
+  match
+    Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple file
+  with
   | Error Non_zero_exit | Error Hang ->
       L.info "%s cannot be optimized" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       None
   | Error File_not_found ->
       L.info "coverage of %s is not generated" file;
+      AUtil.name_opted_ver file |> AUtil.clean;
+      None
+  | Assert _ ->
+      L.info "Assertion failed: %s" file;
       AUtil.name_opted_ver file |> AUtil.clean;
       None
   | Ok lines ->

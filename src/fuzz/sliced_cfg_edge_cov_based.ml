@@ -20,8 +20,8 @@ let measure_optimizer_coverage llm =
   let optimized_ir_filename = AUtil.name_opted_ver filename in
 
   let optimization_res =
-    Opt.run ~passes:!Config.optimizer_passes ~output:optimized_ir_filename
-      filename
+    Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple
+      ~output:optimized_ir_filename filename
   in
 
   if !Config.no_tv then (
@@ -34,7 +34,7 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evaluate_mutant parent_llm llm covset node_tbl distance_map =
+let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
   let get_traces lines =
     (* only use nodes in the sliced cfg *)
     Trace.of_lines lines
@@ -54,7 +54,7 @@ let evaluate_mutant parent_llm llm covset node_tbl distance_map =
       let cov = Coverage.of_traces traces in
       let new_points = Coverage.diff cov covset in
       let (new_seed : SeedPool.Seed.t) =
-        SeedPool.Seed.make llm traces node_tbl distance_map
+        SeedPool.Seed.make llm traces importants node_tbl distance_map
       in
       (if new_seed.covers then
          let seed_name =
@@ -78,13 +78,22 @@ let mutate_seed llctx llset seed =
     ALlvm.save_ll muts (F.sprintf "id:%010d.ll" (ALlvm.hash_llm seed)) seed
   in
   let mut_filename = Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" in
-  AUtil.cmd [ "./llmutate"; seed_filename; muts; mut_filename ] |> ignore;
+  let mutated_filename =
+    Filename.chop_suffix seed_filename ".ll" ^ ".mutated"
+  in
+  AUtil.cmd [ "./llmutate"; seed_filename; muts; mut_filename; ">> log.txt" ]
+  |> ignore;
 
   let mutant = ALlvm.read_ll llctx mut_filename in
   match mutant with
   | Ok mutant ->
-      if ALlvm.LLModuleSet.mem llset mutant then None else Some mutant
-  | Error _ -> None
+      if ALlvm.LLModuleSet.mem llset mutant then ("", None)
+      else
+        let importants =
+          In_channel.with_open_text mutated_filename In_channel.input_all
+        in
+        (importants, Some mutant)
+  | Error _ -> ("", None)
 
 let update_progress progress seed =
   let cov_set = SeedPool.Seed.edge_cov seed in
@@ -98,13 +107,14 @@ let run seed_pool node_tbl distmap llctx llset progress =
     if energy = 0 then None
     else
       match mutator llm with
-      | Some mutated_llm -> (
+      | importants, Some mutated_llm -> (
           match
-            evaluate_mutant llm mutated_llm progress.cov_sofar node_tbl distmap
+            evaluate_mutant llm mutated_llm importants progress.cov_sofar
+              node_tbl distmap
           with
           | Some new_seed -> Some new_seed
           | None -> generate_mutant (energy - 1) mutated_llm progress)
-      | None -> generate_mutant (energy - 1) llm progress
+      | _, None -> generate_mutant (energy - 1) llm progress
   in
 
   let generate_interesting_mutants energy llm pool progress =
@@ -126,6 +136,9 @@ let run seed_pool node_tbl distmap llctx llset progress =
     let seed, pool_popped = SeedPool.pop pool in
     let energy = SeedPool.Seed.get_energy seed in
     let llm = SeedPool.Seed.llmodule seed in
+    AUtil.clean "importants";
+    Out_channel.with_open_text "importants" (fun line ->
+        Printf.fprintf line "%s" seed.importants);
     L.debug "campaign: seed popped (energy: %d): %a" energy SeedPool.Seed.pp
       seed;
 

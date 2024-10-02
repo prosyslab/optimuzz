@@ -108,6 +108,7 @@ let optimizer_passes =
   (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
   ref [ "instcombine" ]
 
+let mtriple = ref ""
 let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
@@ -352,6 +353,7 @@ let other_opts =
       Arg.String
         (function s -> optimizer_passes := String.split_on_char ',' s),
       "Set opt passes" );
+    ("-mtriple", Arg.String (function s -> mtriple := s), "Set opt mtriple");
     ( "-log-level",
       Arg.String
         (function
@@ -524,6 +526,7 @@ let log_options opts =
              L.info "%s: %s" name (string_of_level !log_level)
          | Arg.String _ when name = "-passes" ->
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
+         | Arg.String _ when name = "-mtriple" -> L.info "%s: %s " name !mtriple
          | Arg.String _ when name = "-seedpool" ->
              L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
          | Arg.String _ when name = "-mode" ->

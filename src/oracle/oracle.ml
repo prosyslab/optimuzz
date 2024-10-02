@@ -9,16 +9,28 @@ module Validator = struct
   type res_t = Correct | Incorrect | Failed | Errors
 
   let run src optimized =
-    if Sys.file_exists src && Sys.file_exists optimized then
+    if Sys.file_exists src && Sys.file_exists optimized then (
       (* let tv_process =
            Unix.open_process_args_in !Config.alive_tv_bin
              [| !Config.alive_tv_bin; src; optimized |]
          in *)
+      let lines =
+        List.fold_left
+          (fun accu line ->
+            if not (String.starts_with ~prefix:"target " line) then line :: accu
+            else accu)
+          []
+          (AUtil.readlines optimized)
+        |> List.rev
+      in
+      Out_channel.with_open_text optimized (fun instr ->
+          List.iter (Printf.fprintf instr "%s\n") lines);
       let tv_process =
         Unix.open_process_args_in "timeout"
           [| "timeout"; "2m"; !Config.alive_tv_bin; src; optimized |]
       in
       let text = In_channel.input_all tv_process in
+      print_endline text;
       (*AUtil.log "%s@." text;*)
       let status = Unix.close_process_in tv_process in
       match status with
@@ -61,7 +73,7 @@ module Validator = struct
                 L.warn "Validator: exited with errors";
                 Errors)
           | _ -> failwith "unexpected alive-tv output")
-      | _ -> Errors
+      | _ -> Errors)
     else (
       L.warn "Validator: %s or %s are not found" src optimized;
       Errors)
@@ -80,8 +92,13 @@ module Optimizer = struct
 
   type res_t = Ok of string list | Assert of string list | Error of err_t
 
-  let run ~passes ?output filename =
+  let run ~passes ~mtriple ?output filename =
     let passes = "--passes=\"" ^ String.concat "," passes ^ "\"" in
+    let mtriple =
+      if mtriple = "" then "" else "--mtriple=\"" ^ mtriple ^ "\""
+    in
+    print_endline "mtriple:";
+    print_endline mtriple;
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
     L.debug "opt: %s -> %s"
       (Filename.basename filename)
@@ -97,6 +114,7 @@ module Optimizer = struct
             (* "--mtriple=x86_64-unknown-linux-gnu"; *)
             "-S";
             passes;
+            mtriple;
             "-o";
             output;
           ]

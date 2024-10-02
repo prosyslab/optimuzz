@@ -13,6 +13,8 @@ let optimizer_passes =
   (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
   ref [ "instcombine" ]
 
+let mtriple = ref ""
+
 let speclist =
   [
     ("-ntasks", Arg.Int (fun n -> ntasks := n), "the degree of parallelism");
@@ -23,6 +25,7 @@ let speclist =
       Arg.String
         (function s -> optimizer_passes := String.split_on_char ',' s),
       "Set opt passes" );
+    ("-mtriple", Arg.String (function s -> mtriple := s), "Set opt mtriple");
     ("-tv-bin", Arg.String (fun s -> tv_bin := s), "alive-tv binary");
   ]
 
@@ -47,8 +50,11 @@ let check_transformation tmp_dir llfile =
     let filename_opt = Filename.chop_suffix basename "ll" ^ "opt.ll" in
     tmp_dir ^ Filename.dir_sep ^ filename_opt
   in
-
-  match Opt.run ~passes:!optimizer_passes ~output:llfile_opt llfile with
+  print_endline llfile_opt;
+  match
+    Opt.run ~passes:!optimizer_passes ~mtriple:!mtriple ~output:llfile_opt
+      llfile
+  with
   | Error Non_zero_exit -> failwith ("Crashing module:" ^ llfile)
   | Error Hang -> failwith ("Crashing module:" ^ llfile)
   | Assert _ -> failwith ("Crashing module:" ^ llfile)
@@ -90,7 +96,7 @@ let _ =
   Config.alive_tv_bin := !tv_bin;
 
   let out_dir = !args |> List.hd in
-  let corpus_dir = Filename.concat out_dir "corpus" in
+  (* let corpus_dir = Filename.concat out_dir "corpus" in *)
   let covers_dir = Filename.concat out_dir "covers" in
   let crash_dir = Filename.concat out_dir "crash" in
   let tmp_dir = Filename.concat out_dir "tmp" in
@@ -103,14 +109,16 @@ let _ =
 
   F.printf "out-dir: %s@." out_dir;
   F.printf "passes: %s@." (String.concat "," !optimizer_passes);
+  F.printf "mtriple: %s@." !mtriple;
   F.printf "ntasks: %d@." !ntasks;
 
   let llfiles =
     match !re with
     | None ->
-        let corpus = collect_module_files corpus_dir in
+        (* let corpus = collect_module_files corpus_dir in *)
         let covers = collect_module_files covers_dir in
-        Array.append corpus covers
+        covers
+        (* Array.append corpus covers *)
     | Some re -> collect_module_files ~predicate:(grep re) covers_dir
   in
 
@@ -130,7 +138,11 @@ let _ =
               let llfile = llfiles.(i) in
               let verify = check_transformation tmp_dir llfile in
               Chan.send report_chan ();
-              if not verify then mv llfile crash_dir);
+              (* if not verify then mv llfile crash_dir); *)
+              if not verify then
+                AUtil.cp llfile
+                  (crash_dir ^ Filename.dir_sep)
+                  (Filename.basename llfile));
 
           Task.await pool counter));
 

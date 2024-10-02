@@ -81,7 +81,7 @@ let subst_cast llctx instr opc_new =
     create_cast llctx instr opc_new (operand instr 0) (type_of instr)
   in
   replace_hard instr new_instr;
-  Some new_instr
+  new_instr
 
 let subst_icmp llctx instr cond =
   let left = operand instr 0 in
@@ -446,25 +446,25 @@ let create_rand_instrinsic_by_ty llctx loc idx ty_dst llm =
         get_rand_integer_intrinsic llctx (string_of_int bw) loc ty_dst llm
       in
       set_operand loc idx new_instr;
-      Some llm
+      ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
   | Half ->
       let new_instr = get_rand_float_intrinsic llctx "f16" loc ty_dst llm in
       set_operand loc idx new_instr;
-      Some llm
+      ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
   | Float ->
       let new_instr = get_rand_float_intrinsic llctx "f32" loc ty_dst llm in
       set_operand loc idx new_instr;
-      Some llm
+      ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
   | Double ->
       let new_instr = get_rand_float_intrinsic llctx "f64" loc ty_dst llm in
       set_operand loc idx new_instr;
-      Some llm
+      ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
   | Fp128 ->
       let new_instr = get_rand_float_intrinsic llctx "f128" loc ty_dst llm in
       set_operand loc idx new_instr;
-      Some llm
-  | Vector -> None (* TODO*)
-  | _ -> None
+      ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
+  | Vector -> ([], None (* TODO*))
+  | _ -> ([], None)
 
 (* %0 = extractelement %VEC, %opd *)
 let create_rand_extractelement_int llctx loc opd llm =
@@ -662,41 +662,52 @@ let rec get_cands_for_create loc i cands llm =
     get_cands_for_create loc (i + 1) cands llm
 
 (** [create_rand_llv llctx llm] creates a random instruction or gloabl variable. *)
-let create_rand_llv llctx llm =
+let create_rand_llv llctx importants llm =
   if Random.int 8 = 0 then
     let ty = AUtil.choose_random !Config.Interests.interesting_types in
-    let _ = declare_global ty "" llm in
-    Some llm
+    let new_global = declare_global ty "" llm in
+    ([ string_of_llvalue new_global ], Some llm)
   else
     let llm = Llvm_transform_utils.clone_module llm in
     let f = choose_function llm in
     let all_instrs =
       fold_left_all_instr (fun accu instr -> instr :: accu) [] f
     in
-    let loc =
+    let importants_instrs =
       all_instrs
+      |> List.filter (fun instr ->
+             List.mem (string_of_llvalue instr) importants)
       |> List.filter (fun i ->
              let opc = instr_opcode i in
              opc <> PHI && opc <> Call && opc <> Br)
-      |> AUtil.choose_random
+    in
+    let loc =
+      if importants_instrs <> [] && Random.int 3 = 0 then
+        AUtil.choose_random importants_instrs
+      else
+        all_instrs
+        |> List.filter (fun i ->
+               let opc = instr_opcode i in
+               opc <> PHI && opc <> Call && opc <> Br)
+        |> AUtil.choose_random
     in
     L.debug "location: %s" (string_of_llvalue loc);
-    match Random.int 10 with
+    match Random.int 15 with
     | 0 ->
         (* Create intrinsic instruction *)
         let idx = loc |> num_operands |> Random.int in
         let dst = operand loc idx in
         let ty_dst = type_of dst in
         create_rand_instrinsic_by_ty llctx loc idx ty_dst llm
-    | 1 ->
+    | 1 | 2 | 3 ->
         (* Create store instruction *)
         let opd = get_opd_cands_nonconst_allty loc llm |> Candidates.choose in
         let ptr = get_any_pointer loc llm in
-        let _ = build_store opd ptr (builder_before llctx loc) in
-        Some llm
+        let new_instr = build_store opd ptr (builder_before llctx loc) in
+        ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm)
     | _ ->
         let cands = get_cands_for_create loc 0 [] llm in
-        if cands = [] then None
+        if cands = [] then ([], None)
         else
           let idx, opc, opds = AUtil.choose_random cands in
           L.debug "idx: %s" (string_of_int idx);
@@ -738,13 +749,13 @@ let create_rand_llv llctx llm =
           in
           if type_of new_instr == ty_dst then (
             set_operand loc idx new_instr;
-            Some llm)
-          else None
+            ([ string_of_llvalue new_instr; string_of_llvalue loc ], Some llm))
+          else ([], None)
 
 (** [subst_rand_instr llctx learning opc_tbl llm] substitutes a random instruction into another
       random instruction of the same [OpCls.t], with the same operands.
       Note: flags are not preserved. *)
-let subst_rand_instr llctx learning opc_tbl llm =
+let subst_rand_instr llctx importants llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
@@ -761,78 +772,66 @@ let subst_rand_instr llctx learning opc_tbl llm =
     | _ -> false
   in
   let cands_instr = List.filter is_tgt all_instrs in
-
-  if cands_instr = [] then (None, None, None)
+  let importants_instrs =
+    cands_instr
+    |> List.filter (fun instr -> List.mem (string_of_llvalue instr) importants)
+  in
+  if cands_instr = [] then ([], None)
   else
-    let instr = AUtil.choose_random cands_instr in
+    let instr =
+      if importants_instrs <> [] && Random.int 3 = 0 then
+        AUtil.choose_random importants_instrs
+      else AUtil.choose_random cands_instr
+    in
     L.debug "instr: %s" (string_of_llvalue instr);
     let opc_old = instr_opcode instr in
     match OpCls.classify opc_old with
     | BINARY ->
-        let opc_new =
-          if learning then
-            let w_map = Domain.OpcodeMap.get (Domain.OTHER opc_old) opc_tbl in
-            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
-          else OpCls.random_binary_except opc_old
-        in
-        if opc_old = opc_new then (None, None, None)
+        let opc_new = OpCls.random_binary_except opc_old in
+        if opc_old = opc_new then ([], None)
         else (
           L.debug "opc_new: %s" (string_of_opcode opc_new);
-          subst_binary llctx instr opc_new |> ignore;
-          (Some (Domain.OTHER opc_old), Some (Domain.OTHER opc_new), Some llm))
+          let new_instr = subst_binary llctx instr opc_new in
+          ( string_of_llvalue new_instr :: get_all_user_str_llv new_instr,
+            Some llm ))
     | FBINARY ->
-        let opc_new =
-          if learning then
-            let w_map = Domain.OpcodeMap.get (Domain.OTHER opc_old) opc_tbl in
-            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
-          else OpCls.random_fbinary_except opc_old
-        in
-        if opc_old = opc_new then (None, None, None)
+        let opc_new = OpCls.random_fbinary_except opc_old in
+        if opc_old = opc_new then ([], None)
         else (
           L.debug "opc_new: %s" (string_of_opcode opc_new);
-          subst_fbinary llctx instr opc_new |> ignore;
-          (Some (Domain.OTHER opc_old), Some (Domain.OTHER opc_new), Some llm))
+          let new_instr = subst_fbinary llctx instr opc_new in
+          ( string_of_llvalue new_instr :: get_all_user_str_llv new_instr,
+            Some llm ))
     | CAST ->
         let opc_new =
-          if learning then
-            let w_map = Domain.OpcodeMap.get (OTHER opc_old) opc_tbl in
-            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_other
-          else
-            match opc_old with
-            | ZExt -> Opcode.SExt
-            | SExt -> ZExt
-            | Trunc -> Trunc
-            | BitCast -> BitCast
-            | _ -> failwith "NEVER OCCUR"
+          match opc_old with
+          | ZExt -> Opcode.SExt
+          | SExt -> ZExt
+          | Trunc -> Trunc
+          | BitCast -> BitCast
+          | _ -> failwith "NEVER OCCUR"
         in
-        if opc_old = opc_new then (None, None, None)
-        else (
-          subst_cast llctx instr opc_new |> ignore;
-          (Some (Domain.OTHER opc_old), Some (OTHER opc_new), Some llm))
+        if opc_old = opc_new then ([], None)
+        else
+          let new_instr = subst_cast llctx instr opc_new in
+          ( string_of_llvalue new_instr :: get_all_user_str_llv new_instr,
+            Some llm )
     | ICMP ->
         let pred_old = icmp_predicate instr |> Option.get in
-        let pred_new =
-          if learning then
-            let w_map = Domain.OpcodeMap.get (ICMP pred_old) opc_tbl in
-            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_icmp
-          else OpCls.random_icmp_except pred_old
-        in
-        if pred_old = pred_new then (None, None, None)
-        else (
-          subst_icmp llctx instr pred_new |> ignore;
-          (Some (Domain.ICMP pred_old), Some (ICMP pred_new), Some llm))
+        let pred_new = OpCls.random_icmp_except pred_old in
+        if pred_old = pred_new then ([], None)
+        else
+          let new_instr = subst_icmp llctx instr pred_new in
+          ( string_of_llvalue new_instr :: get_all_user_str_llv new_instr,
+            Some llm )
     | FCMP ->
         let pred_old = fcmp_predicate instr |> Option.get in
-        let pred_new =
-          if learning then
-            let w_map = Domain.OpcodeMap.get (FCMP pred_old) opc_tbl in
-            w_map |> Domain.OpcodeWeightMap.choose |> Domain.get_fcmp
-          else OpCls.random_fcmp_except pred_old
-        in
-        if pred_old = pred_new then (None, None, None)
-        else (
-          subst_fcmp llctx instr pred_new |> ignore;
-          (Some (Domain.FCMP pred_old), Some (FCMP pred_new), Some llm))
+        let pred_new = OpCls.random_fcmp_except pred_old in
+        if pred_old = pred_new then ([], None)
+        else
+          let new_instr = subst_fcmp llctx instr pred_new in
+          ( string_of_llvalue new_instr :: get_all_user_str_llv new_instr,
+            Some llm )
     | _ -> failwith "NEVER OCCUR"
 
 let count_const_opds instr =
@@ -861,7 +860,7 @@ let invest_opd_alts instr llm =
 
 (** [subst_rand_opd llctx llm] substitutes an operand of an instruction into
     another available one, randomly. *)
-let subst_rand_opd llctx llm =
+let subst_rand_opd llctx importants llm =
   let llm = Llvm_transform_utils.clone_module llm in
   let f = choose_function llm in
   let all_instrs = fold_left_all_instr (fun accu instr -> instr :: accu) [] f in
@@ -873,23 +872,34 @@ let subst_rand_opd llctx llm =
     |> List.map (fun instr -> (instr, invest_opd_alts instr llm))
     |> List.filter (fun (_, alts) -> alts <> [])
   in
-  if cands = [] then None
+  let importants_cands =
+    cands
+    |> List.filter (fun (instr, _) ->
+           List.mem (string_of_llvalue instr) importants)
+  in
+  if cands = [] then ([], None)
   else
-    let instr, alts = AUtil.choose_random cands in
+    let instr, alts =
+      if importants_cands <> [] && Random.int 3 = 0 then
+        AUtil.choose_random importants_cands
+      else AUtil.choose_random cands
+    in
     L.debug "instr: %s" (string_of_llvalue instr);
     if is_noncommutative_binary instr && AUtil.rand_bool () then (
       L.debug "exchange two operands";
-      (match instr |> instr_opcode |> OpcodeClass.classify with
-      | BINARY -> binary_exchange_operands llctx instr |> ignore
-      | FBINARY -> binary_exchange_operands llctx instr |> ignore
-      | _ -> failwith "opcode is not binary or fbinary");
-      Some llm)
+      let new_instr =
+        match instr |> instr_opcode |> OpcodeClass.classify with
+        | BINARY -> binary_exchange_operands llctx instr
+        | FBINARY -> binary_exchange_operands llctx instr
+        | _ -> failwith "opcode is not binary or fbinary"
+      in
+      ([ string_of_llvalue new_instr ], Some llm))
     else
       let alt = AUtil.choose_random alts in
       L.debug "substitute operand %d to %s" (fst alt)
         (string_of_llvalue (snd alt));
       set_operand instr (fst alt) (snd alt);
-      Some llm
+      ([ string_of_llvalue (snd alt); string_of_llvalue instr ], Some llm)
 
 let edit_overflow instr =
   let open Flag in
@@ -903,12 +913,14 @@ let edit_overflow instr =
   in
   let nuw_new, nsw_new = AUtil.choose_random cases in
   set_nuw nuw_new instr;
-  set_nsw nsw_new instr
+  set_nsw nsw_new instr;
+  instr
 
 let edit_be_exact instr =
   let open Flag in
   assert (instr |> instr_opcode |> can_be_exact);
-  set_exact (not (is_exact instr)) instr
+  set_exact (not (is_exact instr)) instr;
+  instr
 
 (** [modify_flag llctx llm] grants/retrieves flag to/from an instr randomly. *)
 let modify_flag _llctx llm =
@@ -923,13 +935,13 @@ let modify_flag _llctx llm =
 
   let ret = Some llm in
   match (instrs_overflow, instrs_be_exact) with
-  | [], [] -> None
+  | [], [] -> ([], None)
   | _, [] ->
-      instrs_overflow |> AUtil.choose_random |> edit_overflow;
-      ret
+      let new_instr = instrs_overflow |> AUtil.choose_random |> edit_overflow in
+      ([ string_of_llvalue new_instr ], ret)
   | [], _ ->
-      instrs_be_exact |> AUtil.choose_random |> edit_be_exact;
-      ret
+      let new_instr = instrs_be_exact |> AUtil.choose_random |> edit_be_exact in
+      ([ string_of_llvalue new_instr ], ret)
   | _ ->
       let i =
         instrs_overflow
@@ -937,8 +949,10 @@ let modify_flag _llctx llm =
         |> AUtil.choose_random
       in
       (* no opcode can be both *)
-      if can_overflow i then edit_overflow i else edit_be_exact i;
-      ret
+      let new_instr =
+        if can_overflow i then edit_overflow i else edit_be_exact i
+      in
+      ([ string_of_llvalue new_instr ], ret)
 
 type collect_ty_res_t = Impossible | Retry | Success of lltype LLVMap.t
 
@@ -1722,42 +1736,38 @@ let cut_below llctx llm =
         | _ -> None)
 
 (* inner-basicblock mutation (independent of block CFG) *)
-let mutate_inner_bb times llctx learning opc_tbl llm choice_fn =
+let mutate_inner_bb times llctx llm choice_fn importants =
   (* allow up to [times] times to find a proper mutation *)
   let rec loop times () =
-    if times = 0 then (None, None, None)
+    if times = 0 then ([], None)
     else
       let mutation = choice_fn () in
       L.info "mutation: %a" Domain.pp_mutation mutation;
       (* L.debug "before:\n%s" (string_of_llmodule llm); *)
       let mutation_result =
         match mutation with
-        | CREATE -> (None, None, create_rand_llv llctx llm)
-        | OPCODE -> subst_rand_instr llctx learning opc_tbl llm
-        | OPERAND -> (None, None, subst_rand_opd llctx llm)
-        | FLAG -> (None, None, modify_flag llctx llm)
-        | TYPE -> (None, None, change_type llctx llm)
-        | CUT -> (None, None, cut_below llctx llm)
+        | CREATE -> create_rand_llv llctx importants llm
+        | OPCODE -> subst_rand_instr llctx importants llm
+        | OPERAND -> subst_rand_opd llctx importants llm
+        | FLAG -> modify_flag llctx llm
+        | TYPE -> ([], change_type llctx llm)
+        | CUT -> ([], cut_below llctx llm)
         (* | _ -> (None, None, None) *)
       in
       match mutation_result with
-      | Some opc_old, Some opc_new, Some llm ->
+      | _, Some llm ->
           L.debug "mutant: %s" (string_of_llmodule llm);
-          let f = choose_function llm in
-          reset_var_names f;
-          (Some opc_old, Some opc_new, Some llm)
-      | _, _, Some llm ->
-          L.debug "mutant: %s" (string_of_llmodule llm);
-          let f = choose_function llm in
-          reset_var_names f;
-          (None, None, Some llm)
-      | _, _, None ->
+          (* let f = choose_function llm in
+             reset_var_names f; *)
+          mutation_result
+      | _, None ->
           L.debug "None";
           loop (times - 1) ()
   in
 
   loop times ()
 
-let run ?(times = 5) llctx llm (choice_fn : unit -> Domain.mutation_t) =
+let run ?(times = 5) llctx llm importants
+    (choice_fn : unit -> Domain.mutation_t) =
   (* FIXME: parameterize learning system *)
-  mutate_inner_bb times llctx false Domain.OpcodeMap.empty llm choice_fn
+  mutate_inner_bb times llctx llm choice_fn importants

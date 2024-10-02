@@ -399,6 +399,11 @@ let choose_function llm =
   in
   aux (function_begin llm)
 
+let get_all_user_str_llv llv =
+  fold_left_uses
+    (fun acc lluse -> (lluse |> user |> string_of_llvalue) :: acc)
+    [] llv
+
 (** [replace_hard before after] replaces
     all uses of [before] to [after] and delete [before]. *)
 let replace_hard before after =
