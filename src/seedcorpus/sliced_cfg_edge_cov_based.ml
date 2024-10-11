@@ -68,8 +68,7 @@ let save ?(parent : int option) (seed : Seed.t) =
       Printf.fprintf line "%s" seed.importants);
   ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore
 
-let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
-    distmap =
+let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
   let open AUtil in
   let pool = create () in
   let pool_covers, pool_noncovers =
@@ -91,7 +90,7 @@ let evaluate_seeds_and_construct_seedpool ?(max_size : int = 100) seeds node_tbl
                (ALlvm.hash_llm (Seed.llmodule a))
                (ALlvm.hash_llm (Seed.llmodule b)))
       |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-      |> take max_size
+      |> take !Config.max_initial_seed
     in
     let init_cov =
       List.fold_left
@@ -155,10 +154,12 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
     match ALlvm.read_ll llctx path with
     | Error _ -> None
     | Ok llm ->
-        let cov = lines |> Trace.of_lines in
-        let llm = add_dummy_params llm in
-        L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
-        Some (path, llm, cov)
+        if Prep.check_llm_for_mutation llm then (
+          let cov = lines |> Trace.of_lines in
+          let llm = add_dummy_params llm in
+          L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
+          Some (path, llm, cov))
+        else None
   in
 
   let seeds =
@@ -169,7 +170,6 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
     |> Array.to_list
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map filter_seed
-    |> List.filter (fun (_path, llm, _cov) -> Prep.check_llm_for_mutation llm)
   in
 
   let pool = evaluate_seeds_and_construct_seedpool seeds node_tbl distmap in

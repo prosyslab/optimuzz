@@ -23,9 +23,17 @@ let check_value_type_for_mutation llv =
                (ALlvm.string_of_llvalue llv)
                0);
           false
-        with Not_found ->
-          llv |> ALlvm.type_of |> ALlvm.address_space = 0
-          && not (ALlvm.is_null llv))
+        with Not_found -> (
+          try
+            ignore
+              (Str.search_forward
+                 (Str.regexp_string "no_cfi")
+                 (ALlvm.string_of_llvalue llv)
+                 0);
+            false
+          with Not_found ->
+            llv |> ALlvm.type_of |> ALlvm.address_space = 0
+            && not (ALlvm.is_null llv)))
     | _ -> false
 
 let check_opc_for_mutation opc =
