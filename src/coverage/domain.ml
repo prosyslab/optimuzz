@@ -166,13 +166,15 @@ module IntInt = struct
 end
 
 let parse_targets targets_file =
-  AUtil.readlines targets_file
+  (AUtil.readlines targets_file
   |> List.map (fun line ->
          let chunks = String.split_on_char ':' line in
          let filename = List.nth chunks 0 |> Filename.basename in
          let lineno = List.nth chunks 1 |> int_of_string in
          (filename, lineno))
   |> List.sort_uniq compare
+  |> List.hd)
+  :: []
 
 let load_cfgs_from_dir cfg_dir =
   Sys.readdir cfg_dir
