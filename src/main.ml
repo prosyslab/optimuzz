@@ -144,7 +144,7 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
   (* print node_tbl and distmap *)
   Format.printf "[Node Table]@.";
   addr_to_node
-  |> A2N.iter (fun addr node -> L.debug "%x -> %a@." addr Node.pp node);
+  |> A2N.iter (fun addr node -> L.debug "%x -> %a" addr Node.pp node);
 
   Format.printf "[Distance Map]@.";
   distmap
