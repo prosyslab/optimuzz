@@ -31,6 +31,20 @@ let speclist =
 
 let collect_module_files ?predicate dir =
   let predicate = match predicate with Some f -> f | None -> fun _ -> true in
+
+  let extract_id filename =
+    try
+      let parts = String.split_on_char ',' filename in
+      let id_part =
+        List.find (fun s -> String.starts_with ~prefix:"id:" s) parts
+      in
+      String.sub id_part 3 (String.length id_part - 3)
+      (* Remove "id:" *)
+    with _ -> "" (* Handle cases where ID is not found *)
+  in
+
+  let seed_ids = Hashtbl.create 1024 in
+
   Sys.readdir dir
   |> Array.to_list
   |> List.filter (fun f ->
@@ -39,6 +53,12 @@ let collect_module_files ?predicate dir =
          else false)
   |> List.map (fun f -> Filename.concat dir f)
   |> List.filter predicate
+  |> List.filter (fun filename ->
+         let id = extract_id filename in
+         if Hashtbl.mem seed_ids id then false
+         else (
+           Hashtbl.add seed_ids id ();
+           true))
   |> Array.of_list
 
 (** [check_transformation llfile] returns
