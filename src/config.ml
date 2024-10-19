@@ -470,7 +470,10 @@ type output = {
 
 let lookup_dependencies cwd =
   let opt = Filename.concat cwd !opt_bin in
-  let alive_tv = Filename.concat cwd !alive_tv_bin in
+  let alive_tv =
+    if Filename.is_implicit !alive_tv_bin then Filename.concat cwd !alive_tv_bin
+    else !alive_tv_bin
+  in
 
   if Sys.file_exists opt |> not then failwith ("opt binary not found: " ^ opt);
 
