@@ -97,8 +97,6 @@ module Optimizer = struct
     let mtriple =
       if mtriple = "" then "" else "--mtriple=\"" ^ mtriple ^ "\""
     in
-    print_endline "mtriple:";
-    print_endline mtriple;
     let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
     L.debug "opt: %s -> %s"
       (Filename.basename filename)
@@ -111,7 +109,6 @@ module Optimizer = struct
             "timeout 5s";
             !Config.opt_bin;
             filename;
-            (* "--mtriple=x86_64-unknown-linux-gnu"; *)
             "-S";
             passes;
             mtriple;
