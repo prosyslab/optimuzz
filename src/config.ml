@@ -24,7 +24,7 @@ let opt_bin = ref "opt"
 let alive_tv_bin = ref "alive-tv"
 
 (* seed options *)
-let max_initial_seed = ref 100
+let max_initial_seed = ref 50
 let random_seed = ref 0
 let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 

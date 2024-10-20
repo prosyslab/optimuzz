@@ -145,7 +145,7 @@ module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
     | Assert _ -> None
     | Ok lines -> Some (h, lines)
 
-  let construct_seedpool ?(max_size : int = 100) target_path llmodules =
+  let construct_seedpool target_path llmodules =
     let open AUtil in
     let seeds =
       llmodules
@@ -173,7 +173,7 @@ module FifoSeedPool (Seed : DISTANCED_SEED) : POOL = struct
                  (ALlvm.hash_llm (Seed.llmodule a))
                  (ALlvm.hash_llm (Seed.llmodule b)))
         |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-        |> take max_size
+        |> take !Config.max_initial_seed
       in
       pool_closest |> List.fold_left (fun pool seed -> push seed pool) empty)
     else (
@@ -224,7 +224,7 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
   let get_prio covers (score : Seed.Distance.t) =
     if covers then 0 else score |> Seed.Distance.to_priority
 
-  let construct_seedpool ?(max_size : int = 100) target_path llmodules =
+  let construct_seedpool target_path llmodules =
     let open AUtil in
     let seeds =
       llmodules
@@ -254,7 +254,7 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
         |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
         |> List.fold_left
              (fun (cnt, pool) seed ->
-               if cnt >= max_size then (cnt, pool)
+               if cnt >= !Config.max_initial_seed then (cnt, pool)
                else (cnt + 1, register seed pool))
              (0, empty)
       in

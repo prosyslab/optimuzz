@@ -71,6 +71,22 @@ let save ?(parent : int option) (seed : Seed.t) =
 let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
   let open AUtil in
   let pool = create () in
+  (* let pools =
+       List.fold_left
+         (fun pools (_, llm, traces) ->
+           let seed = Seed.make llm traces "" node_tbl distmap in
+           L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
+           L.debug "score: %s" (string_of_float (Seed.score seed));
+           seed :: pools)
+         [] seeds
+     in
+     let init_cov =
+       List.fold_left
+         (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
+         Coverage.empty pools
+     in
+     pools |> List.to_seq |> add_seq pool;
+     (pool, init_cov) *)
   let pool_covers, pool_noncovers =
     List.fold_left
       (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
