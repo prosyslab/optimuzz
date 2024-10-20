@@ -50,11 +50,24 @@ let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
   match optim_res with
   | Error _ -> None
   | Ok lines ->
-      let traces = get_traces lines in
-      let cov = Coverage.of_traces traces in
+      let filter =
+        match !Config.mode with
+        | Config.Mode.Directed (true, _, _) -> true
+        | _ -> false
+      in
+      let filter_func =
+        if filter then fun addr ->
+          CD.sliced_cfg_node_of_addr node_tbl distance_map addr
+          |> Option.is_some
+        else fun _ -> true
+      in
+      let trace = lines |> List.map int_of_string |> List.filter filter_func in
+      let cov = trace |> AUtil.pairs |> Coverage.of_list in
+      (* let traces = get_traces lines in
+         let cov = Coverage.of_traces traces in *)
       let new_points = Coverage.diff cov covset in
       let (new_seed : SeedPool.Seed.t) =
-        SeedPool.Seed.make llm traces importants node_tbl distance_map
+        SeedPool.Seed.make llm [ trace ] importants node_tbl distance_map
       in
       (if new_seed.covers then
          let seed_name =

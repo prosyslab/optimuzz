@@ -78,15 +78,15 @@ module Mode = struct
   type t =
     | Blackbox
     | Greybox
-    | Directed of bool * string * string (* targets_file, cfg_file *)
+    | Directed of bool * string * string (* slice-cfg, targets_file, cfg_file *)
     | Ast_distance_based of metric * string
 
   let string_of = function
     | Blackbox -> "blackbox"
     | Greybox -> "greybox"
-    | Directed (selective, targets, cfg_dir) ->
-        Format.asprintf "directed (selective:%b, target-file:%s, cfg-dir:%s)"
-          selective targets cfg_dir
+    | Directed (slice_cfg, targets, cfg_dir) ->
+        Format.asprintf "directed (slice_cfg:%b, target-file:%s, cfg-dir:%s)"
+          slice_cfg targets cfg_dir
     | Ast_distance_based (metric, path) ->
         Format.asprintf "ast-distance (%s, %s)" (string_of_metric metric) path
 
@@ -284,8 +284,8 @@ let fuzzing_opts =
       Arg.String
         (fun filename ->
           match !mode with
-          | Mode.Directed (selective, _, cfg) ->
-              mode := Mode.Directed (selective, filename, cfg)
+          | Mode.Directed (slice_cfg, _, cfg) ->
+              mode := Mode.Directed (slice_cfg, filename, cfg)
           | _ ->
               Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
               |> failwith),
@@ -294,13 +294,13 @@ let fuzzing_opts =
       Arg.String
         (fun cfg ->
           match !mode with
-          | Mode.Directed (selective, targets, _) ->
-              mode := Mode.Directed (selective, targets, cfg)
+          | Mode.Directed (slice_cfg, targets, _) ->
+              mode := Mode.Directed (slice_cfg, targets, cfg)
           | _ ->
               Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
               |> failwith),
       "CFG directory for CFG-based directed fuzzing" );
-    ( "-selinst",
+    ( "-slice-cfg",
       Arg.Unit
         (fun () ->
           match !mode with
@@ -309,7 +309,8 @@ let fuzzing_opts =
           | _ ->
               Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
               |> failwith),
-      "Turn on selective instrumentation for CFG-based directed fuzzing" );
+      "Slice CFG to receive selective coverage feedback only from relevant \
+       nodes" );
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ( "-no-tv",
