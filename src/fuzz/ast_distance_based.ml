@@ -163,10 +163,5 @@ module Make (SeedPool : Seedcorpus.Ast_distance_based.POOL) = struct
     in
 
     (* repeat until the time budget or seed pool exhausts *)
-    let exhausted =
-      !Config.time_budget > 0
-      && AUtil.now () - !AUtil.start_time > !Config.time_budget
-    in
-    if exhausted then progress.cov_sofar
-    else run target_path new_pool llctx llset progress
+    run target_path new_pool llctx llset progress
 end
