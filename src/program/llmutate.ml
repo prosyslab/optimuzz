@@ -29,6 +29,9 @@ let main path save_dir save_name =
   assert (Sys.file_exists path);
   assert (Sys.file_exists save_dir);
   assert (Sys.is_directory save_dir);
+  prerr_endline path;
+  prerr_endline save_dir;
+  prerr_endline save_name;
 
   let llctx = Llvm.create_context () in
   Config.Interests.set_interesting_types llctx;

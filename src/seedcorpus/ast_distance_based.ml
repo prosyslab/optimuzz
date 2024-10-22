@@ -286,7 +286,9 @@ module PrioritySeedPool (Seed : DISTANCED_PRIORITY_SEED) : POOL = struct
     let seed_dir = !Config.seed_dir in
     assert (Sys.file_exists seed_dir && Sys.is_directory seed_dir);
 
-    match !Config.seedpool_option with
-    | Config.Fresh -> make_fresh llctx seed_dir target_path
-    | _ -> failwith "Temporarily disabled seedpool construction"
+    make_fresh llctx seed_dir target_path
+
+  (* match !Config.seedpool_option with
+     | Config.Fresh ->
+     | _ -> failwith "Temporarily disabled seedpool construction" *)
 end

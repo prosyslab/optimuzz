@@ -36,13 +36,16 @@ let can_optimize seedfile node_tbl distmap =
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      let lines =
-        lines
-        |> List.filter (fun line ->
-               let addr = int_of_string line in
-               CD.sliced_cfg_node_of_addr node_tbl distmap addr
-               |> Option.is_some)
+      let filter_func =
+        match !Config.coverage with
+        | Config.FuzzingMode.Sliced_cfg ->
+            fun line ->
+              int_of_string line
+              |> CD.sliced_cfg_node_of_addr node_tbl distmap
+              |> Option.is_some
+        | _ -> fun _ -> true
       in
+      let lines = lines |> List.filter filter_func in
       Some (seedfile, lines)
 
 let push (seed : Seed.t) pool =
@@ -171,7 +174,7 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
     | Error _ -> None
     | Ok llm ->
         if Prep.check_llm_for_mutation llm then (
-          let cov = lines |> Trace.of_lines in
+          let cov = [ lines |> List.map int_of_string ] in
           let llm = add_dummy_params llm in
           L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
           Some (path, llm, cov))
