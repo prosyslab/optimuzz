@@ -6,8 +6,6 @@ module F = Format
 let project_home = ref ""
 
 (* paths *)
-let pattern_path = ref ""
-let cov_tgt_path = ref ""
 let seed_dir = ref "seed"
 let out_dir = ref "llfuzz-out"
 let crash_dir = ref "crash"
@@ -15,8 +13,6 @@ let corpus_dir = ref "corpus"
 let covers_dir = ref "covers"
 let muts_dir = ref "muts"
 let cov_file = ref "cov.cov"
-let gcov_dir = ref "gcov"
-let json_file = ref "cov.json"
 let dry_run = ref false
 
 (* binary dependencies *)
@@ -30,94 +26,56 @@ let max_distance = ref (1 lsl 16) (* 2 ^ 16 *)
 
 (* fuzzing options *)
 
-type metric = Min_metric | Avg_metric
-type queue_type = Priority_queue | Fifo_queue
-type avg = Arith_avg | Harmonic_avg
-
-(** seedpool construction configuration *)
-type seedpool_opt =
-  | Fresh
-      (** Start fuzzing campaign from scratch.
-     It will
-     (1) check if opt fails and run llmodule cleaning ([Seedcorpus.Prep.clean_llm])
-     (2) measure distances for each seed and construct seedpool.
-     It requires initial seed directory (-seed-dir) *)
-  | SkipClean
-      (** Start fuzzing campaign without checking if opt fails and llmodule cleaning.
-     it requires initial seed directory which contains preprocessed llmodules.
-     The fuzzing campaign will start after a seedpool is constructed from the initial seed directory.
-     Safety: one should ensure that the files are already preprocessed *)
-  | Resume
-      (** Resume fuzzing campaign with current corpus and crash directory.
- The fuzzing campaign will start after a seedpool is constructed from the current corpus and crash directory. *)
-
-let seedpool_option = ref Fresh
-
-(* string_of_types *)
-let string_of_metric = function Min_metric -> "min" | Avg_metric -> "avg"
-
-let string_of_queue_type = function
-  | Priority_queue -> "priority"
-  | Fifo_queue -> "fifo"
-
-let string_of_seedpool_option = function
-  | Fresh -> "fresh"
-  | SkipClean -> "skip-clean"
-  | Resume -> "resume"
-
 let string_of_level = function
   | L.DEBUG -> "DEBUG"
   | L.INFO -> "INFO"
   | L.WARN -> "WARN"
   | L.ERROR -> "ERROR"
 
-(* default *)
-let time_budget = ref (-1)
+module FuzzingMode = struct
+  (** Baseline: (All_edges, Constant, Uniform)
+      Next: (All_edges, By_distance, Uniform)
+      Next: (Slice_cfg, By_distance, Uniform)
+      Next: (Slice_cfg, By_distance, Focused)
+  *)
+  type coverage_t = All_edges | Sliced_cfg
 
-module Mode = struct
-  type t =
-    | Blackbox
-    | Greybox
-    | Directed of bool * string * string (* slice-cfg, targets_file, cfg_file *)
-    | Ast_distance_based of metric * string
-
-  let string_of = function
-    | Blackbox -> "blackbox"
-    | Greybox -> "greybox"
-    | Directed (slice_cfg, targets, cfg_dir) ->
-        Format.asprintf "directed (slice_cfg:%b, target-file:%s, cfg-dir:%s)"
-          slice_cfg targets cfg_dir
-    | Ast_distance_based (metric, path) ->
-        Format.asprintf "ast-distance (%s, %s)" (string_of_metric metric) path
-
-  let of_string s =
-    match s with
-    | "blackbox" -> Blackbox
-    | "greybox" -> Greybox
-    | "directed" -> Directed (false, "", "")
-    | _ when String.length s >= 19 && String.sub s 0 19 = "ast-distance:" ->
-        Ast_distance_based (Min_metric, String.sub s 19 (String.length s - 19))
-    | s -> Format.asprintf "Can't parse mode (%s)" s |> failwith
+  type score_t = Constant | By_distance
+  type mutation_t = Uniform | Focused
 end
 
-let mode = ref Mode.Blackbox
+let coverage = ref FuzzingMode.Sliced_cfg
+
+(** a file of target blocks for cfg slicing and distance calculation *)
+let target_blocks_file = ref ""
+
+let cfg_dir = ref ""
+let score = ref FuzzingMode.By_distance
+let mutation = ref FuzzingMode.Focused
+
+let string_of_coverage_option = function
+  | FuzzingMode.All_edges -> "all"
+  | FuzzingMode.Sliced_cfg -> "sliced"
+
+let string_of_score_option = function
+  | FuzzingMode.Constant -> "constant"
+  | FuzzingMode.By_distance -> "distance"
+
+let string_of_mutation_option = function
+  | FuzzingMode.Uniform -> "uniform"
+  | FuzzingMode.Focused -> "focused"
+
+(* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
 
 (* optimizer options *)
-
-let optimizer_passes =
-  (* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
-  ref [ "instcombine" ]
-
+(* ref [ "globaldce"; "simplifycfg"; "instsimplify"; "instcombine" ] *)
+let optimizer_passes = ref [ "instcombine" ]
 let mtriple = ref ""
 let num_mutation = ref 1
 let num_mutant = ref 1
 let no_tv = ref false
 let record_cov = ref false
-let queue = ref Fifo_queue
-let no_learn = ref true
-let learn_inc = ref 20
-let learn_dec = ref 5
-let log_level = ref L.ERROR
+let log_level = ref L.INFO
 
 (* mutation options *)
 
@@ -277,75 +235,38 @@ let env_opts =
 
 let fuzzing_opts =
   [
-    ( "-mode",
-      Arg.String (fun s -> mode := Mode.of_string s),
-      "one of (blackbox, greybox, directed)" );
-    ( "-targets",
+    ( "-coverage",
       Arg.String
-        (fun filename ->
-          match !mode with
-          | Mode.Directed (slice_cfg, _, cfg) ->
-              mode := Mode.Directed (slice_cfg, filename, cfg)
-          | _ ->
-              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
-              |> failwith),
+        (function
+        | "sliced" -> coverage := FuzzingMode.Sliced_cfg
+        | "all" -> coverage := FuzzingMode.All_edges
+        | _ -> failwith "Invalid coverage"),
+      "Coverage type (default: sliced)" );
+    ( "-score",
+      Arg.String
+        (function
+        | "constant" -> score := FuzzingMode.Constant
+        | "distance" -> score := FuzzingMode.By_distance
+        | _ -> failwith "Invalid score"),
+      "Score type (default: distance)" );
+    ( "-mutation",
+      Arg.String
+        (function
+        | "uniform" -> mutation := FuzzingMode.Uniform
+        | "focused" -> mutation := FuzzingMode.Focused
+        | _ -> failwith "Invalid mutation"),
+      "Mutation type (default: focused)" );
+    ( "-targets",
+      Arg.Set_string target_blocks_file,
       "Targets file for CFG-based directed fuzzing" );
     ( "-cfg-dir",
-      Arg.String
-        (fun cfg ->
-          match !mode with
-          | Mode.Directed (slice_cfg, targets, _) ->
-              mode := Mode.Directed (slice_cfg, targets, cfg)
-          | _ ->
-              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
-              |> failwith),
+      Arg.Set_string cfg_dir,
       "CFG directory for CFG-based directed fuzzing" );
-    ( "-slice-cfg",
-      Arg.Unit
-        (fun () ->
-          match !mode with
-          | Mode.Directed (_, targets, cfg) ->
-              mode := Mode.Directed (true, targets, cfg)
-          | _ ->
-              Format.asprintf "Invalid mode (%s)@." (Mode.string_of !mode)
-              |> failwith),
-      "Slice CFG to receive selective coverage feedback only from relevant \
-       nodes" );
     ("-n-mutation", Arg.Set_int num_mutation, "Each mutant is mutated m times.");
     ("-n-mutant", Arg.Set_int num_mutant, "Each seed is mutated into n mutants.");
     ( "-no-tv",
       Arg.Set no_tv,
       "Do not translate-validate during a fuzzing campaign" );
-    (* ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
-       ( "-learn-inc",
-         Arg.Set_int learn_inc,
-         "Reward for correct mutation during learning" );
-       ( "-learn-dec",
-         Arg.Set_int learn_dec,
-         "Penalty for incorrect mutation during learning" ); *)
-    ( "-metric",
-      Arg.String
-        (fun s ->
-          let met =
-            match s with
-            | "min" -> Min_metric
-            | "avg" -> Avg_metric
-            | _ -> failwith "Invalid metric"
-          in
-          match !mode with
-          | Mode.Ast_distance_based (_, path) ->
-              mode := Mode.Ast_distance_based (met, path)
-          | _ ->
-              Format.asprintf "Invalid mode (%s)" (Mode.string_of !mode)
-              |> failwith),
-      "Metric to give a score to an AST coverage" );
-    ( "-queue",
-      Arg.String
-        (function
-        | "priority" -> queue := Priority_queue
-        | "fifo" -> queue := Fifo_queue
-        | _ -> failwith "Invalid queue"),
-      "Queue type of the seed pool (priority, fifo)" );
   ]
 
 let other_opts =
@@ -369,32 +290,78 @@ let other_opts =
       "Do not run fuzzing. (for testing configuration)" );
   ]
 
-let opts =
-  env_opts @ fuzzing_opts @ other_opts
-  @ [
-      (* if these two are set, branch to other operation (not fuzzing) *)
-      (* ( "-pattern",
-           Arg.Set_string pattern_path,
-           "To generate programs of certain patterns" );
-         ( "-coverage",
-           Arg.Set_string cov_tgt_path,
-           "To measure opt coverage only over the file" ); *)
-      (* paths *)
-      (* ( "-seedpool",
-         Arg.String
-           (function
-           | "fresh" -> seedpool_option := Fresh
-           | "skip-clean" -> seedpool_option := SkipClean
-           | "resume" -> seedpool_option := Resume
-           | _ -> failwith "Invalid start option"),
-         "Start option" ); *)
-      ("-record-cov", Arg.Set record_cov, "Recording all coverage");
-      (* gcov whitelist *)
-      (* ( "-instcombine",
-         Arg.Set _instCombine,
-         "[register whitelist] Combine instructions to form fewer, simple \
-          instructions" ); *)
-    ]
+(*** DEPRECATED OPTIONS ***)
+
+type metric = Min_metric | Avg_metric
+
+let string_of_metric = function Min_metric -> "min" | Avg_metric -> "avg"
+
+type queue_type = Priority_queue | Fifo_queue
+
+let string_of_queue_type = function
+  | Priority_queue -> "priority"
+  | Fifo_queue -> "fifo"
+
+let pattern_path = ref ""
+let cov_tgt_path = ref ""
+let gcov_dir = ref "gcov"
+let json_file = ref "cov.json"
+let metric = ref Min_metric
+let queue = ref Fifo_queue
+let no_learn = ref true
+let learn_inc = ref 20
+let learn_dec = ref 5
+let random_seed = ref 0
+
+let deprecated_opts =
+  [
+    ("-no-learn", Arg.Set no_learn, "Turn off mutation learning");
+    ( "-learn-inc",
+      Arg.Set_int learn_inc,
+      "Reward for correct mutation during learning" );
+    ( "-learn-dec",
+      Arg.Set_int learn_dec,
+      "Penalty for incorrect mutation during learning" );
+    ( "-metric",
+      Arg.String
+        (function
+        | "min" -> metric := Min_metric
+        | "avg" -> metric := Avg_metric
+        | _ -> failwith "Invalid metric"),
+      "Metric to give a score to an AST coverage" );
+    ( "-queue",
+      Arg.String
+        (function
+        | "priority" -> queue := Priority_queue
+        | "fifo" -> queue := Fifo_queue
+        | _ -> failwith "Invalid queue"),
+      "Queue type of the seed pool (priority, fifo)" );
+    (* if these two are set, branch to other operation (not fuzzing) *)
+    ( "-pattern",
+      Arg.Set_string pattern_path,
+      "To generate programs of certain patterns" );
+    ( "-coverage",
+      Arg.Set_string cov_tgt_path,
+      "To measure opt coverage only over the file" );
+    ("-record-cov", Arg.Set record_cov, "Recording all coverage");
+    (* gcov whitelist *)
+    ( "-instcombine",
+      Arg.Set _instCombine,
+      "[register whitelist] Combine instructions to form fewer, simple \
+       instructions" );
+    (* ( "-seedpool",
+       Arg.String
+         (function
+         | "fresh" -> seedpool_option := Fresh
+         | "skip-clean" -> seedpool_option := SkipClean
+         | "resume" -> seedpool_option := Resume
+         | _ -> failwith "Invalid start option"),
+       "Start option" ); *)
+  ]
+
+(*** DEPRECATED OPTIONS END ***)
+
+let opts = env_opts @ fuzzing_opts @ other_opts
 
 (* * only called after arguments are parsed. *)
 (* TODO: is there optimization files other than ones under Transforms? *)
@@ -496,9 +463,9 @@ let setup_output cwd out_dir =
   let muts = Filename.concat out "muts" in
 
   if
-    (not @@ !dry_run)
-    && !seedpool_option <> Resume
+    (not !dry_run)
     && (Sys.file_exists crash || Sys.file_exists corpus)
+    && Sys.readdir corpus |> Array.length <> 0
   then (
     F.eprintf "It seems like the output directory already exists.@.";
     F.eprintf "We don't want to mess up with existing files. Exiting...@.";
@@ -519,11 +486,12 @@ let log_options opts =
          | Arg.Set b -> L.info "%s: %b" name !b
          | Arg.Set_string s -> L.info "%s: %s" name !s
          | Arg.Set_int i -> L.info "%s: %d" name !i
-         | Arg.String _ when name = "-metric" -> (
-             match !mode with
-             | Mode.Ast_distance_based (metric, _) ->
-                 L.info "%s: %s" name (string_of_metric metric)
-             | _ -> L.info "%s: <unset>" name)
+         | Arg.String _ when name = "-coverage" ->
+             L.info "%s: %s" name (string_of_coverage_option !coverage)
+         | Arg.String _ when name = "-score" ->
+             L.info "%s: %s" name (string_of_score_option !score)
+         | Arg.String _ when name = "-mutation" ->
+             L.info "%s: %s" name (string_of_mutation_option !mutation)
          | Arg.String _ when name = "-queue" ->
              L.info "%s: %s" name (string_of_queue_type !queue)
          | Arg.String _ when name = "-log-level" ->
@@ -531,19 +499,11 @@ let log_options opts =
          | Arg.String _ when name = "-passes" ->
              L.info "%s: %s " name (String.concat "," !optimizer_passes)
          | Arg.String _ when name = "-mtriple" -> L.info "%s: %s " name !mtriple
-         | Arg.String _ when name = "-seedpool" ->
-             L.info "%s: %s" name (string_of_seedpool_option !seedpool_option)
-         | Arg.String _ when name = "-mode" ->
-             L.info "%s: %s" name (Mode.string_of !mode)
          | _ -> L.info "%s: <unset>" name);
 
   L.flush ()
 
 let initialize llctx () =
-  Arg.parse opts
-    (fun _ -> failwith "no anonymous arguments")
-    "Usage: llfuzz [options]";
-
   (* consider dune directory *)
   (* it locates the execution binary. not suitable for setting up for many running environment *)
   project_home :=
@@ -553,6 +513,21 @@ let initialize llctx () =
     |> Filename.dirname
     |> Filename.dirname
     |> Filename.dirname;
+
+  Arg.parse opts
+    (fun _ -> failwith "no anonymous arguments")
+    "Usage: llfuzz [options]";
+
+  if Filename.is_relative !cfg_dir then
+    cfg_dir := Filename.concat !project_home !cfg_dir;
+
+  if Filename.is_relative !target_blocks_file then
+    target_blocks_file := Filename.concat !project_home !target_blocks_file;
+
+  assert (Sys.file_exists !target_blocks_file);
+  assert (Sys.file_exists !cfg_dir);
+  assert (Sys.is_directory !target_blocks_file |> not);
+  assert (Sys.is_directory !cfg_dir);
 
   let cwd = Sys.getcwd () in
 
