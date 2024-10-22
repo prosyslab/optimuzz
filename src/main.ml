@@ -57,11 +57,8 @@ let pp_print_hex_int ppf n = F.fprintf ppf "0x%x" n
 
 (** takes
     1. [targets_file] which contains a list of (filename:lineno) and
-    2-1. if not selective, a directory [cfg_dir] which contains CFGs of functions of the program and the call graph among them
-    2-2. if selective, a directory [cfg_dir] which only contains the CFG of the target function
 *)
-let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
-    =
+let llfuzz_cfg_slicing_based_directed targets_file cfg_dir =
   assert (Sys.file_exists targets_file);
   assert (Sys.file_exists cfg_dir);
   assert (Sys.is_directory targets_file |> not);
@@ -95,29 +92,8 @@ let llfuzz_cfg_slicing_based_directed ?(selective = false) targets_file cfg_dir
 
   F.printf "%d CFGs are loaded@." (List.length cfgs);
 
-  (* If selective, only use CFG of the target function *)
-  (* Otherwise, construct the full graph of CFGs and the call graph *)
-  let fullgraph =
-    if not selective then
-      let calledges = CG.read (Filename.concat cfg_dir "callgraph.txt") in
-      let fg = FG.of_cfgs_and_calledges cfgs calledges in
-
-      fg
-    else
-      (* choose the cfg which contains the target nodes *)
-      let cfg =
-        cfgs
-        |> List.map CFG.graph
-        |> List.find (fun cfg ->
-               targets
-               |> List.exists (fun (filename, lineno) ->
-                      cfg
-                      |> FG.find_targets (Filename.basename filename, lineno)
-                      <> []))
-      in
-
-      cfg
-  in
+  let calledges = CG.read (Filename.concat cfg_dir "callgraph.txt") in
+  let fullgraph = FG.of_cfgs_and_calledges cfgs calledges in
   let target_nodes =
     targets
     |> List.map (fun (filename, lineno) ->
@@ -213,35 +189,31 @@ let llfuzz_edge_cov_based_greybox () =
 
 let _ =
   initialize ();
-  match !Config.mode with
-  | Config.Mode.Ast_distance_based (metric, path) -> (
-      F.printf "ast-distance based directed mode@.";
-      let target_path = CD.Path.parse path |> Option.get in
-      let module SA = Seedcorpus.Ast_distance_based in
-      match (metric, !Config.queue) with
-      | Config.Min_metric, Config.Fifo_queue ->
-          let module MinFifoPool =
-            SA.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
-          llfuzz_ast_distanced_based (module MinFifoPool) target_path
-      | Config.Min_metric, Config.Priority_queue ->
-          let module MinPriorityPool =
-            SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.MinDistance)) in
-          llfuzz_ast_distanced_based (module MinPriorityPool) target_path
-      | Config.Avg_metric, Config.Fifo_queue ->
-          let module AvgFifoPool =
-            SA.FifoSeedPool (SD.DistancedSeed (CD.AverageDistance)) in
-          llfuzz_ast_distanced_based (module AvgFifoPool) target_path
-      | Config.Avg_metric, Config.Priority_queue ->
-          let module AvgPriorityPool =
-            SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
-          llfuzz_ast_distanced_based (module AvgPriorityPool) target_path)
-  | Directed (selective, targets_file, cfg_file) ->
-      F.printf "CFG slicing based directed mode@.";
-      F.printf "selective: %b@." selective;
-      llfuzz_cfg_slicing_based_directed ~selective targets_file cfg_file
-  | Greybox ->
-      F.printf "greybox mode@.";
-      llfuzz_edge_cov_based_greybox ()
-  | Blackbox ->
-      F.printf "blackbox mode@.";
-      failwith "Not implemented"
+  (* match !Config.mode with
+     | Config.Mode.Ast_distance_based (metric, path) -> (
+         F.printf "ast-distance based directed mode@.";
+         let target_path = CD.Path.parse path |> Option.get in
+         let module SA = Seedcorpus.Ast_distance_based in
+         match (metric, !Config.queue) with
+         | Config.Min_metric, Config.Fifo_queue ->
+             let module MinFifoPool =
+               SA.FifoSeedPool (SD.DistancedSeed (CD.MinDistance)) in
+             llfuzz_ast_distanced_based (module MinFifoPool) target_path
+         | Config.Min_metric, Config.Priority_queue ->
+             let module MinPriorityPool =
+               SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.MinDistance)) in
+             llfuzz_ast_distanced_based (module MinPriorityPool) target_path
+         | Config.Avg_metric, Config.Fifo_queue ->
+             let module AvgFifoPool =
+               SA.FifoSeedPool (SD.DistancedSeed (CD.AverageDistance)) in
+             llfuzz_ast_distanced_based (module AvgFifoPool) target_path
+         | Config.Avg_metric, Config.Priority_queue ->
+             let module AvgPriorityPool =
+               SA.PrioritySeedPool (SD.PriorityDistancedSeed (CD.AverageDistance)) in
+             llfuzz_ast_distanced_based (module AvgPriorityPool) target_path)
+     | Directed (selective, targets_file, cfg_file) ->
+         F.printf "CFG slicing based directed mode@.";
+         F.printf "selective: %b@." selective; *)
+  let targets_file = !Config.target_blocks_file in
+  let cfg_dir = !Config.cfg_dir in
+  llfuzz_cfg_slicing_based_directed targets_file cfg_dir

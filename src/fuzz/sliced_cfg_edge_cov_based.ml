@@ -63,6 +63,9 @@ let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
       (* let traces = get_traces lines in
          let cov = Coverage.of_traces traces in *)
       let new_points = Coverage.diff cov covset in
+      if Coverage.is_empty new_points then
+        prerr_endline "No new coverage points"
+      else prerr_endline "New coverage points";
       let (new_seed : SeedPool.Seed.t) =
         SeedPool.Seed.make llm [ trace ] importants node_tbl distance_map
       in
@@ -87,7 +90,9 @@ let mutate_seed llctx llset seed =
   let seed_filename =
     ALlvm.save_ll muts (F.sprintf "id:%010d.ll" (ALlvm.hash_llm seed)) seed
   in
-  let mut_filename = Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" in
+  let mut_filename =
+    Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" |> Filename.basename
+  in
   let mutated_filename =
     Filename.chop_suffix seed_filename ".ll" ^ ".mutated"
   in
@@ -106,16 +111,16 @@ let mutate_seed llctx llset seed =
 
   AUtil.cmd llmutate_args |> ignore;
 
-  let mutant = ALlvm.read_ll llctx mut_filename in
+  let mutant = ALlvm.read_ll llctx (Filename.concat muts mut_filename) in
   match mutant with
   | Ok mutant ->
-      if ALlvm.LLModuleSet.mem llset mutant then ("", None)
+      if ALlvm.LLModuleSet.mem llset mutant then None
       else
         let importants =
           In_channel.with_open_text mutated_filename In_channel.input_all
         in
-        (importants, Some mutant)
-  | Error _ -> ("", None)
+        Some (mutant, importants)
+  | Error _ -> None
 
 let update_progress progress seed =
   let cov_set = SeedPool.Seed.edge_cov seed in
@@ -129,14 +134,14 @@ let run seed_pool node_tbl distmap llctx llset progress =
     if energy = 0 then None
     else
       match mutator llm with
-      | importants, Some mutated_llm -> (
+      | Some (mutated_llm, importants) -> (
           match
             evaluate_mutant llm mutated_llm importants progress.cov_sofar
               node_tbl distmap
           with
           | Some new_seed -> Some new_seed
           | None -> generate_mutant (energy - 1) mutated_llm progress)
-      | _, None -> generate_mutant (energy - 1) llm progress
+      | None -> generate_mutant (energy - 1) llm progress
   in
 
   let generate_interesting_mutants energy llm pool progress =
