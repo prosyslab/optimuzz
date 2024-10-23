@@ -20,7 +20,8 @@ let can_optimize seedfile node_tbl distmap =
   | Error File_not_found ->
       L.debug "coverage of %s is not generated" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      None
+      if !Config.coverage = Config.FuzzingMode.All_edges then Some (seedfile, [])
+      else None
   | Assert _ ->
       L.debug "Opt %s failed by Assertion Error" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
@@ -96,7 +97,10 @@ let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
         let seed = Seed.make llm traces "" node_tbl distmap in
         L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
         L.debug "score: %s" (string_of_float (Seed.score seed));
-        if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
+        (* will assume all-edges option to non-directed fuzzing *)
+        if !Config.coverage = Config.FuzzingMode.All_edges then
+          (pool_covers, seed :: pool_noncovers)
+        else if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
         else (pool_covers, seed :: pool_noncovers))
       ([], []) seeds
   in
@@ -108,9 +112,19 @@ let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
              compare
                (ALlvm.hash_llm (Seed.llmodule a))
                (ALlvm.hash_llm (Seed.llmodule b)))
-      |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-      |> take !Config.max_initial_seed
     in
+    let pool_closest =
+      if !Config.score = Config.FuzzingMode.Constant then pool_closest
+      else
+        pool_closest
+        |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
+    in
+    let pool_closest =
+      (* will assume all-edges option to non-directed fuzzing *)
+      if !Config.coverage = Config.FuzzingMode.All_edges then pool_closest
+      else pool_closest |> take !Config.max_initial_seed
+    in
+
     let init_cov =
       List.fold_left
         (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
@@ -167,6 +181,8 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
     llm
   in
 
+  let seed_count = ref 0 in
+
   let filter_seed seed =
     let* path, lines = can_optimize seed node_tbl distmap in
     L.debug "filter seed: %s " path;
@@ -177,6 +193,8 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
           let cov = [ lines |> List.map int_of_string ] in
           let llm = add_dummy_params llm in
           L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
+          seed_count := !seed_count + 1;
+          L.debug "seed count: %d" !seed_count;
           Some (path, llm, cov))
         else None
   in
