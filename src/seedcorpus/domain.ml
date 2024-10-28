@@ -147,7 +147,7 @@ module CfgSeed = struct
   let edge_cov seed = seed.edge_cov
 
   let get_energy seed =
-    if !Config.score = Config.FuzzingMode.Constant then 8
+    if !Config.score = Config.FuzzingMode.Constant then 4
     else
       let int_score = Float.to_int seed.score in
       if seed.covers then 12
