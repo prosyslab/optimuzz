@@ -1,0 +1,4 @@
+baseURL = 'https://prosys.kaist.ac.kr/optimuzz'
+languageCode = 'en-us'
+title = 'Optimuzz'
+theme = 'blank'

@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+@theme {
+    --font-display: "Mona Sans", sans-serif;
+}

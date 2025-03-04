@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="{{ .Site.LanguageCode | default " en-us" }}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ .Title }}</title>
+    {{ with .Site.Params.description }}
+    <meta name="description" content="{{ . }}">{{ end }}
+    {{ with .Site.Params.author }}
+    <meta name="author" content="{{ . }}">{{ end }}
+    <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
+    <base href="{{ .Site.BaseURL }}">
+    {{ with .OutputFormats.Get "RSS" -}}
+    {{ printf `
+    <link rel="%s" type="%s" href="%s" title="%s">` .Rel .MediaType.Type .RelPermalink $.Site.Title | safeHTML }}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Mona+Sans:ital,wght@0,200..900;1,200..900&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
+    {{- end }}
+</head>
+
+<body class="h-screen">
+    {{ block "main" . }}{{ end }}
+</body>
+
+</html>
