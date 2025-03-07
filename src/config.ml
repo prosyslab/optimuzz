@@ -445,9 +445,8 @@ let lookup_dependencies cwd =
 
   if Sys.file_exists opt |> not then failwith ("opt binary not found: " ^ opt);
 
-  if Sys.file_exists alive_tv |> not then
+  if (not !no_tv) && not (Sys.file_exists alive_tv) then
     failwith ("alive-tv binary not found: " ^ alive_tv);
-
   { opt; alive_tv }
 
 let setup_output cwd out_dir =
