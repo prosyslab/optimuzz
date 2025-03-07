@@ -1742,7 +1742,7 @@ let mutate_inner_bb times llctx llm choice_fn importants =
     if times = 0 then ([], None)
     else
       let mutation = choice_fn () in
-      L.info "mutation: %a" Domain.pp_mutation mutation;
+      Format.eprintf "[mutate_inner_bb] %a@." Domain.pp_mutation mutation;
       (* L.debug "before:\n%s" (string_of_llmodule llm); *)
       let mutation_result =
         match mutation with
@@ -1755,14 +1755,12 @@ let mutate_inner_bb times llctx llm choice_fn importants =
         (* | _ -> (None, None, None) *)
       in
       match mutation_result with
-      | _, Some llm ->
-          L.debug "mutant: %s" (string_of_llmodule llm);
+      | _, Some _llm ->
+          Format.eprintf "[mutate_inner_bb] good@.";
           (* let f = choose_function llm in
              reset_var_names f; *)
           mutation_result
-      | _, None ->
-          L.debug "None";
-          loop (times - 1) ()
+      | _, None -> loop (times - 1) ()
   in
 
   loop times ()

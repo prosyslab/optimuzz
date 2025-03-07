@@ -150,9 +150,7 @@ module CfgSeed = struct
     if !Config.score = Config.FuzzingMode.Constant then 4
     else
       let int_score = Float.to_int seed.score in
-      if seed.covers then 12
-      else if int_score >= 10 then 3
-      else Int.sub 12 int_score
+      if seed.covers then 12 else if int_score >= 10 then 3 else 12 - int_score
 
   let name ?(parent : int option) seed =
     let hash = ALlvm.hash_llm seed.llm in
