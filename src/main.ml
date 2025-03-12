@@ -1,7 +1,6 @@
 open Util
 module F = Format
 module L = Logger
-module SP = Seedcorpus.Seedpool
 module SD = Seedcorpus.Domain
 module CD = Coverage.Domain
 
