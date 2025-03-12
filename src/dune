@@ -12,6 +12,7 @@
   llvm.irreader
   llvm.transform_utils
   str
+  oracle
   unix
   coverage
   seedcorpus
