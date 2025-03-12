@@ -25,14 +25,6 @@ let can_optimize seedfile node_tbl distmap =
   | Assert _ ->
       L.debug "Opt %s failed by Assertion Error" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      (* let lines =
-           lines
-           |> List.filter (fun line ->
-                  let addr = int_of_string line in
-                  CD.sliced_cfg_node_of_addr node_tbl distmap addr
-                  |> Option.is_some)
-         in
-         Some (seedfile, lines) *)
       None
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;

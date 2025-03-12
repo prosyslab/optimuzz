@@ -4,26 +4,6 @@
  (libraries oracle util domainslib progress))
 
 (executable
- (name pattern_check)
- (modules pattern_check)
- (libraries pattern oracle util))
-
-(executable
- (name cov)
- (modules cov)
- (libraries oracle util))
-
-(executable
- (name clean)
- (modules clean)
- (libraries seedcorpus util))
-
-(executable
  (name llmutate)
  (modules llmutate)
  (libraries mutation util))
-
-(executable
- (name distance)
- (modules distance)
- (libraries coverage util))

@@ -3,10 +3,6 @@ open Util
 let check_value_type_for_mutation llv =
   let ty = ALlvm.type_of llv in
   if String.starts_with ~prefix:"target" (ALlvm.string_of_lltype ty) then false
-    (* else if
-         String.starts_with ~prefix:"@" (ALlvm.string_of_llvalue llv)
-         || String.starts_with ~prefix:"declare" (ALlvm.string_of_llvalue llv)
-       then false *)
   else
     match ALlvm.classify_type ty with
     | Void | Half | Float | Double | Fp128 | Label | Integer | Function | Array

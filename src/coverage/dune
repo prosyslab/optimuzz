@@ -1,4 +1,4 @@
 (library
  (name coverage)
- (modules domain sancov aflgo)
+ (modules domain aflgo)
  (libraries unix util config ocamlgraph))
