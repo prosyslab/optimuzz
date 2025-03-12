@@ -3,6 +3,17 @@ module F = Format
 module L = Logger
 module SD = Seedcorpus.Domain
 module CD = Coverage.Domain
+module SP = Seedcorpus.Seedpool
+module FZ = Fuzz.Fuzzer
+module Progress = CD.Progress (CD.EdgeCoverage)
+module G = Coverage.Aflgo.G
+module CFG = Coverage.Aflgo.ControlFlowGraph
+module CG = Coverage.Aflgo.CallGraph
+module FG = Coverage.Aflgo.FullGraph
+module Node = Coverage.Aflgo.Node
+module Edge = Coverage.Aflgo.Edge
+module A2N = Coverage.Aflgo.AddrToNode
+module DT = Coverage.Aflgo.DistanceTable
 
 let llctx = ALlvm.create_context ()
 
@@ -19,17 +30,6 @@ let main targets_file cfg_dir =
   assert (Sys.is_directory cfg_dir);
 
   let open Oracle in
-  let module SP = Seedcorpus.Seedpool in
-  let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
-  let module Progress = CD.Progress (CD.EdgeCoverage) in
-  let module G = Coverage.Aflgo.G in
-  let module CFG = Coverage.Aflgo.ControlFlowGraph in
-  let module CG = Coverage.Aflgo.CallGraph in
-  let module FG = Coverage.Aflgo.FullGraph in
-  let module Node = Coverage.Aflgo.Node in
-  let module Edge = Coverage.Aflgo.Edge in
-  let module A2N = Coverage.Aflgo.AddrToNode in
-  let module DT = Coverage.Aflgo.DistanceTable in
   F.printf "[Input Targets]@.";
   let targets = CD.parse_targets targets_file in
   targets
