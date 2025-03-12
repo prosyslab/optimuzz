@@ -17,6 +17,5 @@
   seedcorpus
   fuzz
   mutation
-  pattern
   util
   logger))
