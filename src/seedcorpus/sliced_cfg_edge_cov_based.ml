@@ -67,80 +67,86 @@ let save ?(parent : int option) (seed : Seed.t) =
 let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
   let open AUtil in
   let pool = create () in
-  (* let pools =
-       List.fold_left
-         (fun pools (_, llm, traces) ->
-           let seed = Seed.make llm traces "" node_tbl distmap in
-           L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
-           L.debug "score: %s" (string_of_float (Seed.score seed));
-           seed :: pools)
-         [] seeds
-     in
-     let init_cov =
-       List.fold_left
-         (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-         Coverage.empty pools
-     in
-     pools |> List.to_seq |> add_seq pool;
-     (pool, init_cov) *)
-  let pool_covers, pool_noncovers =
-    List.fold_left
-      (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
-        let seed = Seed.make llm traces "" node_tbl distmap in
-        L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
-        L.debug "score: %s" (string_of_float (Seed.score seed));
+  if
+    (* Optimuzz_Base *)
+    !Config.score = Config.FuzzingMode.Constant
+    && !Config.coverage = Config.FuzzingMode.All_edges
+  then (
+    let pools =
+      List.fold_left
+        (fun pools (_, llm, traces) ->
+          let seed = Seed.make llm traces "" node_tbl distmap in
+          L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
+          L.debug "score: %s" (string_of_float (Seed.score seed));
+          seed :: pools)
+        [] seeds
+    in
+    let init_cov =
+      List.fold_left
+        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
+        Coverage.empty pools
+    in
+    pools |> List.to_seq |> add_seq pool;
+    (pool, init_cov))
+  else
+    let pool_covers, pool_noncovers =
+      List.fold_left
+        (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
+          let seed = Seed.make llm traces "" node_tbl distmap in
+          L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
+          L.debug "score: %s" (string_of_float (Seed.score seed));
+          (* will assume all-edges option to non-directed fuzzing *)
+          if !Config.coverage = Config.FuzzingMode.All_edges then
+            (pool_covers, seed :: pool_noncovers)
+          else if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
+          else (pool_covers, seed :: pool_noncovers))
+        ([], []) seeds
+    in
+    if pool_covers = [] then (
+      L.info "No covering seeds found. Using closest seeds.";
+      let pool_closest =
+        pool_noncovers
+        |> List.sort_uniq (fun a b ->
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
+      in
+      let pool_closest =
+        if !Config.score = Config.FuzzingMode.Constant then pool_closest
+        else
+          pool_closest
+          |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
+      in
+      let pool_closest =
         (* will assume all-edges option to non-directed fuzzing *)
-        if !Config.coverage = Config.FuzzingMode.All_edges then
-          (pool_covers, seed :: pool_noncovers)
-        else if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
-        else (pool_covers, seed :: pool_noncovers))
-      ([], []) seeds
-  in
-  if pool_covers = [] then (
-    L.info "No covering seeds found. Using closest seeds.";
-    let pool_closest =
-      pool_noncovers
-      |> List.sort_uniq (fun a b ->
-             compare
-               (ALlvm.hash_llm (Seed.llmodule a))
-               (ALlvm.hash_llm (Seed.llmodule b)))
-    in
-    let pool_closest =
-      if !Config.score = Config.FuzzingMode.Constant then pool_closest
-      else
-        pool_closest
-        |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-    in
-    let pool_closest =
-      (* will assume all-edges option to non-directed fuzzing *)
-      if !Config.coverage = Config.FuzzingMode.All_edges then pool_closest
-      else pool_closest |> take !Config.max_initial_seed
-    in
+        if !Config.coverage = Config.FuzzingMode.All_edges then pool_closest
+        else pool_closest |> take !Config.max_initial_seed
+      in
 
-    let init_cov =
-      List.fold_left
-        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-        Coverage.empty pool_closest
-    in
-    pool_closest |> List.to_seq |> add_seq pool;
-    (pool, init_cov))
-  else (
-    (* if we have covering seeds, we use covering seeds only. *)
-    L.info "Covering seeds found. Using them only.";
-    let pool_covers =
-      pool_covers
-      |> List.sort_uniq (fun a b ->
-             compare
-               (ALlvm.hash_llm (Seed.llmodule a))
-               (ALlvm.hash_llm (Seed.llmodule b)))
-    in
-    let init_cov =
-      List.fold_left
-        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-        Coverage.empty pool_covers
-    in
-    pool_covers |> List.to_seq |> add_seq pool;
-    (pool, init_cov))
+      let init_cov =
+        List.fold_left
+          (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
+          Coverage.empty pool_closest
+      in
+      pool_closest |> List.to_seq |> add_seq pool;
+      (pool, init_cov))
+    else (
+      (* if we have covering seeds, we use covering seeds only. *)
+      L.info "Covering seeds found. Using them only.";
+      let pool_covers =
+        pool_covers
+        |> List.sort_uniq (fun a b ->
+               compare
+                 (ALlvm.hash_llm (Seed.llmodule a))
+                 (ALlvm.hash_llm (Seed.llmodule b)))
+      in
+      let init_cov =
+        List.fold_left
+          (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
+          Coverage.empty pool_covers
+      in
+      pool_covers |> List.to_seq |> add_seq pool;
+      (pool, init_cov))
 
 let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
   let open AUtil in
