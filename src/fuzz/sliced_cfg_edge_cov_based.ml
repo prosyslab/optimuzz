@@ -4,7 +4,7 @@ module F = Format
 module CD = Coverage.Domain
 module Coverage = CD.EdgeCoverage
 module Trace = CD.BlockTrace
-module SeedPool = Seedcorpus.Sliced_cfg_edge_cov_based
+module SeedPool = Seedcorpus.Seedpool
 module Opt = Oracle.Optimizer
 module Progress = CD.Progress (Coverage)
 

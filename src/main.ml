@@ -19,7 +19,7 @@ let main targets_file cfg_dir =
   assert (Sys.is_directory cfg_dir);
 
   let open Oracle in
-  let module SP = Seedcorpus.Sliced_cfg_edge_cov_based in
+  let module SP = Seedcorpus.Seedpool in
   let module FZ = Fuzz.Sliced_cfg_edge_cov_based in
   let module Progress = CD.Progress (CD.EdgeCoverage) in
   let module G = Coverage.Aflgo.G in

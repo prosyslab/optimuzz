@@ -1,6 +1,6 @@
 (library
  (name seedcorpus)
- (modules prep domain sliced_cfg_edge_cov_based)
+ (modules prep domain seedpool)
  (libraries
   util
   llvm.irreader
