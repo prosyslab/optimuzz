@@ -383,11 +383,10 @@ let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
   in
 
   let seeds =
-    Sys.readdir seed_dir
-    |> (fun x ->
-         L.info "%d seeds found" (Array.length x);
-         x)
-    |> Array.to_list
+    let seed_files = Sys.readdir seed_dir in
+    L.info "%d seeds found" (Array.length seed_files);
+
+    Array.to_list seed_files
     |> List.map (Filename.concat seed_dir)
     |> List.filter_map filter_seed
   in
