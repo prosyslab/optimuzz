@@ -1,12 +1,12 @@
 module F = Format
-module G = Coverage.Aflgo.G
+module G = Coverage.Icfg.G
 module CD = Coverage.Domain
-module CFG = Coverage.Aflgo.ControlFlowGraph
-module CG = Coverage.Aflgo.CallGraph
-module FG = Coverage.Aflgo.FullGraph
-module Node = Coverage.Aflgo.Node
-module DT = Coverage.Aflgo.DistanceTable
-module A2N = Coverage.Aflgo.AddrToNode
+module CFG = Coverage.Icfg.ControlFlowGraph
+module CG = Coverage.Icfg.CallGraph
+module FG = Coverage.Icfg.FullGraph
+module Node = Coverage.Icfg.Node
+module DT = Coverage.Icfg.DistanceTable
+module A2N = Coverage.Icfg.AddrToNode
 
 let main targets_file cfg_dir =
   assert (Sys.file_exists targets_file);

@@ -6,14 +6,14 @@ module CD = Coverage.Domain
 module SP = Seedcorpus.Seedpool
 module FZ = Fuzz.Fuzzer
 module Progress = CD.Progress (CD.EdgeCoverage)
-module G = Coverage.Aflgo.G
-module CFG = Coverage.Aflgo.ControlFlowGraph
-module CG = Coverage.Aflgo.CallGraph
-module FG = Coverage.Aflgo.FullGraph
-module Node = Coverage.Aflgo.Node
-module Edge = Coverage.Aflgo.Edge
-module A2N = Coverage.Aflgo.AddrToNode
-module DT = Coverage.Aflgo.DistanceTable
+module G = Coverage.Icfg.G
+module CFG = Coverage.Icfg.ControlFlowGraph
+module CG = Coverage.Icfg.CallGraph
+module FG = Coverage.Icfg.FullGraph
+module Node = Coverage.Icfg.Node
+module Edge = Coverage.Icfg.Edge
+module A2N = Coverage.Icfg.AddrToNode
+module DT = Coverage.Icfg.DistanceTable
 
 let llctx = ALlvm.create_context ()
 

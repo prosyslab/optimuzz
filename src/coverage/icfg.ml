@@ -1,6 +1,6 @@
 open Util
 
-(* AFLGo style feedback using CFG and CG *)
+(* Interprocedural call-flow graph *)
 
 (** A node in CFG, represent a basic block in LLVM IR *)
 module Node = struct
@@ -165,7 +165,7 @@ end = struct
 
   let read filename =
     let lines = AUtil.readlines filename in
-    (* InstCombineMulDivRem.cpp:_ZN4llvm16InstCombinerImpl9visitURemERNS_14BinaryOperatorE:1468:1 _ZN4llvm16InstCombinerImpl9visitURemERNS_14BinaryOperatorE *)
+    (* InstructionSimplify.cpp:_ZL15simplifySubInstPN4llvm5ValueES1_bbRKNS_13SimplifyQueryEj:863:77:94208524658352 _ZL15simplifyXorInstPN4llvm5ValueES1_RKNS_13SimplifyQueryEj *)
     lines
     |> List.map (fun line ->
            match String.split_on_char ' ' line with
