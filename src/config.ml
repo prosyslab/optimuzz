@@ -40,7 +40,7 @@ module FuzzingMode = struct
   *)
   type coverage_t = All_edges | Sliced_cfg
 
-  type score_t = Constant | By_distance
+  type score_t = Constant | By_distance | Aflgo
   type mutation_t = Uniform | Focused
 end
 
@@ -60,6 +60,7 @@ let string_of_coverage_option = function
 let string_of_score_option = function
   | FuzzingMode.Constant -> "constant"
   | FuzzingMode.By_distance -> "distance"
+  | FuzzingMode.Aflgo -> "aflgo"
 
 let string_of_mutation_option = function
   | FuzzingMode.Uniform -> "uniform"
@@ -247,6 +248,7 @@ let fuzzing_opts =
         (function
         | "constant" -> score := FuzzingMode.Constant
         | "distance" -> score := FuzzingMode.By_distance
+        | "aflgo" -> score := FuzzingMode.Aflgo
         | _ -> failwith "Invalid score"),
       "Score type (default: distance)" );
     ( "-mutation",

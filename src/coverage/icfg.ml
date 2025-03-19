@@ -22,6 +22,16 @@ module Node = struct
       n.addr
 end
 
+(* A node in Call Graph, used for AFLGo-style distance metric *)
+module FuncNode = struct
+  type t = string
+
+  let compare = compare
+  let hash = Hashtbl.hash
+  let equal = ( = )
+  let pp fmt n = Format.fprintf fmt "Function %s" n
+end
+
 module AddrToNode = struct
   include Hashtbl.Make (struct
     type t = int
@@ -48,7 +58,7 @@ end
 module G = Graph.Imperative.Digraph.ConcreteLabeled (Node) (Edge)
 
 module ControlFlowGraph : sig
-  type t
+  type t = { func_name : string; g : G.t }
 
   val func_name : t -> string
   val graph : t -> G.t
@@ -144,11 +154,7 @@ end = struct
     (funcname_to_node, merged_cfg)
 end
 
-module CallGraph : sig
-  type t
-
-  val read : string -> (Node.t * string) list
-end = struct
+module CallGraph = struct
   type t = G.t
 
   let parse_calledge_node caller_node : Node.t =
@@ -172,6 +178,27 @@ end = struct
            | [ caller_node; called_fn ] ->
                (parse_calledge_node caller_node, called_fn)
            | _ -> raise (Invalid_argument "invalid callgraph format"))
+
+  module FunctionCallGraph =
+    Graph.Imperative.Digraph.ConcreteLabeled
+      (FuncNode)
+      (struct
+        type t = float
+
+        let default = 10.0
+        let compare = compare
+      end)
+
+  let to_function_call_graph calledges =
+    let g = FunctionCallGraph.create () in
+    calledges
+    |> List.iter (fun (caller_node, called_fn) ->
+           let caller = caller_node.Node.func_name in
+           let called = called_fn in
+           let edge = FunctionCallGraph.E.create caller 10.0 called in
+           FunctionCallGraph.add_edge_e g edge);
+
+    g
 end
 
 module FullGraph = struct
@@ -194,15 +221,9 @@ module FullGraph = struct
       cfg []
 end
 
-module DistanceTable : sig
-  type 'a t
+module FuncNameMap = Map.Make (Node)
 
-  val build_distmap : G.t -> Node.t list -> float t
-  val is_empty : 'a t -> bool
-  val iter : (Node.t -> 'a -> unit) -> 'a t -> unit
-  val find_opt : Node.t -> float t -> float option
-  val mem : Node.t -> 'a t -> bool
-end = struct
+module DistanceTable = struct
   module Dijk =
     Graph.Path.Dijkstra
       (G)
@@ -221,28 +242,100 @@ end = struct
   let compute_distances cfg target =
     let dijk v =
       try
-        let path, length = Dijk.shortest_path cfg v target in
-        Some (path, length)
+        let _, length = Dijk.shortest_path cfg v target in
+        Some length
       with Not_found -> None
     in
     G.fold_vertex
       (fun v accu ->
-        let dist = dijk v |> Option.map snd in
-        add v dist accu)
+        match dijk v with Some dist -> add v dist accu | None -> accu)
       cfg empty
 
+  module FloatSet = Set.Make (Float)
+
+  let harmonic_avg fset =
+    let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
+    Float.of_int (FloatSet.cardinal fset) /. sum
+
   let build_distmap cfg target_nodes =
-    let module FloatSet = Set.Make (Float) in
-    let harmonic_avg fset =
-      let sum = FloatSet.fold (fun x accu -> accu +. (1.0 /. x)) fset 0.0 in
-      Float.of_int (FloatSet.cardinal fset) /. sum
-    in
     target_nodes
-    |> List.map (fun target ->
-           compute_distances cfg target |> filter_map (fun _k v -> v))
+    |> List.map (fun target -> compute_distances cfg target)
     |> List.map (map (fun d -> FloatSet.singleton d))
     |> List.fold_left
          (union (fun _k d1 d2 -> FloatSet.union d1 d2 |> Option.some))
          empty
-    |> map harmonic_avg (* block-level distance in a CFG uses harmonic mean *)
+    |> map harmonic_avg
+  (* block-level distance in a CFG uses harmonic mean *)
+
+  module FuncLevelDijk =
+    Graph.Path.Dijkstra
+      (CallGraph.FunctionCallGraph)
+      (struct
+        type t = float
+        type edge = string * float * string
+
+        let compare = Float.compare
+        let weight _ = 10.0
+        let add = Float.add
+        let zero = 0.0
+      end)
+
+  let compute_distance_aflgo cfg cg calledges target =
+    G.fold_vertex
+      (fun v accu ->
+        Format.printf "v: %a@." Node.pp v;
+        if v.func_name = target.Node.func_name then (
+          Format.printf "CFG@.";
+          try
+            let _path, bbdist = Dijk.shortest_path cfg v target in
+            add v bbdist accu
+          with _ -> accu)
+        else (
+          Format.printf "CFG + CG@.";
+          let callsites =
+            List.filter
+              (fun (caller, _callee) -> caller.Node.func_name = v.func_name)
+              calledges
+          in
+
+          let dists =
+            callsites
+            |> List.filter_map (fun (caller, callee) ->
+                   Format.printf "- caller: %a, callee: %s@." Node.pp caller
+                     callee;
+                   try
+                     let _, bbdist = Dijk.shortest_path cfg v caller in
+                     Format.printf "bbdist: %f@." bbdist;
+                     let _, fdist =
+                       FuncLevelDijk.shortest_path cg caller.Node.func_name
+                         target.Node.func_name
+                     in
+                     Format.printf "fdist: %f@." fdist;
+                     Some (bbdist +. fdist)
+                   with Not_found ->
+                     Format.printf "Not found@.";
+                     None)
+          in
+
+          if dists = [] then accu
+          else
+            let min_dist = dists |> List.fold_left min infinity in
+            add v min_dist accu))
+      cfg empty
+
+  let build_distmap_aflgo cfgs cg calledges target_nodes =
+    let merged_cfg = G.create () in
+    cfgs
+    |> List.iter (fun cfg ->
+           G.iter_vertex (G.add_vertex merged_cfg) cfg.ControlFlowGraph.g;
+           G.iter_edges_e (G.add_edge_e merged_cfg) cfg.ControlFlowGraph.g);
+
+    target_nodes
+    |> List.map (fun target ->
+           compute_distance_aflgo merged_cfg cg calledges target)
+    |> List.map (map (fun d -> FloatSet.singleton d))
+    |> List.fold_left
+         (union (fun _k d1 d2 -> FloatSet.union d1 d2 |> Option.some))
+         empty
+    |> map harmonic_avg
 end

@@ -55,6 +55,8 @@ let main targets_file cfg_dir =
     |> List.flatten
   in
 
+  let aflgo_cg = CG.to_function_call_graph calledges in
+
   F.printf "[Target Nodes]@.";
   target_nodes |> List.iter (fun node -> F.printf "%a@." Node.pp node);
 
@@ -62,7 +64,11 @@ let main targets_file cfg_dir =
     F.printf "no target nodes found@.";
     exit 0);
 
-  let distmap = DT.build_distmap fullgraph target_nodes in
+  let distmap =
+    if !Config.score = Config.FuzzingMode.Aflgo then
+      DT.build_distmap_aflgo cfgs aflgo_cg calledges target_nodes
+    else DT.build_distmap fullgraph target_nodes
+  in
   if DT.is_empty distmap then (
     F.printf "no distance map generated@.";
     exit 0);
