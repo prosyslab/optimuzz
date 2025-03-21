@@ -283,15 +283,12 @@ module DistanceTable = struct
   let compute_distance_aflgo cfg cg calledges target =
     G.fold_vertex
       (fun v accu ->
-        Format.printf "v: %a@." Node.pp v;
-        if v.func_name = target.Node.func_name then (
-          Format.printf "CFG@.";
+        if v.func_name = target.Node.func_name then
           try
             let _path, bbdist = Dijk.shortest_path cfg v target in
             add v bbdist accu
-          with _ -> accu)
-        else (
-          Format.printf "CFG + CG@.";
+          with Not_found -> accu
+        else
           let callsites =
             List.filter
               (fun (caller, _callee) -> caller.Node.func_name = v.func_name)
@@ -301,26 +298,20 @@ module DistanceTable = struct
           let dists =
             callsites
             |> List.filter_map (fun (caller, callee) ->
-                   Format.printf "- caller: %a, callee: %s@." Node.pp caller
-                     callee;
                    try
                      let _, bbdist = Dijk.shortest_path cfg v caller in
-                     Format.printf "bbdist: %f@." bbdist;
                      let _, fdist =
-                       FuncLevelDijk.shortest_path cg caller.Node.func_name
+                       FuncLevelDijk.shortest_path cg callee
                          target.Node.func_name
                      in
-                     Format.printf "fdist: %f@." fdist;
-                     Some (bbdist +. fdist)
-                   with Not_found ->
-                     Format.printf "Not found@.";
-                     None)
+                     Some (bbdist +. fdist +. 10.0)
+                   with Not_found -> None)
           in
 
           if dists = [] then accu
           else
             let min_dist = dists |> List.fold_left min infinity in
-            add v min_dist accu))
+            add v min_dist accu)
       cfg empty
 
   let build_distmap_aflgo cfgs cg calledges target_nodes =
