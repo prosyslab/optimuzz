@@ -4,8 +4,11 @@
 
 export OPAMYES=1
 
+set -e
+
 echo $LLVM_PATH
 opam switch
+eval $(opam env)
 
 opam install ctypes
 
@@ -29,6 +32,7 @@ cmake -G Ninja ../llvm \
     -DLLVM_ENABLE_DOXYGEN=OFF \
     -DLLVM_ENABLE_OCAMLDOC=OFF \
     -DLLVM_OCAML_INSTALL_PATH="$(opam var lib)"
+ninja
 sudo ninja install
 popd
 popd

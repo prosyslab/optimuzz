@@ -5,7 +5,7 @@ export OPAMYES=1
 
 NCPU="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
 OCAML_VERSION="5.3.0"
-OPTIMUZZ_OPAM_SWITCH=optimuzz-"$OCAML_VERSION"
+export OPTIMUZZ_OPAM_SWITCH="optimuzz-$OCAML_VERSION"
 opam init --reinit --bare --no-setup
 
 switch_exists=no
@@ -22,11 +22,11 @@ else
   opam switch $OPTIMUZZ_OPAM_SWITCH
 fi
 
-eval $(SHELL=bash opam config env --switch=$OPTIMUZZ_OPAM_SWITCH)
+eval $(SHELL=bash opam env --switch=$OPTIMUZZ_OPAM_SWITCH)
 opam pin https://github.com/prosyslab/logger.git
-opam install -j $NCPU dune logger domainslib progress ocamlgraph
-opam install -j $NCPU ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server # for development
-scripts/llvm-20.sh
+opam install -j $NCPU dune ctypes domainslib progress ocamlgraph ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server
+scripts/llvm20.sh
+scrtips/alive.sh
 
 make
 # opam install -j $NCPU llvm.16.0.6+nnp
