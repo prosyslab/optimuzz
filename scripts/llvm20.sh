@@ -15,13 +15,16 @@ if [ -z "$LLVM_PATH" ]; then
 fi
 
 pushd $LLVM_PATH
+git checkout llvmorg-20.1.1
 mkdir -p build
 pushd build
+# Alive2 requires ASSERTIONS to be enabled
 cmake -G Ninja ../llvm \
-    -DLLVM_ENABLE_PROJECTS="clang" \
+    -DLLVM_ENABLE_PROJECTS="llvm;clang" \
     -DLLVM_ENABLE_BINDINGS=ON \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_RTTI=ON \
+    -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_ENABLE_SPHINX=OFF \
     -DLLVM_ENABLE_DOXYGEN=OFF \
     -DLLVM_ENABLE_OCAMLDOC=OFF \
