@@ -1,4 +1,0 @@
-(executable
- (name test)
- (modules test)
- (libraries llvm llvm.irreader util fuzz))
