@@ -23,32 +23,6 @@ let name_opted_ver filename =
     String.sub filename 0 (String.length filename - 3) ^ ".opt.ll"
   else filename ^ ".opt.ll"
 
-let increase_numbers entry =
-  let numbers =
-    entry |> Yojson.Basic.Util.member "numbers" |> Yojson.Basic.Util.to_int
-  in
-  `Assoc
-    [
-      ("lines", entry |> Yojson.Basic.Util.member "lines");
-      ("numbers", `Int (numbers + 1));
-    ]
-
-let update_numbers_with_cov filename cov =
-  let json = Yojson.Basic.from_file filename in
-  let json_assoc = json |> Yojson.Basic.Util.to_assoc in
-  let updated_json =
-    List.fold_left
-      (fun acc (key, values) ->
-        if List.mem key cov then
-          let updated_values =
-            values |> Yojson.Basic.Util.to_list |> List.map increase_numbers
-          in
-          (key, `List updated_values) :: acc
-        else (key, values) :: acc)
-      [] json_assoc
-  in
-  `Assoc updated_json |> Yojson.Basic.to_file filename
-
 (** [rand_bool ()] returns true or false with probability 0.5 each. *)
 let rand_bool _ = Random.bool ()
 

@@ -8,7 +8,6 @@
   llvm.transform_utils
   str
   unix
-  yojson
   logger)
  (foreign_stubs
   (language cxx)
