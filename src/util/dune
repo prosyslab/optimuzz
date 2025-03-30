@@ -11,12 +11,14 @@
   logger)
  (foreign_stubs
   (language cxx)
+  (names llvm_ext_ocaml)
   (flags
    :standard
-   (-I/usr/lib/llvm-16/include
+   (-I/usr/local/include/llvm/
     -D_GNU_SOURCE
     -D__STDC_CONSTANT_MACROS
     -D__STDC_FORMAT_MACROS
     -D__STDC_LIMIT_MACROS
     -std=c++17)))
- (c_library_flags (-lLLVM-16) (-L/usr/lib/llvm-16/lib) -lstdc++))
+ (c_library_flags
+  (-L/usr/local/lib/ -lLLVMCore -lstdc++)))
