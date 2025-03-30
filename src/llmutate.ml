@@ -1,7 +1,7 @@
 open Util
 module L = Logger
 
-type mode = Rand | Exact of Mutation.Domain.mutation_t
+type mode = Rand | Exact of Mutator.mutation_t
 
 let bound = ref 10 (* number of retries to find a proper mutation *)
 let mode = ref Rand
@@ -12,12 +12,12 @@ let opts =
     ("-no-focus", Arg.Clear focus, "disable focusing on important instructions");
     ("-bound", Arg.Set_int bound, "number of retries to find a proper mutation");
     ( "-mode",
-      Arg.String (fun s -> mode := Exact (Mutation.Domain.mutation_of_string s)),
+      Arg.String (fun s -> mode := Exact (Mutator.mutation_of_string s)),
       "mutation mode" );
   ]
 
 let choice () =
-  let muts = Mutation.Domain.uniform_mutations in
+  let muts = Mutator.uniform_mutations in
   let idx = Random.int (Array.length muts) in
   muts.(idx)
 
@@ -47,7 +47,7 @@ let main path save_dir save_name =
       print_endline "llm:";
       print_endline (ALlvm.string_of_llmodule llm);
       let mutated_instrs, mutant =
-        Mutation.Mutator.run ~times:!bound llctx llm importants choice
+        Mutator.run ~times:!bound llctx llm importants choice
       in
 
       match mutant with

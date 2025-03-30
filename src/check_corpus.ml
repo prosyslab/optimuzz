@@ -1,8 +1,7 @@
-open Oracle
 open Util
 open Domainslib
+module F = Format
 module L = Logger
-module Opt = Optimizer
 
 let args = ref []
 let ntasks = ref 12
@@ -81,7 +80,7 @@ let check_transformation tmp_dir llfile =
   | Error File_not_found | Ok _ -> (
       try
         (* coverage is not required *)
-        match Validator.run llfile llfile_opt with
+        match Oracle.Validator.run llfile llfile_opt with
         | Correct | Failed | Errors -> true
         | Incorrect -> false
       with Unix.Unix_error _ -> true)

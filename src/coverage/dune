@@ -1,4 +1,0 @@
-(library
- (name coverage)
- (modules domain icfg)
- (libraries unix util config ocamlgraph))

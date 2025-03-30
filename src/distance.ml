@@ -1,12 +1,11 @@
 module F = Format
-module G = Coverage.Icfg.G
-module CD = Coverage.Domain
-module CFG = Coverage.Icfg.ControlFlowGraph
-module CG = Coverage.Icfg.CallGraph
-module FG = Coverage.Icfg.FullGraph
-module Node = Coverage.Icfg.Node
-module DT = Coverage.Icfg.DistanceTable
-module A2N = Coverage.Icfg.AddrToNode
+module G = Coverage.G
+module CFG = Coverage.ControlFlowGraph
+module CG = Coverage.CallGraph
+module FG = Coverage.FullGraph
+module Node = Coverage.Node
+module DT = Coverage.DistanceTable
+module A2N = Coverage.AddrToNode
 
 let main dist_kind targets_file cfg_dir =
   assert (Sys.file_exists targets_file);
@@ -15,7 +14,7 @@ let main dist_kind targets_file cfg_dir =
   assert (Sys.is_directory cfg_dir);
 
   F.printf "[Input Targets]@.";
-  let targets = CD.parse_targets targets_file in
+  let targets = Coverage.parse_targets targets_file in
   targets
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);

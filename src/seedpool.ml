@@ -1,12 +1,79 @@
 open Util
 module L = Logger
 module D = Domain
-module Seed = Domain.CfgSeed
-module CD = Coverage.Domain
-module Aflgo = Coverage.Icfg
-module Coverage = CD.EdgeCoverage
-module Trace = CD.BlockTrace
+module Trace = Coverage.BlockTrace
 module Opt = Oracle.Optimizer
+open Util
+
+module type QUEUE = sig
+  type elt
+  type t
+
+  val empty : t
+
+  val register : elt -> t -> t
+  (** push a seed to the queue for the first time *)
+
+  val push : elt -> t -> t
+  (** push a seed to the queue -- not the first time *)
+
+  val pop : t -> elt * t
+  val length : t -> int
+  val iter : (elt -> unit) -> t -> unit
+end
+
+module CfgSeed = struct
+  module Distance = Coverage.CfgDistance
+
+  type t = {
+    llm : Llvm.llmodule;
+    score : Distance.t;
+    covers : bool;
+    edge_cov : Coverage.EdgeCoverage.t;
+    importants : string;
+  }
+
+  let make llm (traces : Coverage.BlockTrace.t list) importants node_tbl distmap
+      =
+    let score = Distance.distance_score traces node_tbl distmap in
+    let covers = Distance.get_cover traces node_tbl distmap in
+    {
+      llm;
+      score;
+      covers;
+      edge_cov = Coverage.EdgeCoverage.of_traces traces;
+      importants;
+    }
+
+  let llmodule seed = seed.llm
+  let covers seed = seed.covers
+  let score seed = seed.score
+  let edge_cov seed = seed.edge_cov
+
+  let get_energy seed =
+    if !Config.score = Config.FuzzingMode.Constant then 4
+    else
+      let int_score = Float.to_int seed.score in
+      if seed.covers then 12 else if int_score >= 10 then 3 else 12 - int_score
+
+  let name ?(parent : int option) seed =
+    let hash = ALlvm.hash_llm seed.llm in
+    match parent with
+    | None ->
+        Format.asprintf "date:%s,id:%010d,score:%f,covers:%b.ll"
+          (AUtil.get_current_time ())
+          hash seed.score seed.covers
+    | Some parent_hash ->
+        Format.asprintf "date:%s,id:%010d,src:%010d,score:%f,covers:%b.ll"
+          (AUtil.get_current_time ())
+          hash parent_hash seed.score seed.covers
+
+  let pp fmt seed =
+    Format.fprintf fmt "score: %f, covers: %b,@.%s" seed.score seed.covers
+      (ALlvm.string_of_llmodule seed.llm)
+end
+
+module Seed = CfgSeed
 include Queue
 
 let check_value_type_for_mutation llv =
@@ -219,7 +286,7 @@ let can_optimize seedfile node_tbl distmap =
         | Config.FuzzingMode.Sliced_cfg ->
             fun line ->
               int_of_string line
-              |> CD.sliced_cfg_node_of_addr node_tbl distmap
+              |> Coverage.sliced_cfg_node_of_addr node_tbl distmap
               |> Option.is_some
         | _ -> fun _ -> true
       in
@@ -268,8 +335,8 @@ let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
     in
     let init_cov =
       List.fold_left
-        (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-        Coverage.empty pools
+        (fun accu seed -> Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
+        Coverage.EdgeCoverage.empty pools
     in
     pools |> List.to_seq |> add_seq pool;
     (pool, init_cov))
@@ -310,8 +377,9 @@ let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
 
       let init_cov =
         List.fold_left
-          (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-          Coverage.empty pool_closest
+          (fun accu seed ->
+            Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
+          Coverage.EdgeCoverage.empty pool_closest
       in
       pool_closest |> List.to_seq |> add_seq pool;
       (pool, init_cov))
@@ -327,13 +395,14 @@ let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
       in
       let init_cov =
         List.fold_left
-          (fun accu seed -> Coverage.union accu (Seed.edge_cov seed))
-          Coverage.empty pool_covers
+          (fun accu seed ->
+            Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
+          Coverage.EdgeCoverage.empty pool_covers
       in
       pool_covers |> List.to_seq |> add_seq pool;
       (pool, init_cov))
 
-let make llctx node_tbl (distmap : float Aflgo.DistanceTable.t) =
+let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
   let open AUtil in
   let seed_dir = !Config.seed_dir in
 

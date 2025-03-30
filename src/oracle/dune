@@ -1,4 +1,0 @@
-(library
- (name oracle)
- (modules oracle)
- (libraries util coverage))

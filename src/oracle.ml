@@ -1,5 +1,4 @@
 open Util
-module CD = Coverage.Domain
 module F = Format
 module L = Logger
 

@@ -1,19 +1,15 @@
 open Util
 module F = Format
 module L = Logger
-module SD = Seedcorpus.Domain
-module CD = Coverage.Domain
-module SP = Seedcorpus.Seedpool
-module FZ = Fuzz.Fuzzer
-module Progress = CD.Progress (CD.EdgeCoverage)
-module G = Coverage.Icfg.G
-module CFG = Coverage.Icfg.ControlFlowGraph
-module CG = Coverage.Icfg.CallGraph
-module FG = Coverage.Icfg.FullGraph
-module Node = Coverage.Icfg.Node
-module Edge = Coverage.Icfg.Edge
-module A2N = Coverage.Icfg.AddrToNode
-module DT = Coverage.Icfg.DistanceTable
+module Progress = Coverage.Progress (Coverage.EdgeCoverage)
+module G = Coverage.G
+module CFG = Coverage.ControlFlowGraph
+module CG = Coverage.CallGraph
+module FG = Coverage.FullGraph
+module Node = Coverage.Node
+module Edge = Coverage.Edge
+module A2N = Coverage.AddrToNode
+module DT = Coverage.DistanceTable
 
 let llctx = ALlvm.create_context ()
 
@@ -31,7 +27,7 @@ let main targets_file cfg_dir =
 
   let open Oracle in
   F.printf "[Input Targets]@.";
-  let targets = CD.parse_targets targets_file in
+  let targets = Coverage.parse_targets targets_file in
   targets
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);
@@ -88,27 +84,29 @@ let main targets_file cfg_dir =
          F.printf "%a: %a@." Node.pp node F.pp_print_float dists;
          L.info "%a: %a" Node.pp node F.pp_print_float dists);
 
-  let seed_pool, init_cov = SP.make llctx addr_to_node distmap in
-  let sp_size = SP.length seed_pool in
+  let seed_pool, init_cov = Seedpool.make llctx addr_to_node distmap in
+  let sp_size = Seedpool.length seed_pool in
 
   F.printf "[Seeds] %d are loaded@." sp_size;
   if sp_size = 0 then exit 0;
 
   let llset = ALlvm.LLModuleSet.create sp_size in
   seed_pool
-  |> SP.iter (fun seed ->
-         let filename = SP.Seed.name seed in
-         ALlvm.save_ll !Config.corpus_dir filename (SP.Seed.llmodule seed)
+  |> Seedpool.iter (fun seed ->
+         let filename = Seedpool.Seed.name seed in
+         ALlvm.save_ll !Config.corpus_dir filename (Seedpool.Seed.llmodule seed)
          |> ignore);
 
   if !Config.dry_run then exit 0;
 
   let progress = ref Progress.empty in
   progress := Progress.add_cov init_cov !progress;
-  seed_pool |> SP.iter (fun _ -> progress := Progress.inc_gen !progress);
+  seed_pool |> Seedpool.iter (fun _ -> progress := Progress.inc_gen !progress);
   L.debug "initial progress: %a" Progress.pp !progress;
 
-  let _coverage = FZ.run seed_pool addr_to_node distmap llctx llset !progress in
+  let _coverage =
+    Fuzzer.run seed_pool addr_to_node distmap llctx llset !progress
+  in
   L.info "fuzzing campaign ends@."
 
 let _ =

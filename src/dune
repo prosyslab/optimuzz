@@ -1,22 +1,28 @@
-(library
- (name config)
- (modules config)
- (libraries util logger))
-
 (executable
  (name main)
- (modules main)
+ (modules :standard)
  (libraries
   llvm
   llvm.bitreader
   llvm.irreader
   llvm.transform_utils
   str
-  oracle
   unix
-  coverage
-  seedcorpus
-  fuzz
-  mutation
   util
-  logger))
+  logger
+  ocamlgraph))
+
+(executable
+ (name llmutate)
+ (modules llmutate mutator config)
+ (libraries util))
+
+(executable
+ (name check_corpus)
+ (modules check_corpus oracle config)
+ (libraries util domainslib progress))
+
+(executable
+ (name distance)
+ (modules distance coverage)
+ (libraries util ocamlgraph))

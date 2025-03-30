@@ -1,20 +1,70 @@
+open Util
 open Util.ALlvm
 module AUtil = Util.AUtil
 module OpCls = OpcodeClass
 module L = Logger
 
-type mut = llcontext -> llmodule -> llmodule option (* mutation can fail *)
+type opcode_t =
+  | ICMP of ALlvm.Icmp.t
+  | FCMP of ALlvm.Fcmp.t
+  | OTHER of ALlvm.Opcode.t
 
-let choose_mutation mode score =
-  match mode with
-  | Domain.EXPAND ->
-      let mutations = Domain.expand_mutations in
-      let r = Random.int (score + Array.length mutations) in
-      if r <= score then mutations.(0) else mutations.(r - score)
-  | FOCUS ->
-      let mutations = Domain.focus_mutations in
-      let r = Random.int (Array.length mutations) in
-      mutations.(r)
+type mode_t = EXPAND | FOCUS
+type mutation_t = CREATE | OPCODE | OPERAND | FLAG | TYPE | CUT
+
+let pp_mutation fmt m =
+  match m with
+  | CREATE -> Format.fprintf fmt "CREATE"
+  | OPCODE -> Format.fprintf fmt "OPCODE"
+  | OPERAND -> Format.fprintf fmt "OPERAND"
+  | FLAG -> Format.fprintf fmt "FLAG"
+  | TYPE -> Format.fprintf fmt "TYPE"
+  | CUT -> Format.fprintf fmt "CUT"
+
+let mutation_of_string s =
+  match s with
+  | "CREATE" -> CREATE
+  | "OPCODE" -> OPCODE
+  | "OPERAND" -> OPERAND
+  | "FLAG" -> FLAG
+  | "TYPE" -> TYPE
+  | "CUT" -> CUT
+  | _ -> failwith "Unreachable"
+
+let uniform_mutations =
+  [ (CREATE, 1); (OPCODE, 1); (OPERAND, 1); (FLAG, 1); (TYPE, 1); (CUT, 1) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
+
+let expand_mutations =
+  [ (CREATE, 2); (OPCODE, 4); (OPERAND, 4); (FLAG, 3); (TYPE, 2); (CUT, 1) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
+
+let focus_mutations =
+  [ (OPCODE, 3); (OPERAND, 3); (FLAG, 1); (TYPE, 2) ]
+  |> List.map (fun (m, p) -> List.init p (Fun.const m))
+  |> List.flatten
+  |> Array.of_list
+
+let pp_opcode fmt opc =
+  match opc with
+  | ICMP pred -> Format.fprintf fmt "ICmp %s" (ALlvm.string_of_icmp pred)
+  | FCMP pred -> Format.fprintf fmt "FCmp %s" (ALlvm.string_of_fcmp pred)
+  | OTHER opc -> Format.fprintf fmt "%s" (ALlvm.string_of_opcode opc)
+
+let get_icmp opc =
+  match opc with ICMP pred -> pred | _ -> failwith "opdoce_t is not ICMP"
+
+let get_fcmp opc =
+  match opc with FCMP pred -> pred | _ -> failwith "opdoce_t is not ICMP"
+
+let get_other opc =
+  match opc with
+  | OTHER opc_new -> opc_new
+  | _ -> failwith "opdoce_t is not OTHER"
 
 (* create_[CLASS] llctx loc [args]+ creates corresponding instruction,
    right before instruction [loc], without any extra keywords.
@@ -1742,7 +1792,7 @@ let mutate_inner_bb times llctx llm choice_fn importants =
     if times = 0 then ([], None)
     else
       let mutation = choice_fn () in
-      Format.eprintf "[mutate_inner_bb] %a@." Domain.pp_mutation mutation;
+      Format.eprintf "[mutate_inner_bb] %a@." pp_mutation mutation;
       (* L.debug "before:\n%s" (string_of_llmodule llm); *)
       let mutation_result =
         match mutation with
@@ -1765,7 +1815,6 @@ let mutate_inner_bb times llctx llm choice_fn importants =
 
   loop times ()
 
-let run ?(times = 5) llctx llm importants
-    (choice_fn : unit -> Domain.mutation_t) =
+let run ?(times = 5) llctx llm importants (choice_fn : unit -> mutation_t) =
   (* FIXME: parameterize learning system *)
   mutate_inner_bb times llctx llm choice_fn importants

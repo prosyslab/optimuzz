@@ -1,4 +1,0 @@
-(library
- (name mutation)
- (modules mutator domain)
- (libraries llvm llvm.analysis llvm.transform_utils util logger config))
