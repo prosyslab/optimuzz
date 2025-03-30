@@ -1,6 +1,3 @@
 [submodule "alive2"]
-	path = Alive2/alive2
+	path = alive2
 	url = git@github.com:AliveToolkit/alive2.git
-[submodule "llvm-project"]
-	path = Alive2/llvm-project
-	url = git@github.com:llvm/llvm-project.git
