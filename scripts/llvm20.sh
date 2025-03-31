@@ -23,7 +23,7 @@ mkdir -p build
 pushd build
 # Alive2 requires ASSERTIONS to be enabled
 cmake -G Ninja ../llvm \
-    -DLLVM_ENABLE_PROJECTS="llvm;clang" \
+    -DLLVM_ENABLE_PROJECTS="llvm;lld;clang" \
     -DLLVM_ENABLE_BINDINGS=ON \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_RTTI=ON \
