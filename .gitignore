@@ -32,6 +32,13 @@ setup.log
 # executables
 llfuzz
 check_corpus
+cov
+pattern-check
+clean
+alive-tv
+llmutate
+distance
+fuzzer
 
 # llvm files
 *.bc
@@ -68,9 +75,3 @@ memo/
 llfuzz-out
 *.tar
 compile_flags.txt
-cov
-pattern-check
-clean
-alive-tv
-llmutate
-distance

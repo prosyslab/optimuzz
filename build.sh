@@ -26,7 +26,7 @@ eval $(SHELL=bash opam env --switch=$OPTIMUZZ_OPAM_SWITCH)
 opam pin https://github.com/prosyslab/logger.git
 opam install -j $NCPU dune ctypes domainslib progress ocamlgraph ocamlformat merlin ocp-index ocp-indent ocaml-lsp-server
 scripts/llvm20.sh
-scrtips/alive.sh
+scripts/alive.sh
 
 make
 # opam install -j $NCPU llvm.16.0.6+nnp
