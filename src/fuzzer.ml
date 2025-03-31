@@ -78,14 +78,9 @@ let mutate_seed llctx llset seed =
   let llmutate_args =
     if !Config.mutation = Config.FuzzingMode.Uniform then
       [
-        "./llmutate";
-        seed_filename;
-        muts;
-        mut_filename;
-        "-no-focus";
-        ">> log.txt";
+        "llmutate"; seed_filename; muts; mut_filename; "-no-focus"; ">> log.txt";
       ]
-    else [ "./llmutate"; seed_filename; muts; mut_filename; ">> log.txt" ]
+    else [ "llmutate"; seed_filename; muts; mut_filename; ">> log.txt" ]
   in
 
   AUtil.cmd llmutate_args |> ignore;
