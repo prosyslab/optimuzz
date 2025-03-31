@@ -325,9 +325,11 @@ module FullGraph = struct
 
     calledges
     |> List.iter (fun (caller_node, called_fn) ->
-           let called_node = Hashtbl.find func_to_node called_fn in
-           let edge = G.E.create caller_node Edge.Call called_node in
-           G.add_edge_e cfg edge);
+           try
+             let called_node = Hashtbl.find func_to_node called_fn in
+             let edge = G.E.create caller_node Edge.Call called_node in
+             G.add_edge_e cfg edge
+           with Not_found -> L.debug "Function %s not found in CFG" called_fn);
     cfg
 
   let find_targets (filename, lineno) cfg =
