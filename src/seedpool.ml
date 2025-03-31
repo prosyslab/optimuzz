@@ -3,7 +3,6 @@ module L = Logger
 module D = Domain
 module Trace = Coverage.BlockTrace
 module Opt = Oracle.Optimizer
-open Util
 
 module type QUEUE = sig
   type elt

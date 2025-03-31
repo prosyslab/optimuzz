@@ -1,10 +1,8 @@
 let cmd args = args |> String.concat " " |> Sys.command
 
 (* for logging *)
-let timestamp = "timestamp.txt"
 let start_time = ref 0
 let recent_time = ref 0
-let timestamp_fp = open_out timestamp
 
 let get_current_time () =
   let tm = Unix.gettimeofday () |> Unix.localtime in
