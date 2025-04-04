@@ -1,0 +1,5 @@
+test
+*.so
+*.o
+*.tmp
+*.bc
