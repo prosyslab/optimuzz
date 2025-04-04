@@ -79,8 +79,6 @@ if __name__ == '__main__':
         filemode='w',
     )
     args = parser.parse_args()
-    if 'LLVM_PATH' not in os.environ:
-        raise ValueError('LLVM_PATH environment variable not set. Please set it to the LLVM source directory.')
     LLVM_PATH: Path = Path(os.environ['LLVM_PATH'])
     if not LLVM_PATH.is_dir() or not LLVM_PATH.exists():
         raise ValueError(f'Invalid LLVM path: {LLVM_PATH}')

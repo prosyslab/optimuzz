@@ -29,17 +29,6 @@ setup.log
 # Mac
 .DS_Store
 
-# executables
-llfuzz
-check_corpus
-cov
-pattern-check
-clean
-alive-tv
-llmutate
-distance
-fuzzer
-
 # llvm files
 *.bc
 *.ll
@@ -75,3 +64,4 @@ memo/
 llfuzz-out
 *.tar
 compile_flags.txt
+commit.json

@@ -1,5 +1,6 @@
 (executable
  (name main)
+ (public_name fuzzer)
  (modules :standard)
  (libraries
   llvm
@@ -14,15 +15,6 @@
 
 (executable
  (name llmutate)
+ (public_name llmutate)
  (modules llmutate mutator config)
  (libraries util))
-
-(executable
- (name check_corpus)
- (modules check_corpus oracle config)
- (libraries util domainslib progress))
-
-(executable
- (name distance)
- (modules distance coverage)
- (libraries util ocamlgraph))

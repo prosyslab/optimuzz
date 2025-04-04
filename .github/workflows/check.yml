@@ -19,38 +19,37 @@ jobs:
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: 5.0.0
-
-      - name: Install ocamlformat
-        run: opam install ocamlformat.0.26.1
-
-      - name: Check format
-        run: |
-          eval $(opam env)
-          scripts/check-format
+          ocaml-compiler: 5.3.0
 
       - name: Use cached dependencies
         id: cache-opam
         uses: actions/cache@v3
         env:
-          cache-name: cache-opam
+          opam-cache-name: cache-opam
         with:
-          path: |
-            ~/.opam
-            ./_opam
-          key: ${{ env.cache-name }}-build-${{ hashFiles('build.sh') }}
+          path: ~/.opam
+          key: ${{ env.opam-cache-name }}-build-${{ hashFiles('build.sh') }}
 
-      - name: Install LLVM 16
-        run: |
-          sudo apt-get update
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-16 main'
-          sudo apt-get install -y llvm-16 llvm-16-dev
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v3
+        env:
+          llvm-cache-name: cache-llvm
+        with:
+          path: /opt/llvm-project
+          key: ${{ env.llvm-cache-name }}-${{ hashFiles('build.sh') }}
 
-      - name: Build LLFuzz
-        run: |
-          ./build.sh || eval $(opam env) && make
+            
+      - name: Install dependencies
+        run:
+          sudo apt-get update && sudo apt-get install -y re2c z3
 
-      - name: Run test
-        run: |
-          eval $(opam env) && make test
+      - name: Build Optimuzz
+        run: ./build.sh
+        env:
+          LLVM_PATH: /opt/llvm-project/
+
+      - name: Check Instrumentation Build
+        run: make -C instrumentation
+        env:
+          LLVM_PATH: /opt/llvm-project/

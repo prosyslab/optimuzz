@@ -1,0 +1,12 @@
+lib: [
+  "_build/install/default/lib/optimuzz/META"
+  "_build/install/default/lib/optimuzz/dune-package"
+  "_build/install/default/lib/optimuzz/opam"
+]
+bin: [
+  "_build/install/default/bin/fuzzer"
+  "_build/install/default/bin/llmutate"
+]
+doc: [
+  "_build/install/default/doc/optimuzz/README.md"
+]

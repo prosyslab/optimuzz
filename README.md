@@ -6,23 +6,41 @@ Our recent development is avaiable at [our website](https://prosys.kaist.ac.kr/o
 
 ## Installation
 
-The script below installs the followings:
+### Quick Start
+
+We provide [Dockerfile](Dockerfile) which installs the system dependencies and configures the environment variables.
+
+```bash
+docker build -t . optimuzz
+docker run -it optimuzz
+
+# Inside the docker
+echo $PWD # /home/user/optimuzz
+./build.sh
+```
+
+### Environment Variables
+
+* `LLVM_PATH`: The LLVM project directory. We use clang/llvm toolchains and libraries to build Optimuzz, Alive2, and other LLVM versions under test.
+* `LLVM_BUILDS`: LLVM versions under test will be installed under this directory.
+
+Note that we use LLVM 20.1.1.
+
+### Build Script
+
+The script `build.sh` installs the followings:
 * the required OPAM packages
 * LLVM 20 with the OCaml bindings
 * Alive2
+* Optimuzz toolchain (`fuzzer` and `llmutate`)
 
-```bash
-export LLVM_PATH=$HOME/llvm-project # or your favorite
-build.sh
-```
 
-## Usage
+## Optimuzz Toolchain
 
 We provide following tools to employ Optimuzz.
 
 ```sh
 # Build LLVM with our instrumentation pass
-export LLVM_BUILDS=$HOME/llvm-builds # or your favorite to store the LLVM project builds
 $ tools/build.py commit <commit-sha> <target-file> [--fresh]
 $LLVM_BUILDS/llvm-builds/<commit-sha>/build/bin/opt
 

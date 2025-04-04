@@ -69,7 +69,7 @@ def build_opt(commit: str, target_file: str, target_path: Path,
     
     if (build_path / 'bin' / 'opt').exists():
         print(f"[*] {build_path / 'bin' / 'opt'} already exists. skip building...", file=sys.stderr)
-        return build_path / 'bin' / 'opt'
+        return target_path
 
     build_path.mkdir(parents=True, exist_ok=True)
 
@@ -79,6 +79,9 @@ def build_opt(commit: str, target_file: str, target_path: Path,
         f'{callback_o.absolute()}',
         f'-Xclang -fpass-plugin={pass_so}'
     ]
+
+    if not pass_so.exists() or not callback_o.exists():
+        raise FileNotFoundError(f"LLVM instrumentation pass not found at {pass_so} or {callback_o}. Please build the instrumentation pass first.")
 
     cmake_cmd = [
         'cmake', '-GNinja',
@@ -104,7 +107,6 @@ def build_opt(commit: str, target_file: str, target_path: Path,
         print('[*] Issuing CMake command', file=sys.stderr)
         print(f'Log: {build_path / "cmake.log"}', file=sys.stderr)
         print(f'Error: {build_path / "cmake.err"}', file=sys.stderr)
-        print(" ".join(cmake_cmd), file=sys.stderr)
         with open(build_path / 'cmake.log', 'w') as log, open(build_path / 'cmake.err', 'w') as err:
             sp.run(cmake_cmd, cwd=build_path, stdout=log, stderr=err, env=build_env, check=True)
 
@@ -114,7 +116,7 @@ def build_opt(commit: str, target_file: str, target_path: Path,
     with open(build_path / 'ninja.log', 'w') as log, open(build_path / 'ninja.err', 'w') as err:
         sp.run(['ninja', 'opt'], cwd=build_path, stdout=log, stderr=err, env=build_env, check=True)
     
-    return build_path / 'bin' / 'opt'
+    return target_path
 
 
 if __name__ == '__main__':

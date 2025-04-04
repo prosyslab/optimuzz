@@ -1,0 +1,23 @@
+opam-version: "2.0"
+name: "optimuzz"
+version: "0.1"
+maintainer: "bongjun.jang@kaist.ac.kr"
+authors: ["Jaeseong Kwon" "Bongjun Jang" "Kihong Heo"]
+homepage: "https://github.com/prosyslab/optimuzz"
+bug-reports: "https://github.com/prosyslab/optimuzz/issues"
+dev-repo: "git+https://github.com/prosyslab/optimuzz.git"
+
+depends: [
+    "ocaml" {>= "5.3.0"}
+    "dune" {>= "3.12"}
+    "ctypes" {>= "0.23.0"}
+    "ocamlgraph" {>= "2.1.0"}
+]
+
+build: [
+    ["dune" "build" "-p" name "-j" jobs]
+]
+
+install: [
+    ["dune" "install" "-p" name]
+]
