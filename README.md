@@ -1,43 +1,50 @@
-# LLFuzz
+# Optimuzz
+
+This is an Optimuzz instantiation for LLVM.
+Optimuzz performs directed fuzzing on LLVM optimizer passes with Alive2 translation validator.
+Our recent development is avaiable at [our website](https://prosys.kaist.ac.kr/optimuzz/).
 
 ## Installation
-### Build LLFuzz
-```sh
-git clone --recurse-submodules git@github.com:prosyslab/llfuzz.git
-cd llfuzz
-./build.sh
-make
+
+The script below installs the followings:
+* the required OPAM packages
+* LLVM 20 with the OCaml bindings
+* Alive2
+
+```bash
+export LLVM_PATH=$HOME/llvm-project # or your favorite
+build.sh
 ```
-### Build Alive2
-#### Build LLVM for Alive2
+
+## Usage
+
+We provide following tools to employ Optimuzz.
+
 ```sh
-cd Alive2/llvm-project
-mkdir build
-cd build
-cmake -GNinja -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_ENABLE_PROJECTS="llvm;clang" ../llvm
-ninja
-```
-#### Build Alive2
-```sh
-cd Alive2/alive2
-mkdir build
-cd build
-cmake -GNinja -DCMAKE_PREFIX_PATH=$(realpath ../../llvm-project/build) -DBUILD_TV=1 -DCMAKE_BUILD_TYPE=Release $(realpath ..)
-ninja
-```
-### Build target LLVM and link `opt`
-You have to designate the target version by commit hash (`<version>`). You also have to rename its repository. (`<label>`)
-```sh
-mkdir builds
-cd builds
-git clone git@github.com:llvm/llvm-project.git
-cd llvm-project
-git checkout <target-version>
-mkdir build
-cd build
-cmake -GNinja -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_ENABLE_PROJECTS="llvm;clang" ../llvm
-ninja
-cd ../../../
-mv builds/llvm-project/ builds/<label>
-ln -s builds/<label>/build/bin/opt ./opt
+# Build LLVM with our instrumentation pass
+export LLVM_BUILDS=$HOME/llvm-builds # or your favorite to store the LLVM project builds
+$ tools/build.py commit <commit-sha> <target-file> [--fresh]
+$LLVM_BUILDS/llvm-builds/<commit-sha>/build/bin/opt
+
+# Harvest seed files from the LLVM project
+# `LLVM_PATH` must be set to extract seeds from the unit test suite
+$ tools/harvest.py -o <output-dir>
+
+# Ask LLM to select the target line for a code change of the commit
+# You must set `OPENAI_API_KEY` to use OpenAI LLM
+$ tools/targetline.py <commit-sha>
+{
+    "target_file": <target-file>,
+    "target_line": <target-line>,
+}
+
+
+# Fuzz the LLVM project with the provided seed files, target file, and target line
+# It should be able to find `fuzzer` and `llmutate` binary in the PATH
+# <run-dir> specifies the working directory of the fuzzer
+$ tools/fuzz.py <llvm-dir> <seed-dir> <target-file> <target-line> -r <run-dir>
+
+[*] Found target: <target-file>:<line>
+[*] Running fuzzer
+...
 ```
