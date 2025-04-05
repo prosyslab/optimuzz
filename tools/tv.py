@@ -22,8 +22,11 @@ parser.add_argument('out_dir', type=Path, help='output directory of the fuzzer r
 
 parser.add_argument('--opt-bin', type=Path, help='path to the opt binary', required=True)
 parser.add_argument('--passes', type=str, help='passes to run with opt', default='instcombine')
-parser.add_argument('-j', '--jobs', type=int, help='number of parallel jobs', default=os.cpu_count() // 8)
 
+parser.add_argument('--no-undef', action='store_true', help='disable undef inputs')
+parser.add_argument('--no-poison', action='store_true', help='disable poison inputs')
+
+parser.add_argument('-j', '--jobs', type=int, help='number of parallel jobs', default=os.cpu_count() // 8)
 parser.add_argument('--cont', action='store_true', help='continue TV even if the first miscompilation is found')
 
 # Placeholder removed as args parsing is moved under __main__
@@ -36,8 +39,12 @@ def run_opt(d: Path, timeout: str = '2s', passes: str = 'instcombine', save_resu
         return opt_result if save_result else None
     return None
 
-def run_tv(before: Path, after: Path, timeout: str = '2m'):
-    tv_args = ['timeout', timeout, 'alive-tv', after.absolute().as_posix(), before.absolute().as_posix()]
+def run_tv(before: Path, after: Path, timeout: str = '2m', no_undef: bool = False, no_poison: bool = False):
+    tv_args = ['timeout', timeout, 'alive-tv', before.absolute().as_posix(), after.absolute().as_posix()]
+    if no_undef:
+        tv_args.append('--disable-undef-input')
+    if no_poison:
+        tv_args.append('--disable-poison-input')
     tv_p = sp.run(tv_args, capture_output=True, text=True)
     if "1 incorrect" in tv_p.stdout:
         return "incorrect"
@@ -80,7 +87,7 @@ def process_file(target: Path, crash_dir: Path):
 
 
 def postmortem(covers_dir: Path, crash_dir: Path, jobs: int, cont: bool = False):
-    files = [d.absolute() for d in covers_dir.iterdir() if d.suffix == '.ll']
+    files = [d.absolute() for d in covers_dir.iterdir() if d.suffix == '.ll' and 'opt.ll' not in d.name]
     files = unique_sorted_files(files)
     print(f"Found {len(files)} files to process", file=sys.stderr)
 

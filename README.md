@@ -17,6 +17,7 @@ docker run -it optimuzz
 # Inside the docker
 echo $PWD # /home/user/optimuzz
 ./build.sh
+eval $(opam env) # Optimuzz toolchains are installed under the current opam switch
 ```
 
 ### Environment Variables
