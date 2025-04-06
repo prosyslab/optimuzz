@@ -81,8 +81,9 @@ def process_file(target: Path, crash_dir: Path):
     tv_result = run_tv(target, opt_result)
     if tv_result == "incorrect":
        shutil.copy(opt_result, crash_dir / target.name)
-       return False
-    
+
+    opt_result.unlink(missing_ok=True) # Remove the temporary .opt.ll file
+
     return tv_result == "pass"
 
 
@@ -141,3 +142,11 @@ if __name__ == "__main__":
     print('alive-tv: ', tv_bin, file=sys.stderr)
 
     postmortem(covers_dir, crash_dir, args.jobs, args.cont)
+
+    miscompilations = len(list(crash_dir.iterdir()))
+    if miscompilations > 0:
+        print(f"Found {miscompilations} miscompilations in {crash_dir.absolute().as_posix()}", file=sys.stderr)
+        exit(1)
+    else:
+        print("No miscompilations found", file=sys.stderr)
+        exit(0)
