@@ -1,7 +1,7 @@
 # Optimuzz
 
 <div style="text-align: center; padding: 20px; background-color: white">
-    <img src="optimuzz-white-bg.png" alt="Optimuzz" style="max-width: 25%">
+    <img src="optimuzz-white-bg.png" alt="Optimuzz" width="25%">
 </div>
 
 This is an Optimuzz instantiation for LLVM.
