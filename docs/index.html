@@ -21,114 +21,199 @@
     
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:h-screen font-display">
-    <div id="left-panel" class="px-6 bg-gradient-to-bl from-indigo-950 via-gray-900 via-35% to-gray-950 text-white">
-        <div class="lg:flex lg:flex-col lg:justify-center lg:max-w-lg h-full ml-auto">
-            <div id="title" class="my-4">
-                <h2 class="text-5xl font-light mb-3">Optimuzz</h2>
-                <div class="text-2xl text-gray-200">
-                    <b>Optim</b>ization-Directed <b>Fuzz</b>ing <br>for Continuous Translation Validation
-                </div>
-            </div>
-            <div id="bug-reports">
-                <h3 class="text-3xl mb-3">Our Bug Reports</h3>
-                <div class="w-full max-w-4xl mx-auto bg-white rounded-lg">
-                    <canvas id="bug-chart"></canvas>
-
-                </div>
-            </div>
-            <div id="people" class="my-4">
-                <h3 class="text-3xl">People</h3>
-                <ol class="text-xl">
-                    <li>Jaeseong Kwon (KAIST, Alumni)</li>
-                    <li>Bongjun Jang (KAIST)</li>
-                    <li>Juneyoung Lee (AWS)</li>
-                    <li>Kihong Heo (KAIST)</li>
-                </ol>
-            </div>
-            <div id="find-us" class="my-4">
-            <h3 class="text-3xl mb-3">Find Us</h3>
-            <ol>
-                <li class="flex px-1 py-0.5">
-                    <a href="https://github.com/prosyslab/optimuzz" class="flex items-center space-x-2">
-                        <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" class="h-4 w-4 flex-none"><path d="M8 .198a8 8 0 0 0-8 8 7.999 7.999 0 0 0 5.47 7.59c.4.076.547-.172.547-.384 0-.19-.007-.694-.01-1.36-2.226.482-2.695-1.074-2.695-1.074-.364-.923-.89-1.17-.89-1.17-.725-.496.056-.486.056-.486.803.056 1.225.824 1.225.824.714 1.224 1.873.87 2.33.666.072-.518.278-.87.507-1.07-1.777-.2-3.644-.888-3.644-3.954 0-.873.31-1.586.823-2.146-.09-.202-.36-1.016.07-2.118 0 0 .67-.214 2.2.82a7.67 7.67 0 0 1 2-.27 7.67 7.67 0 0 1 2 .27c1.52-1.034 2.19-.82 2.19-.82.43 1.102.16 1.916.08 2.118.51.56.82 1.273.82 2.146 0 3.074-1.87 3.75-3.65 3.947.28.24.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.14.46.55.38A7.972 7.972 0 0 0 16 8.199a8 8 0 0 0-8-8Z"></path></svg>
-                        <span>Github Repository</span>
-                    </a>
-                </li>
-                <li class="flex px-1 py-0.5">
-                    <a href="https://prosys.kaist.ac.kr" class="flex items-center space-x-2">
-                        
-                        
-                        <img src="https://prosys.kaist.ac.kr/optimuzz/img/prosys-logo-white.svg" alt="" class="h-5 w-4 flex-none">
-                        <span>Prosys Lab @ KAIST</span>
-                    </a>
-                </li>
-            </ol>
+  <div
+    id="left-panel"
+    class="px-6 bg-gradient-to-bl from-indigo-950 via-gray-900 via-35% to-gray-950 text-white"
+  >
+    <div
+      class="lg:flex lg:flex-col lg:justify-center lg:max-w-lg h-full ml-auto"
+    >
+      <div id="title" class="my-4">
+        <h2 class="text-6xl font-light mb-3">Optimuzz</h2>
+        <div class="text-2xl text-gray-200">
+          <b>Optim</b>ization-Directed <b>Fuzz</b>ing <br />for Continuous
+          Translation Validation
         </div>
-        <div class="hidden lg:block">
-            <p>&copy; 2025 <a href="https://prosys.kaist.ac.kr/optimuzz/">Optimuzz</a></p>
+      </div>
+      <div id="bug-reports">
+        <h3 class="text-3xl mb-3">Our Bug Reports</h3>
+        <div class="w-full max-w-4xl mx-auto flex">
+          <a
+            href="https://github.com/llvm/llvm-project/issues?q=state%3Aclosed%20is%3Aissue%20author%3Abongjunj%20archived%3Afalse%20-label%3Ainvalid%20-label%3Aduplicate"
+            class="flex-none w-1/2 text-center"
+          >
+            <div class="text-2xl text-gray-200">Patched</div>
+            <div class="text-6xl font-bold">22</div>
+          </a>
+          <a
+            href="https://github.com/llvm/llvm-project/issues?q=state%3Aopen%20is%3Aissue%20author%3Abongjunj%20archived%3Afalse%20-label%3Ainvalid%20-label%3Aduplicate%20"
+            class="flex-none w-1/2 text-center"
+          >
+            <div class="text-2xl text-gray-200">Pending</div>
+            <div class="text-6xl font-bold">35</div>
+          </a>
         </div>
-        </div>
+      </div>
+      <div id="people" class="my-4">
+        <h3 class="text-3xl">People</h3>
+        <ol class="text-xl">
+          <li class="flex py-0.5 items-center">
+            Jaeseong Kwon (KAIST, Alumni)
+            <a href="https://doitman.kr" class="h-4 w-4 flex-none ml-2">
+              <svg viewBox="0 0 32 32" fill="white">
+                <path
+                  d="M30.854,16.548C30.523,17.43,29.703,18,28.764,18H28v11c0,0.552-0.448,1-1,1h-6v-7c0-2.757-2.243-5-5-5  s-5,2.243-5,5v7H5c-0.552,0-1-0.448-1-1V18H3.235c-0.939,0-1.759-0.569-2.09-1.451c-0.331-0.882-0.088-1.852,0.62-2.47L13.444,3.019  c1.434-1.357,3.679-1.357,5.112,0l11.707,11.086C30.941,14.696,31.185,15.666,30.854,16.548z"
+                  id="XMLID_219_"
+                />
+              </svg>
+            </a>
+          </li>
+          <li class="flex py-0.5 items-center">
+            Bongjun Jang (KAIST)
+            <a href="https://bongjunj.github.io" class="h-4 w-4 flex-none ml-2">
+              <svg viewBox="0 0 32 32" fill="white">
+                <path
+                  d="M30.854,16.548C30.523,17.43,29.703,18,28.764,18H28v11c0,0.552-0.448,1-1,1h-6v-7c0-2.757-2.243-5-5-5  s-5,2.243-5,5v7H5c-0.552,0-1-0.448-1-1V18H3.235c-0.939,0-1.759-0.569-2.09-1.451c-0.331-0.882-0.088-1.852,0.62-2.47L13.444,3.019  c1.434-1.357,3.679-1.357,5.112,0l11.707,11.086C30.941,14.696,31.185,15.666,30.854,16.548z"
+                  id="XMLID_219_"
+                />
+              </svg>
+            </a>
+          </li>
+          <li class="flex py-0.5 items-center">
+            Juneyoung Lee (AWS)
+            <a href="https://aqjune.github.io" class="h-4 w-4 flex-none ml-2">
+              <svg viewBox="0 0 32 32" fill="white">
+                <path
+                  d="M30.854,16.548C30.523,17.43,29.703,18,28.764,18H28v11c0,0.552-0.448,1-1,1h-6v-7c0-2.757-2.243-5-5-5  s-5,2.243-5,5v7H5c-0.552,0-1-0.448-1-1V18H3.235c-0.939,0-1.759-0.569-2.09-1.451c-0.331-0.882-0.088-1.852,0.62-2.47L13.444,3.019  c1.434-1.357,3.679-1.357,5.112,0l11.707,11.086C30.941,14.696,31.185,15.666,30.854,16.548z"
+                  id="XMLID_219_"
+                />
+              </svg>
+            </a>
+          </li>
+          <li class="flex py-0.5 items-center">
+            Kihong Heo (KAIST)
+            <a
+              href="https://kihongheo.kaist.ac.kr"
+              class="h-4 w-4 flex-none ml-2"
+            >
+              <svg viewBox="0 0 32 32" fill="white">
+                <path
+                  d="M30.854,16.548C30.523,17.43,29.703,18,28.764,18H28v11c0,0.552-0.448,1-1,1h-6v-7c0-2.757-2.243-5-5-5  s-5,2.243-5,5v7H5c-0.552,0-1-0.448-1-1V18H3.235c-0.939,0-1.759-0.569-2.09-1.451c-0.331-0.882-0.088-1.852,0.62-2.47L13.444,3.019  c1.434-1.357,3.679-1.357,5.112,0l11.707,11.086C30.941,14.696,31.185,15.666,30.854,16.548z"
+                  id="XMLID_219_"
+                />
+              </svg>
+            </a>
+          </li>
+        </ol>
+      </div>
+      <div id="find-us" class="my-4">
+        <h3 class="text-3xl mb-3">Find Us</h3>
+        <ol>
+          <li class="flex px-1 py-0.5">
+            <a
+              href="https://prosys.kaist.ac.kr"
+              class="flex items-center space-x-2"
+            >
+              
+              
+              <img
+                src="https://prosys.kaist.ac.kr/optimuzz/img/prosys-logo-white.svg"
+                alt=""
+                class="h-5 w-4 flex-none"
+              />
+              <span>Prosys Lab @ KAIST</span>
+            </a>
+          </li>
+          <li class="flex px-1 py-0.5">
+            <a
+              href="https://github.com/prosyslab/optimuzz"
+              class="flex items-center space-x-2"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                fill="currentColor"
+                class="h-4 w-4 flex-none"
+              >
+                <path
+                  d="M8 .198a8 8 0 0 0-8 8 7.999 7.999 0 0 0 5.47 7.59c.4.076.547-.172.547-.384 0-.19-.007-.694-.01-1.36-2.226.482-2.695-1.074-2.695-1.074-.364-.923-.89-1.17-.89-1.17-.725-.496.056-.486.056-.486.803.056 1.225.824 1.225.824.714 1.224 1.873.87 2.33.666.072-.518.278-.87.507-1.07-1.777-.2-3.644-.888-3.644-3.954 0-.873.31-1.586.823-2.146-.09-.202-.36-1.016.07-2.118 0 0 .67-.214 2.2.82a7.67 7.67 0 0 1 2-.27 7.67 7.67 0 0 1 2 .27c1.52-1.034 2.19-.82 2.19-.82.43 1.102.16 1.916.08 2.118.51.56.82 1.273.82 2.146 0 3.074-1.87 3.75-3.65 3.947.28.24.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.14.46.55.38A7.972 7.972 0 0 0 16 8.199a8 8 0 0 0-8-8Z"
+                ></path>
+              </svg>
+              <span>Github Repository</span>
+            </a>
+          </li>
+          <li class="flex px-1 py-0.5">
+            <a
+              href="https://zenodo.org/records/15037303"
+              class="flex items-center space-x-2"
+            >
+              <img
+                src="https://prosys.kaist.ac.kr/optimuzz/img/zenodo-favicon.ico"
+                alt=""
+                class="h-4 w-4 flex-none"
+              />
+              <span>Zenodo Research Artifact</span>
+            </a>
+          </li>
+        </ol>
+      </div>
+      <div class="hidden lg:block">
+        <p>
+          &copy; 2025
+          <a href="https://prosys.kaist.ac.kr/optimuzz/">Optimuzz</a>
+        </p>
+      </div>
     </div>
-    <div id="right-panel" class="px-6 py-4 lg:max-w-lg self-center">
-        
-            <div class="my-12 text-gray-900">
-                <time class="text-xs" datetime="2025-03-04T00:00:00">2025 Mar 04</time>
-                <h2 class="text-xl font-semibold mb-1"><a href="https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/">Our paper is appearing on PLDI 2025</a></h2>
-                <p><p>The paper will discuss the mathematical formalization of our concept, detailed fuzzing techniques, and our experimental results.</p></p>
-            </div>
-        
-            <div class="my-12 text-gray-900">
-                <time class="text-xs" datetime="2025-03-02T00:00:00">2025 Mar 02</time>
-                <h2 class="text-xl font-semibold mb-1"><a href="https://prosys.kaist.ac.kr/optimuzz/posts/wrong-approximation-of-alive2/">We found a wrong approximation of Alive2</a></h2>
-                <p><p>We are continously monitoring LLVM updates and testing them with <strong>Optimuzz</strong>.
+  </div>
+  <div id="right-panel" class="px-6 py-4 lg:max-w-lg self-center">
+    
+    <div class="my-12 text-gray-900">
+      <time class="text-xs" datetime='2025-03-04T00:00:00'
+        >2025 Mar 04</time
+      >
+      <h2 class="text-xl font-semibold mb-1">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/">Our paper is appearing on PLDI 2025</a>
+      </h2>
+      <p><p>The paper will discuss the mathematical formalization of our concept, detailed fuzzing techniques, and our experimental results.</p></p>
+    </div>
+    
+    <div class="my-12 text-gray-900">
+      <time class="text-xs" datetime='2025-03-02T00:00:00'
+        >2025 Mar 02</time
+      >
+      <h2 class="text-xl font-semibold mb-1">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/posts/wrong-approximation-of-alive2/">We found a wrong approximation of Alive2</a>
+      </h2>
+      <p><p>We are continously monitoring LLVM updates and testing them with <strong>Optimuzz</strong>.
 During our test, we found discrepancy of Alive2 and LLVM semantics for a floating-point operation, <code>frem</code>.</p></p>
-            </div>
-        
-            <div class="my-12 text-gray-900">
-                <time class="text-xs" datetime="2024-12-10T00:00:00">2024 Dec 10</time>
-                <h2 class="text-xl font-semibold mb-1"><a href="https://prosys.kaist.ac.kr/optimuzz/posts/detailed-look-on-a-vectorcombine-bug/">Detailed Look on a VectorCombine Bug</a></h2>
-                <p><p>Let&rsquo;s take a detailed look on a VectorCombine miscompilation bug, which is detected by <strong>Optimuzz</strong>.</p>
-<p><img src="posts/detailed-look-on-a-vectorcombine-bug/intended.png" alt="Intended Optimization"></p></p>
-            </div>
-        
-            <div class="my-12 text-gray-900">
-                <time class="text-xs" datetime="2024-11-26T00:00:00">2024 Nov 26</time>
-                <h2 class="text-xl font-semibold mb-1"><a href="https://prosys.kaist.ac.kr/optimuzz/posts/2024-bug-release/">We reported 55 miscomplation bugs in 2024</a></h2>
-                <p><p>During our intensive investigation for nearly every optimization in LLVM,
-we reported 55 miscompilation cases to LLVM project.</p></p>
-            </div>
-        
     </div>
+    
+    <div class="my-12 text-gray-900">
+      <time class="text-xs" datetime='2024-12-10T00:00:00'
+        >2024 Dec 10</time
+      >
+      <h2 class="text-xl font-semibold mb-1">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/posts/detailed-look-on-a-vectorcombine-bug/">Detailed Look on a VectorCombine Bug</a>
+      </h2>
+      <p><p>Let&rsquo;s take a detailed look on a VectorCombine miscompilation bug, which is detected by <strong>Optimuzz</strong>.</p>
+<p><img src="posts/detailed-look-on-a-vectorcombine-bug/intended.png" alt="Intended Optimization"></p></p>
+    </div>
+    
+    <div class="my-12 text-gray-900">
+      <time class="text-xs" datetime='2024-11-26T00:00:00'
+        >2024 Nov 26</time
+      >
+      <h2 class="text-xl font-semibold mb-1">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/posts/2024-bug-release/">We reported 55 miscomplation bugs in 2024</a>
+      </h2>
+      <p><p>During our intensive investigation for nearly every optimization in LLVM,
+we reported 55 miscompilation cases to LLVM project.</p></p>
+    </div>
+    
+  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    const ctx = document.getElementById('bug-chart').getContext('2d');
-    new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: ['Patched', 'Reported', 'Duplicate'],
-            datasets: [{
-                label: 'Bugs Reported',
-                data: [22, 35, 7],
-                backgroundColor: [
-                    '#4b2fa0',
-                    '#1e7e34',
-                    '#6c757d',
-                ],
-            }]
-        },
-        options: {
-            maintainAspectRatio: false,
-            layout: {
-                padding: 10
-            },
-        }
-    });
-</script>
-
-
-
+ 
 </body>
 
 </html>
