@@ -1,5 +1,9 @@
 # Optimuzz
 
+<div style="text-align: center; padding: 20px; background-color: white">
+    <img src="optimuzz-white-bg.png" alt="Optimuzz" style="max-width: 25%">
+</div>
+
 This is an Optimuzz instantiation for LLVM.
 Optimuzz performs directed fuzzing on LLVM optimizer passes with Alive2 translation validator.
 Our recent development is avaiable at [our website](https://prosys.kaist.ac.kr/optimuzz/).
@@ -22,19 +26,19 @@ eval $(opam env) # Optimuzz toolchains are installed under the current opam swit
 
 ### Environment Variables
 
-* `LLVM_PATH`: The LLVM project directory. We use clang/llvm toolchains and libraries to build Optimuzz, Alive2, and other LLVM versions under test.
-* `LLVM_BUILDS`: LLVM versions under test will be installed under this directory.
+- `LLVM_PATH`: The LLVM project directory. We use clang/llvm toolchains and libraries to build Optimuzz, Alive2, and other LLVM versions under test.
+- `LLVM_BUILDS`: LLVM versions under test will be installed under this directory.
 
 Note that we use LLVM 20.1.1.
 
 ### Build Script
 
 The script `build.sh` installs the followings:
-* the required OPAM packages
-* LLVM 20 with the OCaml bindings
-* Alive2
-* Optimuzz toolchain (`fuzzer` and `llmutate`)
 
+- the required OPAM packages
+- LLVM 20 with the OCaml bindings
+- Alive2
+- Optimuzz toolchain (`fuzzer` and `llmutate`)
 
 ## Optimuzz Toolchain
 
