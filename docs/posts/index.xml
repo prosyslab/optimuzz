@@ -6,12 +6,12 @@
     <description>Recent content in Posts on Optimuzz</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 04 Mar 2025 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 05 Apr 2025 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://prosys.kaist.ac.kr/optimuzz/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Our paper is appearing on PLDI 2025</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/</link>
-      <pubDate>Tue, 04 Mar 2025 00:00:00 +0000</pubDate>
+      <pubDate>Sat, 05 Apr 2025 00:00:00 +0000</pubDate>
       <guid>https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/</guid>
       <description>&lt;p&gt;The paper will discuss the mathematical formalization of our concept, detailed fuzzing techniques, and our experimental results.&lt;/p&gt;</description>
     </item>
