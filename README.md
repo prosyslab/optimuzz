@@ -1,8 +1,8 @@
 # Optimuzz
 
-<div style="text-align: center; padding: 20px; background-color: white">
-    <img src="optimuzz-white-bg.png" alt="Optimuzz" width="25%">
-</div>
+<p align="center">
+    <img src="optimuzz-white-bg.png" alt="Optimuzz" width="35%" >
+</p>
 
 This is an Optimuzz instantiation for LLVM.
 Optimuzz performs directed fuzzing on LLVM optimizer passes with Alive2 translation validator.
