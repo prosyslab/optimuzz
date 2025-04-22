@@ -10,9 +10,6 @@ module type QUEUE = sig
 
   val empty : t
 
-  val register : elt -> t -> t
-  (** push a seed to the queue for the first time *)
-
   val push : elt -> t -> t
   (** push a seed to the queue -- not the first time *)
 
@@ -32,16 +29,11 @@ module CfgSeed = struct
     importants : string;
   }
 
-  let make llm (trace : Coverage.BlockTrace.t) importants node_tbl distmap =
+  let make llm trace importants node_tbl distmap =
     let score = Distance.distance_score trace node_tbl distmap in
     let covers = Distance.get_cover trace node_tbl distmap in
-    {
-      llm;
-      score;
-      covers;
-      edge_cov = Coverage.EdgeCoverage.of_trace trace;
-      importants;
-    }
+    let edge_cov = Coverage.EdgeCoverage.of_trace trace in
+    { llm; score; covers; edge_cov; importants }
 
   let llmodule seed = seed.llm
   let covers seed = seed.covers
@@ -54,7 +46,7 @@ module CfgSeed = struct
       let int_score = Float.to_int seed.score in
       if seed.covers then 12 else if int_score >= 10 then 3 else 12 - int_score
 
-  let name ?(parent : int option) seed =
+  let name ?parent seed =
     let hash = ALlvm.hash_llm seed.llm in
     match parent with
     | None ->
@@ -74,6 +66,15 @@ end
 module Seed = CfgSeed
 include Queue
 
+let has_substr substr llv =
+  try
+    ignore
+      (Str.search_forward (Str.regexp_string substr)
+         (ALlvm.string_of_llvalue llv)
+         0);
+    true
+  with Not_found -> false
+
 let check_value_type_for_mutation llv =
   let ty = ALlvm.type_of llv in
   if String.starts_with ~prefix:"target" (ALlvm.string_of_lltype ty) then false
@@ -82,28 +83,11 @@ let check_value_type_for_mutation llv =
     | Void | Half | Float | Double | Fp128 | Label | Integer | Function | Array
     | Metadata ->
         true
-    | Vector when ty |> ALlvm.element_type |> ALlvm.classify_type = Integer ->
-        true
-    | Vector -> false
-    | Pointer -> (
-        try
-          ignore
-            (Str.search_forward
-               (Str.regexp_string "inttoptr")
-               (ALlvm.string_of_llvalue llv)
-               0);
-          false
-        with Not_found -> (
-          try
-            ignore
-              (Str.search_forward
-                 (Str.regexp_string "no_cfi")
-                 (ALlvm.string_of_llvalue llv)
-                 0);
-            false
-          with Not_found ->
-            llv |> ALlvm.type_of |> ALlvm.address_space = 0
-            && not (ALlvm.is_null llv)))
+    | Vector -> ty |> ALlvm.element_type |> ALlvm.classify_type = Integer
+    | Pointer ->
+        if has_substr "inttoptr" llv then false
+        else if has_substr "no_cfi" llv then false
+        else ALlvm.address_space ty = 0 && not (ALlvm.is_null llv)
     | _ -> false
 
 let check_opc_for_mutation opc =
@@ -117,33 +101,26 @@ let rec check_opd_for_mutation i llv res =
     |> check_value_type_for_mutation
     |> check_opd_for_mutation (i + 1) llv
 
-let check_llv_for_mutation res llv =
-  if not res then res
-  else
-    match ALlvm.classify_value llv with
-    | Instruction opc ->
-        opc |> check_opc_for_mutation |> check_opd_for_mutation 0 llv
-    | _ -> check_value_type_for_mutation llv
+let check_llv_for_mutation llv =
+  match ALlvm.classify_value llv with
+  | Instruction opc ->
+      opc |> check_opc_for_mutation |> check_opd_for_mutation 0 llv
+  | _ -> check_value_type_for_mutation llv
 
 let check_func_for_mutation f =
-  let res = ALlvm.fold_left_params check_llv_for_mutation true f in
-  let res = ALlvm.fold_left_all_instr check_llv_for_mutation res f in
-  res
+  ALlvm.for_all_params check_llv_for_mutation f
+  && ALlvm.for_all_instr check_llv_for_mutation f
 
 let check_llm_for_mutation llm =
-  let res = ALlvm.fold_left_globals check_llv_for_mutation true llm in
-  if not res then res
-  else
-    ALlvm.fold_left_functions
-      (fun res f -> if not res then res else check_func_for_mutation f)
-      res llm
+  ALlvm.for_all_globals check_llv_for_mutation llm
+  && ALlvm.for_all_functions check_func_for_mutation llm
 
-let check_exist_ret func =
-  let is_ret instr = ALlvm.instr_opcode instr = Ret in
-  ALlvm.any_all_instr is_ret func
+let check_exist_ret f =
+  ALlvm.any_all_instr (fun instr -> ALlvm.instr_opcode instr = Ret) f
 
 let rec redef_fn llctx f_old wide instr =
   let extra_param = [| ALlvm.i32_type llctx; ALlvm.pointer_type llctx |] in
+  let fmodule = ALlvm.global_parent f_old in
   let params_old = ALlvm.params f_old in
   let param_tys =
     Array.append (Array.map ALlvm.type_of params_old) extra_param
@@ -155,11 +132,8 @@ let rec redef_fn llctx f_old wide instr =
       if i = instr then true
       else if ALlvm.ChangeRetVal.check_target i then (
         let new_ret_ty = ALlvm.type_of i in
-        let f_new =
-          ALlvm.define_function ""
-            (ALlvm.function_type new_ret_ty param_tys)
-            (ALlvm.global_parent f_old)
-        in
+        let new_fty = ALlvm.function_type new_ret_ty param_tys in
+        let f_new = ALlvm.define_function "" new_fty fmodule in
 
         (* copy function with new return value (target).*)
         ALlvm.ChangeRetVal.copy_blocks llctx f_old f_new;
@@ -259,11 +233,19 @@ let rec clean_llm llctx wide llm =
     else None
   with _ -> if wide then clean_llm llctx false llm else None
 
+let is_in_slice node_tbl distmap line =
+  match !Config.coverage with
+  | Config.FuzzingMode.Sliced_cfg ->
+      int_of_string line
+      |> Coverage.node_of_addr node_tbl distmap
+      |> Option.is_some
+  | _ -> true
+
 let can_optimize seedfile node_tbl distmap =
   match
     Opt.run ~passes:!Config.optimizer_passes ~mtriple:!Config.mtriple seedfile
   with
-  | Error Non_zero_exit | Error Hang ->
+  | Error Non_zero_exit | Error Hang | Assert _ ->
       L.debug "%s cannot be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       None
@@ -272,23 +254,10 @@ let can_optimize seedfile node_tbl distmap =
       AUtil.name_opted_ver seedfile |> AUtil.clean;
       if !Config.coverage = Config.FuzzingMode.All_edges then Some (seedfile, [])
       else None
-  | Assert _ ->
-      L.debug "Opt %s failed by Assertion Error" seedfile;
-      AUtil.name_opted_ver seedfile |> AUtil.clean;
-      None
   | Ok lines ->
       L.debug "%s can be optimized" seedfile;
       AUtil.name_opted_ver seedfile |> AUtil.clean;
-      let filter_func =
-        match !Config.coverage with
-        | Config.FuzzingMode.Sliced_cfg ->
-            fun line ->
-              int_of_string line
-              |> Coverage.node_of_addr node_tbl distmap
-              |> Option.is_some
-        | _ -> fun _ -> true
-      in
-      let lines = lines |> List.filter filter_func in
+      let lines = lines |> List.filter (is_in_slice node_tbl distmap) in
       Some (seedfile, lines)
 
 let push (seed : Seed.t) pool =
@@ -314,91 +283,83 @@ let save ?(parent : int option) (seed : Seed.t) =
       Printf.fprintf line "%s" seed.importants);
   ALlvm.save_ll !Config.corpus_dir seed_name llm |> ignore
 
-let evaluate_seeds_and_construct_seedpool seeds node_tbl distmap =
-  let open AUtil in
-  let pool = create () in
-  if
-    (* Optimuzz_Base *)
-    !Config.score = Config.FuzzingMode.Constant
-    && !Config.coverage = Config.FuzzingMode.All_edges
-  then (
-    let pools =
-      List.fold_left
-        (fun pools (_, llm, traces) ->
-          let seed = Seed.make llm traces "" node_tbl distmap in
-          L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
-          L.debug "score: %s" (string_of_float (Seed.score seed));
-          seed :: pools)
-        [] seeds
-    in
-    let init_cov =
-      List.fold_left
-        (fun accu seed -> Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
-        Coverage.EdgeCoverage.empty pools
-    in
-    pools |> List.to_seq |> add_seq pool;
-    (pool, init_cov))
-  else
-    let pool_covers, pool_noncovers =
-      List.fold_left
-        (fun (pool_covers, pool_noncovers) (_, llm, traces) ->
-          let seed = Seed.make llm traces "" node_tbl distmap in
-          L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule llm);
-          L.debug "score: %s" (string_of_float (Seed.score seed));
-          (* will assume all-edges option to non-directed fuzzing *)
-          if !Config.coverage = Config.FuzzingMode.All_edges then
-            (pool_covers, seed :: pool_noncovers)
-          else if Seed.covers seed then (seed :: pool_covers, pool_noncovers)
-          else (pool_covers, seed :: pool_noncovers))
-        ([], []) seeds
-    in
-    if pool_covers = [] then (
-      L.info "No covering seeds found. Using closest seeds.";
-      let pool_closest =
-        pool_noncovers
-        |> List.sort_uniq (fun a b ->
-               compare
-                 (ALlvm.hash_llm (Seed.llmodule a))
-                 (ALlvm.hash_llm (Seed.llmodule b)))
-      in
-      let pool_closest =
-        if !Config.score = Config.FuzzingMode.Constant then pool_closest
-        else
-          pool_closest
-          |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
-      in
-      let pool_closest =
-        (* will assume all-edges option to non-directed fuzzing *)
-        if !Config.coverage = Config.FuzzingMode.All_edges then pool_closest
-        else pool_closest |> take !Config.max_initial_seed
-      in
+let is_optimuzz_base () =
+  (* Optimuzz_Base *)
+  !Config.score = Config.FuzzingMode.Constant
+  && !Config.coverage = Config.FuzzingMode.All_edges
 
-      let init_cov =
-        List.fold_left
-          (fun accu seed ->
-            Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
-          Coverage.EdgeCoverage.empty pool_closest
-      in
-      pool_closest |> List.to_seq |> add_seq pool;
-      (pool, init_cov))
+let is_nondirected () = !Config.coverage = Config.FuzzingMode.All_edges
+
+let log_seed seed =
+  L.debug "evaluate seed: \n%s\n" (ALlvm.string_of_llmodule seed.Seed.llm);
+  L.debug "score: %f" (Seed.score seed)
+
+let classify_seeds node_tbl distmap raw_seeds =
+  if is_nondirected () then
+    List.fold_left
+      (fun (cover_seeds, noncover_seeds) (_, llm, traces) ->
+        let seed = Seed.make llm traces "" node_tbl distmap in
+        log_seed seed;
+        (cover_seeds, seed :: noncover_seeds))
+      ([], []) raw_seeds
+  else
+    List.fold_left
+      (fun (cover_seeds, noncover_seeds) (_, llm, traces) ->
+        let seed = Seed.make llm traces "" node_tbl distmap in
+        log_seed seed;
+        if Seed.covers seed then (seed :: cover_seeds, noncover_seeds)
+        else (cover_seeds, seed :: noncover_seeds))
+      ([], []) raw_seeds
+
+let hash_seed seed = ALlvm.hash_llm seed.Seed.llm
+let compare_hash a b = compare (hash_seed a) (hash_seed b)
+let compare_score a b = compare a.Seed.score b.Seed.score
+
+let closest_seeds seeds =
+  let unique_seeds = List.sort_uniq compare_hash seeds in
+  let sorted_seeds =
+    if !Config.score = Config.FuzzingMode.Constant then unique_seeds
+    else
+      unique_seeds
+      |> List.sort (fun a b -> compare (Seed.score a) (Seed.score b))
+  in
+  let first_seeds =
+    if !Config.coverage = Config.FuzzingMode.All_edges then sorted_seeds
+    else List.take !Config.max_initial_seed sorted_seeds
+  in
+  first_seeds
+
+let compute_init_cov seeds =
+  let open Coverage in
+  List.fold_left
+    (fun accu seed -> EdgeCoverage.union accu seed.Seed.edge_cov)
+    EdgeCoverage.empty seeds
+
+let make_pool_and_cov seeds =
+  let open Coverage in
+  let pool = create () in
+  seeds |> List.to_seq |> add_seq pool;
+  let init_cov = compute_init_cov seeds in
+  (pool, init_cov)
+
+let evaluate_seeds_and_construct_seedpool raw_seeds node_tbl distmap =
+  let open AUtil in
+  let open Coverage in
+  if is_optimuzz_base () then
+    let _, seeds = classify_seeds node_tbl distmap raw_seeds in
+    make_pool_and_cov seeds
+  else
+    let cover_seeds, noncover_seeds =
+      classify_seeds node_tbl distmap raw_seeds
+    in
+    if cover_seeds = [] then (
+      L.info "No covering seeds found. Using closest seeds.";
+      let pool_closest = closest_seeds noncover_seeds in
+      make_pool_and_cov pool_closest)
     else (
-      (* if we have covering seeds, we use covering seeds only. *)
       L.info "Covering seeds found. Using them only.";
-      let pool_covers =
-        pool_covers
-        |> List.sort_uniq (fun a b ->
-               compare
-                 (ALlvm.hash_llm (Seed.llmodule a))
-                 (ALlvm.hash_llm (Seed.llmodule b)))
-      in
-      let init_cov =
-        List.fold_left
-          (fun accu seed ->
-            Coverage.EdgeCoverage.union accu (Seed.edge_cov seed))
-          Coverage.EdgeCoverage.empty pool_covers
-      in
-      pool_covers |> List.to_seq |> add_seq pool;
-      (pool, init_cov))
+      let sorted_seeds = cover_seeds |> List.sort_uniq compare_score in
+      make_pool_and_cov sorted_seeds)
 
 let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
   let open AUtil in
@@ -433,14 +394,13 @@ let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
 
   let seed_count = ref 0 in
 
-  let filter_seed seed =
+  let preprocess_seed seed =
     let* path, lines = can_optimize seed node_tbl distmap in
     L.debug "filter seed: %s " path;
     match ALlvm.read_ll llctx path with
     | Ok llm when check_llm_for_mutation llm ->
         let cov = lines |> List.map int_of_string in
         let llm = add_dummy_params llm in
-        L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
         seed_count := !seed_count + 1;
         L.debug "seed count: %d" !seed_count;
         Some (path, llm, cov)
@@ -453,9 +413,7 @@ let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
 
     Array.to_list seed_files
     |> List.map (Filename.concat seed_dir)
-    |> List.filter_map filter_seed
+    |> List.filter_map preprocess_seed
   in
 
-  let pool = evaluate_seeds_and_construct_seedpool seeds node_tbl distmap in
-
-  pool
+  evaluate_seeds_and_construct_seedpool seeds node_tbl distmap

@@ -263,6 +263,15 @@ let any_all_instr pred func =
 let for_all_instr pred func =
   fold_left_all_instr (fun b instr -> b && pred instr) true func
 
+let for_all_functions pred llm =
+  fold_left_functions (fun b f -> b && pred f) true llm
+
+let for_all_params pred func =
+  fold_left_params (fun b p -> b && pred p) true func
+
+let for_all_globals pred llm =
+  fold_left_globals (fun b g -> b && pred g) true llm
+
 (** [iter_all_instr f m] applies function f to each of instructions in function m*)
 let iter_all_instr f m =
   if is_declaration m then () else iter_blocks (iter_instrs f) m
