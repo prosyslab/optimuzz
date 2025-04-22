@@ -141,8 +141,9 @@
     <p class="text-lg text-gray-700 mt-4 text-justify">
       <b>Optimuzz</b> is a directed compiler fuzzing framework that continuously
       validate the correctness of the compiler. Given a target optimization in the compiler,
-      Optimuzz effectively generates input programs to test the target optimization
-      using a combination of <i>the Guided Search Strategy</i> and <i>the Targeted Mutation Strategy</i>.
+      Optimuzz generates input programs to test the target optimization effectively.
+      In Optimuzz, we propose <i>the seed scheduler</i>, <i>the selective coverage<i>, and <i>the targeted mutator</i>
+      which significantly improve the fuzzing performance compared to the existing non-directed fuzzers.
       The generated programs are then checked with the translation validation tool such as <i>Alive2</i>.
       Optimuzz has detected miscompilation bugs in production compilers
       such as <i>LLVM</i> and <i>TurboFan</i>. The bugs are reported to the
