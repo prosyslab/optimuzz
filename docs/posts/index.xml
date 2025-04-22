@@ -4,37 +4,45 @@
     <title>Posts on Optimuzz</title>
     <link>https://prosys.kaist.ac.kr/optimuzz/posts/</link>
     <description>Recent content in Posts on Optimuzz</description>
-    <generator>Hugo</generator>
+    <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 05 Apr 2025 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://prosys.kaist.ac.kr/optimuzz/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 05 Apr 2025 00:00:00 +0000</lastBuildDate><atom:link href="https://prosys.kaist.ac.kr/optimuzz/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Our paper is appearing on PLDI 2025</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/</link>
       <pubDate>Sat, 05 Apr 2025 00:00:00 +0000</pubDate>
+      
       <guid>https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/</guid>
-      <description>&lt;p&gt;The paper will discuss the mathematical formalization of our concept, detailed fuzzing techniques, and our experimental results.&lt;/p&gt;</description>
+      <description>The paper will discuss the mathematical formalization of our concept, detailed fuzzing techniques, and our experimental results.</description>
     </item>
+    
     <item>
       <title>We found a wrong approximation of Alive2</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/wrong-approximation-of-alive2/</link>
       <pubDate>Sun, 02 Mar 2025 00:00:00 +0000</pubDate>
+      
       <guid>https://prosys.kaist.ac.kr/optimuzz/posts/wrong-approximation-of-alive2/</guid>
-      <description>&lt;p&gt;We are continously monitoring LLVM updates and testing them with &lt;strong&gt;Optimuzz&lt;/strong&gt;.&#xA;During our test, we found discrepancy of Alive2 and LLVM semantics for a floating-point operation, &lt;code&gt;frem&lt;/code&gt;.&lt;/p&gt;</description>
+      <description>We are continously monitoring LLVM updates and testing them with Optimuzz. During our test, we found discrepancy of Alive2 and LLVM semantics for a floating-point operation, frem.</description>
     </item>
+    
     <item>
       <title>Detailed Look on a VectorCombine Bug</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/detailed-look-on-a-vectorcombine-bug/</link>
       <pubDate>Tue, 10 Dec 2024 00:00:00 +0000</pubDate>
+      
       <guid>https://prosys.kaist.ac.kr/optimuzz/posts/detailed-look-on-a-vectorcombine-bug/</guid>
-      <description>&lt;p&gt;Let&amp;rsquo;s take a detailed look on a VectorCombine miscompilation bug, which is detected by &lt;strong&gt;Optimuzz&lt;/strong&gt;.&lt;/p&gt;&#xA;&lt;p&gt;&lt;img src=&#34;posts/detailed-look-on-a-vectorcombine-bug/intended.png&#34; alt=&#34;Intended Optimization&#34;&gt;&lt;/p&gt;</description>
+      <description>&lt;p&gt;Let&amp;rsquo;s take a detailed look on a VectorCombine miscompilation bug, which is detected by &lt;strong&gt;Optimuzz&lt;/strong&gt;.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;posts/detailed-look-on-a-vectorcombine-bug/intended.png&#34; alt=&#34;Intended Optimization&#34;&gt;&lt;/p&gt;</description>
     </item>
+    
     <item>
       <title>We reported 55 miscomplation bugs in 2024</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/2024-bug-release/</link>
       <pubDate>Tue, 26 Nov 2024 00:00:00 +0000</pubDate>
+      
       <guid>https://prosys.kaist.ac.kr/optimuzz/posts/2024-bug-release/</guid>
-      <description>&lt;p&gt;During our intensive investigation for nearly every optimization in LLVM,&#xA;we reported 55 miscompilation cases to LLVM project.&lt;/p&gt;</description>
+      <description>During our intensive investigation for nearly every optimization in LLVM, we reported 55 miscompilation cases to LLVM project.</description>
     </item>
+    
   </channel>
 </rss>
