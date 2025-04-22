@@ -7,19 +7,28 @@ module L = Logger
 module Validator = struct
   type res_t = Correct | Incorrect | Failed | Errors
 
+  let stat_of_line line =
+    String.trim line |> String.split_on_char ' ' |> List.hd |> int_of_string
+
+  let last_n_lines n text =
+    String.split_on_char '\n' text
+    |> List.rev
+    |> List.to_seq
+    |> Seq.take n
+    |> List.of_seq
+    |> List.rev
+
+  let has_target line = String.starts_with ~prefix:"target " line
+
   let run src optimized =
-    if Sys.file_exists src && Sys.file_exists optimized then (
-      (* let tv_process =
-           Unix.open_process_args_in !Config.alive_tv_bin
-             [| !Config.alive_tv_bin; src; optimized |]
-         in *)
+    if not (Sys.file_exists src && Sys.file_exists optimized) then Errors
+    else
       let lines =
-        List.fold_left
-          (fun accu line ->
-            if not (String.starts_with ~prefix:"target " line) then line :: accu
-            else accu)
-          []
-          (AUtil.readlines optimized)
+        AUtil.readlines optimized
+        |> List.fold_left
+             (fun accu line ->
+               if not (has_target line) then line :: accu else accu)
+             []
         |> List.rev
       in
       Out_channel.with_open_text optimized (fun instr ->
@@ -34,48 +43,15 @@ module Validator = struct
       let status = Unix.close_process_in tv_process in
       match status with
       | Unix.WEXITED 0 -> (
-          let lines =
-            text
-            |> String.split_on_char '\n'
-            |> List.rev
-            |> List.to_seq
-            |> Seq.take 5
-            |> List.of_seq
-            |> List.rev
-          in
-          let eq_line line x =
-            line
-            |> String.trim
-            |> String.split_on_char ' '
-            |> List.hd
-            |> int_of_string
-            = x
-          in
+          let lines = last_n_lines 5 text in
           match lines with
           | correct :: incorrect :: failed :: _errors ->
-              if eq_line correct 1 then (
-                L.info "Validator: %s refines %s"
-                  (Filename.basename optimized)
-                  (Filename.basename src);
-                Correct)
-              else if eq_line incorrect 1 then (
-                L.info "Validator: %s does not refine %s"
-                  (Filename.basename optimized)
-                  (Filename.basename src);
-                Incorrect)
-              else if eq_line failed 1 then (
-                L.info "Validator: failed to validate %s and %s"
-                  (Filename.basename src)
-                  (Filename.basename optimized);
-                Failed)
-              else (
-                L.warn "Validator: exited with errors";
-                Errors)
+              if stat_of_line correct = 1 then Correct
+              else if stat_of_line incorrect = 1 then Incorrect
+              else if stat_of_line failed = 1 then Failed
+              else Errors
           | _ -> failwith "unexpected alive-tv output")
-      | _ -> Errors)
-    else (
-      L.warn "Validator: %s or %s are not found" src optimized;
-      Errors)
+      | _ -> Errors
 end
 
 (** [Optimizer] runs LLVM opt for specified passes and input IR.
@@ -96,7 +72,7 @@ module Optimizer = struct
     let mtriple =
       if mtriple = "" then "" else "--mtriple=\"" ^ mtriple ^ "\""
     in
-    let output = Option.fold ~none:"/dev/null" ~some:Fun.id output in
+    let output = Option.value ~default:"/dev/null" output in
     L.debug "opt: %s -> %s"
       (Filename.basename filename)
       (Filename.basename output);
