@@ -1,5 +1,11 @@
-CXX = clang++
+CXX ?= clang++
 LLVM_CONFIG ?= llvm-config
+
+ifdef BASE
+CXX := $(BASE)/bin/clang++
+LLVM_CONFIG := $(BASE)/bin/llvm-config
+endif
+
 CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags) -std=c++17 -fno-rtti -fPIC
 LDFLAGS  = $(shell $(LLVM_CONFIG) --ldflags)
 PLUGIN_FLAGS = -Xclang -fpass-plugin=./inst-pass.so
@@ -9,7 +15,7 @@ DISTANCE = $(HOME)/llfuzz-experiment/optimuzz/_build/default/src/program/distanc
 all: inst-pass.so coverage.o
 
 inst-pass.so: InstPass.cpp
-	$(CXX) -g -shared -o $@ $^ $(CXXFLAGS) $(LLVM_LDFLAGS)
+	$(CXX) -g -shared -o $@ $^ $(CXXFLAGS) $(LDFLAGS)
 
 coverage.o: coverage.cpp
 	$(CXX) -fPIC -c $< -o $@
