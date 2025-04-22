@@ -1,3 +1,9 @@
 [submodule "alive2"]
 	path = alive2
 	url = https://github.com/AliveToolkit/alive2.git
+[submodule "turbo-tv"]
+	path = turbo-tv
+	url = git@github.com:prosyslab/turbo-tv.git
+[submodule "turbotv-fuzzilli"]
+	path = turbotv-fuzzilli
+	url = git@github.com:prosyslab/turbotv-fuzzilli.git
