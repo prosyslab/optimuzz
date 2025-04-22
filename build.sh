@@ -91,3 +91,6 @@ fi
 install_alive2
 
 make
+
+command -v fuzzer
+command -v llmutate
