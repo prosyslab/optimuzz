@@ -1,10 +1,13 @@
-CXX ?= clang++
-LLVM_CONFIG ?= llvm-config
+CXX = clang++
+LLVM_CONFIG = llvm-config
 
 ifdef BASE
 CXX := $(BASE)/bin/clang++
 LLVM_CONFIG := $(BASE)/bin/llvm-config
 endif
+
+$(info CXX is set to $(CXX))
+$(info LLVM_CONFIG is set to $(LLVM_CONFIG))
 
 CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags) -std=c++17 -fno-rtti -fPIC
 LDFLAGS  = $(shell $(LLVM_CONFIG) --ldflags)
