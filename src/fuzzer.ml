@@ -64,74 +64,69 @@ let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
       if interesting then Some new_seed else None
   | Assert _ -> None
 
+let change_suffix filename suffix =
+  let base = Filename.chop_suffix filename (Filename.extension filename) in
+  base ^ suffix
+
 let mutate_seed llctx llset seed =
   let muts = !Config.muts_dir in
-  let seed_filename =
+  let seedfile =
     ALlvm.save_ll muts (F.sprintf "id:%010d.ll" (ALlvm.hash_llm seed)) seed
   in
-  let mut_filename =
-    Filename.chop_suffix seed_filename ".ll" ^ ".mut.ll" |> Filename.basename
-  in
-  let mutated_filename =
-    Filename.chop_suffix seed_filename ".ll" ^ ".mutated"
-  in
+  let mutant_file = change_suffix seedfile ".mut.ll" |> Filename.basename in
+  let mut_parts = change_suffix seedfile ".mutated" in
   let llmutate_args =
     if !Config.mutation = Config.FuzzingMode.Uniform then
-      [
-        "llmutate"; seed_filename; muts; mut_filename; "-no-focus"; ">> log.txt";
-      ]
-    else [ "llmutate"; seed_filename; muts; mut_filename; ">> log.txt" ]
+      [ "llmutate"; seedfile; muts; mutant_file; "-no-focus"; ">> log.txt" ]
+    else [ "llmutate"; seedfile; muts; mutant_file; ">> log.txt" ]
   in
 
   AUtil.cmd llmutate_args |> ignore;
 
-  let mutant = ALlvm.read_ll llctx (Filename.concat muts mut_filename) in
+  let mutant = ALlvm.read_ll llctx (Filename.concat muts mutant_file) in
   match mutant with
+  | Ok mutant when ALlvm.LLModuleSet.mem llset mutant -> None
   | Ok mutant ->
-      if ALlvm.LLModuleSet.mem llset mutant then None
-      else
-        let importants =
-          In_channel.with_open_text mutated_filename In_channel.input_all
-        in
-        Some (mutant, importants)
+      let importants =
+        In_channel.with_open_text mut_parts In_channel.input_all
+      in
+      Some (mutant, importants)
   | Error _ -> None
 
 let update_progress progress seed =
   let cov_set = Seedpool.Seed.edge_cov seed in
   progress |> Progress.add_cov cov_set |> Progress.inc_gen
 
+let rec try_gen_mutant mutator node_tbl distmap energy llm (prog : Progress.t) =
+  if energy = 0 then None
+  else
+    match mutator llm with
+    | Some (mutant, importants) -> (
+        match
+          evaluate_mutant llm mutant importants prog.cov_sofar node_tbl distmap
+        with
+        | Some new_seed -> Some new_seed
+        | None ->
+            try_gen_mutant mutator node_tbl distmap (energy - 1) mutant prog)
+    | None -> try_gen_mutant mutator node_tbl distmap (energy - 1) llm prog
+
+let gen_mutants mutator node_tbl distmap energy llm pool progress =
+  let rec aux times pool progress =
+    if times = 0 then (pool, progress)
+    else
+      match try_gen_mutant mutator node_tbl distmap energy llm progress with
+      | Some new_seed ->
+          let new_progress = update_progress progress new_seed in
+          Seedpool.save ~parent:(ALlvm.hash_llm llm) new_seed;
+          let new_pool = Seedpool.push new_seed pool in
+          aux (times - 1) new_pool new_progress
+      | None -> aux (times - 1) pool progress
+  in
+  aux energy pool progress
+
 let run seed_pool node_tbl distmap llctx llset progress =
   (* generate and deduplicate seeds *)
   let mutator = mutate_seed llctx llset in
-
-  let rec generate_mutant energy llm (progress : Progress.t) =
-    if energy = 0 then None
-    else
-      match mutator llm with
-      | Some (mutated_llm, importants) -> (
-          match
-            evaluate_mutant llm mutated_llm importants progress.cov_sofar
-              node_tbl distmap
-          with
-          | Some new_seed -> Some new_seed
-          | None -> generate_mutant (energy - 1) mutated_llm progress)
-      | None -> generate_mutant (energy - 1) llm progress
-  in
-
-  let generate_interesting_mutants energy llm pool progress =
-    let rec aux times pool progress =
-      if times = 0 then (pool, progress)
-      else
-        match generate_mutant energy llm progress with
-        | Some new_seed ->
-            let new_progress = update_progress progress new_seed in
-            Seedpool.save ~parent:(ALlvm.hash_llm llm) new_seed;
-            let new_pool = Seedpool.push new_seed pool in
-            aux (times - 1) new_pool new_progress
-        | None -> aux (times - 1) pool progress
-    in
-    aux energy pool progress
-  in
 
   let rec campaign pool (progress : Progress.t) =
     let seed, pool_popped = Seedpool.pop pool in
@@ -146,7 +141,7 @@ let run seed_pool node_tbl distmap llctx llset progress =
     assert (energy >= 0);
 
     let new_pool, new_progress =
-      generate_interesting_mutants energy llm pool_popped progress
+      gen_mutants mutator node_tbl distmap energy llm pool_popped progress
     in
 
     campaign (Seedpool.push seed new_pool) new_progress
