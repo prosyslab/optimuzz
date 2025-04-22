@@ -32,15 +32,14 @@ module CfgSeed = struct
     importants : string;
   }
 
-  let make llm (traces : Coverage.BlockTrace.t list) importants node_tbl distmap
-      =
-    let score = Distance.distance_score traces node_tbl distmap in
-    let covers = Distance.get_cover traces node_tbl distmap in
+  let make llm (trace : Coverage.BlockTrace.t) importants node_tbl distmap =
+    let score = Distance.distance_score trace node_tbl distmap in
+    let covers = Distance.get_cover trace node_tbl distmap in
     {
       llm;
       score;
       covers;
-      edge_cov = Coverage.EdgeCoverage.of_traces traces;
+      edge_cov = Coverage.EdgeCoverage.of_trace trace;
       importants;
     }
 
@@ -285,7 +284,7 @@ let can_optimize seedfile node_tbl distmap =
         | Config.FuzzingMode.Sliced_cfg ->
             fun line ->
               int_of_string line
-              |> Coverage.sliced_cfg_node_of_addr node_tbl distmap
+              |> Coverage.node_of_addr node_tbl distmap
               |> Option.is_some
         | _ -> fun _ -> true
       in
@@ -441,7 +440,7 @@ let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
     | Error _ -> None
     | Ok llm ->
         if check_llm_for_mutation llm then (
-          let cov = [ lines |> List.map int_of_string ] in
+          let cov = lines |> List.map int_of_string in
           let llm = add_dummy_params llm in
           L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
           seed_count := !seed_count + 1;

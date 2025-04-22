@@ -31,35 +31,37 @@ let measure_optimizer_coverage llm =
     AUtil.clean optimized_ir_filename;
     (optimization_res, validation_res)
 
-let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
+let is_in_slice addr node_tbl distmap =
+  if !Config.coverage = Config.FuzzingMode.Sliced_cfg then
+    Coverage.node_of_addr node_tbl distmap addr |> Option.is_some
+  else true
+
+let log_new_points new_points =
+  if Coverage.EdgeCoverage.is_empty new_points then
+    L.debug "No new coverage points"
+  else L.debug "New coverage points"
+
+let save_covering_mutant parent_llm seed =
+  if seed.Seedpool.CfgSeed.covers then
+    let seed_name =
+      Seedpool.Seed.name ~parent:(ALlvm.hash_llm parent_llm) seed
+    in
+    ALlvm.save_ll !Config.covers_dir seed_name seed.llm |> ignore
+
+let evaluate_mutant parent_llm llm importants covset node_tbl distmap =
   let optim_res, _ = measure_optimizer_coverage llm in
   L.debug "Mutant: ";
   L.debug "%s" (ALlvm.string_of_llmodule llm);
   match optim_res with
   | Error _ -> None
   | Ok lines ->
-      let in_slice =
-        match !Config.coverage with
-        | Config.FuzzingMode.Sliced_cfg ->
-            fun addr ->
-              Coverage.sliced_cfg_node_of_addr node_tbl distance_map addr
-              |> Option.is_some
-        | _ -> fun _ -> true
-      in
-      let trace = lines |> List.map int_of_string |> List.filter in_slice in
+      let is_in_slice addr = is_in_slice addr node_tbl distmap in
+      let trace = lines |> List.map int_of_string |> List.filter is_in_slice in
       let cov = trace |> AUtil.pairs |> Coverage.EdgeCoverage.of_list in
       let new_points = Coverage.EdgeCoverage.diff cov covset in
-      if Coverage.EdgeCoverage.is_empty new_points then
-        prerr_endline "No new coverage points"
-      else prerr_endline "New coverage points";
-      let (new_seed : Seedpool.Seed.t) =
-        Seedpool.Seed.make llm [ trace ] importants node_tbl distance_map
-      in
-      (if new_seed.covers then
-         let seed_name =
-           Seedpool.Seed.name ~parent:(ALlvm.hash_llm parent_llm) new_seed
-         in
-         ALlvm.save_ll !Config.covers_dir seed_name llm |> ignore);
+      log_new_points new_points;
+      let new_seed = Seedpool.Seed.make llm trace importants node_tbl distmap in
+      save_covering_mutant parent_llm new_seed;
       let interesting = not (Coverage.EdgeCoverage.is_empty new_points) in
       if interesting then Some new_seed else None
   | Assert _ -> None
@@ -97,13 +99,14 @@ let update_progress progress seed =
   let cov_set = Seedpool.Seed.edge_cov seed in
   progress |> Progress.add_cov cov_set |> Progress.inc_gen
 
-let rec try_gen_mutant mutator node_tbl distmap energy llm (prog : Progress.t) =
+let rec try_gen_mutant mutator node_tbl distmap energy llm prog =
   if energy = 0 then None
   else
     match mutator llm with
     | Some (mutant, importants) -> (
         match
-          evaluate_mutant llm mutant importants prog.cov_sofar node_tbl distmap
+          evaluate_mutant llm mutant importants prog.Progress.cov_sofar node_tbl
+            distmap
         with
         | Some new_seed -> Some new_seed
         | None ->

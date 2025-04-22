@@ -56,11 +56,7 @@ end
 module EdgeCoverage = struct
   include Set.Make (IntInt)
 
-  let of_traces traces =
-    traces
-    |> List.map AUtil.pairs
-    |> List.map of_list
-    |> List.fold_left union empty
+  let of_trace (trace : int list) = of_list (AUtil.pairs trace)
 
   let read file =
     let open AUtil in
@@ -439,7 +435,7 @@ module DistanceTable = struct
     |> map harmonic_avg
 end
 
-let sliced_cfg_node_of_addr node_tbl distmap addr =
+let node_of_addr node_tbl distmap addr =
   match AddrToNode.find_opt node_tbl addr with
   | None -> None (* in CFG of a function other than the target function *)
   | Some node -> if DistanceTable.mem node distmap then Some node else None
@@ -455,37 +451,23 @@ module CfgDistance = struct
   type t = float
 
   (** computes distance of a trace *)
-  let distance_score (traces : BlockTrace.t list) node_tbl distmap =
-    let nodes_in_trace =
-      traces
-      |> List.flatten
-      |> List.sort_uniq compare
-      |> List.filter_map (sliced_cfg_node_of_addr node_tbl distmap)
-    in
-    let dist_sum : float =
-      nodes_in_trace
-      |> List.fold_left
-           (fun sum node ->
-             let dist = DistanceTable.find_opt node distmap in
-             match dist with None -> sum | Some dist -> sum +. dist)
-           0.0
-    in
-    (* let min_dist =
-           nodes_in_trace
-           |> List.filter_map (fun node -> Cfg.NodeMap.find_opt node distmap)
-           |> List.fold_left (fun accu dist -> Float.min accu dist) 65535.0
-         in *)
-    if nodes_in_trace = [] then 65535.0
+  let distance_score (trace : BlockTrace.t) node_tbl distmap =
+    let nodes = trace |> List.filter_map (node_of_addr node_tbl distmap) in
+    if nodes = [] then 65535.0
     else
-      let size = List.length nodes_in_trace |> float_of_int in
-      dist_sum /. size
+      let dist_sum : float =
+        nodes
+        |> List.filter_map (fun node -> DistanceTable.find_opt node distmap)
+        |> List.fold_left (fun sum dist -> sum +. dist) 0.0
+      in
+      let size = List.length nodes in
+      dist_sum /. float_of_int size
 
-  let get_cover (traces : BlockTrace.t list) node_tbl distmap =
-    traces
-    |> List.exists
-         (List.exists (fun addr ->
-              let node = AddrToNode.find_opt node_tbl addr in
-              match node with
-              | None -> false
-              | Some node -> DistanceTable.find_opt node distmap = Some 0.0))
+  let get_cover (trace : BlockTrace.t) node_tbl distmap =
+    trace
+    |> List.exists (fun addr ->
+           let node = AddrToNode.find_opt node_tbl addr in
+           match node with
+           | None -> false
+           | Some node -> DistanceTable.find_opt node distmap = Some 0.0)
 end
