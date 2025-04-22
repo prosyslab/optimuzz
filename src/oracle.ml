@@ -20,6 +20,10 @@ module Validator = struct
 
   let has_target line = String.starts_with ~prefix:"target " line
 
+  let launch_tv src opted =
+    Unix.open_process_args_in "timeout"
+      [| "timeout"; "2m"; !Config.alive_tv_bin; src; opted |]
+
   let run src optimized =
     if not (Sys.file_exists src && Sys.file_exists optimized) then Errors
     else
@@ -33,10 +37,7 @@ module Validator = struct
       in
       Out_channel.with_open_text optimized (fun instr ->
           List.iter (Printf.fprintf instr "%s\n") lines);
-      let tv_process =
-        Unix.open_process_args_in "timeout"
-          [| "timeout"; "2m"; !Config.alive_tv_bin; src; optimized |]
-      in
+      let tv_process = launch_tv src optimized in
       let text = In_channel.input_all tv_process in
       print_endline text;
       (*AUtil.log "%s@." text;*)

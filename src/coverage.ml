@@ -3,30 +3,20 @@ module F = Format
 module L = Logger
 
 let parse_targets targets_file =
-  (AUtil.readlines targets_file
+  AUtil.readlines targets_file
   |> List.map (fun line ->
          let chunks = String.split_on_char ':' line in
          let filename = List.nth chunks 0 |> Filename.basename in
          let lineno = List.nth chunks 1 |> int_of_string in
          (filename, lineno))
   |> List.sort_uniq compare
-  |> List.hd)
-  :: []
 
 module BlockTrace = struct
   type t = int list
 
   let of_lines lines =
     (* SAFETY: if the file is generated, it has at least one line *)
-    let lines =
-      lines
-      |> List.map (fun line ->
-             match int_of_string_opt line with
-             | Some n -> n
-             | None ->
-                 F.eprintf "BlockTrace.of_lines: invalid line %s" line;
-                 exit 1)
-    in
+    let lines = lines |> List.map int_of_string in
     match lines with
     | [] -> []
     | _ ->

@@ -38,7 +38,7 @@ let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
   match optim_res with
   | Error _ -> None
   | Ok lines ->
-      let filter_func =
+      let in_slice =
         match !Config.coverage with
         | Config.FuzzingMode.Sliced_cfg ->
             fun addr ->
@@ -46,7 +46,7 @@ let evaluate_mutant parent_llm llm importants covset node_tbl distance_map =
               |> Option.is_some
         | _ -> fun _ -> true
       in
-      let trace = lines |> List.map int_of_string |> List.filter filter_func in
+      let trace = lines |> List.map int_of_string |> List.filter in_slice in
       let cov = trace |> AUtil.pairs |> Coverage.EdgeCoverage.of_list in
       let new_points = Coverage.EdgeCoverage.diff cov covset in
       if Coverage.EdgeCoverage.is_empty new_points then

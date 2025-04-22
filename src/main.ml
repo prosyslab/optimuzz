@@ -32,6 +32,9 @@ let main targets_file cfg_dir =
   |> List.iter (fun (filename, lineno) ->
          F.printf "target: %s:%d@." (Filename.basename filename) lineno);
 
+  (* TODO: check *)
+  let targets = [ List.hd targets ] in
+
   let cfgs =
     Sys.readdir cfg_dir
     |> Array.to_list
