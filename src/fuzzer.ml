@@ -75,13 +75,12 @@ let change_suffix filename suffix =
   let base = Filename.chop_suffix filename (Filename.extension filename) in
   base ^ suffix
 
-let mutate_seed llctx llset seed =
+let run_mutator llctx seed =
   let muts = !Config.muts_dir in
   let seedfile =
     ALlvm.save_ll muts (F.sprintf "id:%010d.ll" (ALlvm.hash_llm seed)) seed
   in
   let mutant_file = change_suffix seedfile ".mut.ll" |> Filename.basename in
-  let mut_parts = change_suffix seedfile ".mutated" in
   let llmutate_args =
     if !Config.mutation = Config.FuzzingMode.Uniform then
       [ "llmutate"; seedfile; muts; mutant_file; "-no-focus"; ">> log.txt" ]
@@ -90,15 +89,18 @@ let mutate_seed llctx llset seed =
 
   AUtil.cmd llmutate_args |> ignore;
 
-  let mutant = ALlvm.read_ll llctx (Filename.concat muts mutant_file) in
-  match mutant with
-  | Ok mutant when ALlvm.LLModuleSet.mem llset mutant -> None
+  match ALlvm.read_ll llctx (Filename.concat muts mutant_file) with
   | Ok mutant ->
-      let importants =
-        In_channel.with_open_text mut_parts In_channel.input_all
-      in
-      Some (mutant, importants)
+      let mutated = change_suffix seedfile ".mutated" in
+      let neighbors = In_channel.with_open_text mutated In_channel.input_all in
+      Some (mutant, neighbors)
   | Error _ -> None
+
+let mutate_seed llctx llset seed =
+  match run_mutator llctx seed with
+  | Some (mutant, neighbors) when not (ALlvm.LLModuleSet.mem llset mutant) ->
+      Some (mutant, neighbors)
+  | _ -> None
 
 let update_progress progress seed =
   let cov_set = Seedpool.Seed.edge_cov seed in
