@@ -437,16 +437,14 @@ let make llctx node_tbl (distmap : float Coverage.DistanceTable.t) =
     let* path, lines = can_optimize seed node_tbl distmap in
     L.debug "filter seed: %s " path;
     match ALlvm.read_ll llctx path with
-    | Error _ -> None
-    | Ok llm ->
-        if check_llm_for_mutation llm then (
-          let cov = lines |> List.map int_of_string in
-          let llm = add_dummy_params llm in
-          L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
-          seed_count := !seed_count + 1;
-          L.debug "seed count: %d" !seed_count;
-          Some (path, llm, cov))
-        else None
+    | Ok llm when check_llm_for_mutation llm ->
+        let cov = lines |> List.map int_of_string in
+        let llm = add_dummy_params llm in
+        L.debug "filtered seeds: %s" (ALlvm.string_of_llmodule llm);
+        seed_count := !seed_count + 1;
+        L.debug "seed count: %d" !seed_count;
+        Some (path, llm, cov)
+    | _ -> None
   in
 
   let seeds =

@@ -41,29 +41,34 @@ let log_new_points new_points =
     L.debug "No new coverage points"
   else L.debug "New coverage points"
 
-let save_covering_mutant parent_llm seed =
+let save_if_cover parent_llm seed =
   if seed.Seedpool.CfgSeed.covers then
     let seed_name =
       Seedpool.Seed.name ~parent:(ALlvm.hash_llm parent_llm) seed
     in
     ALlvm.save_ll !Config.covers_dir seed_name seed.llm |> ignore
 
+let compute_coverage_and_seed llm lines importants covset node_tbl distmap =
+  let is_in_slice addr = is_in_slice addr node_tbl distmap in
+  let trace = lines |> List.map int_of_string |> List.filter is_in_slice in
+  let cov = trace |> AUtil.pairs |> Coverage.EdgeCoverage.of_list in
+  let new_points = Coverage.EdgeCoverage.diff cov covset in
+  let new_seed = Seedpool.Seed.make llm trace importants node_tbl distmap in
+  (new_seed, new_points)
+
 let evaluate_mutant parent_llm llm importants covset node_tbl distmap =
   let optim_res, _ = measure_optimizer_coverage llm in
-  L.debug "Mutant: ";
-  L.debug "%s" (ALlvm.string_of_llmodule llm);
+  L.debug "Mutant:\n%s" (ALlvm.string_of_llmodule llm);
   match optim_res with
-  | Error _ -> None
   | Ok lines ->
-      let is_in_slice addr = is_in_slice addr node_tbl distmap in
-      let trace = lines |> List.map int_of_string |> List.filter is_in_slice in
-      let cov = trace |> AUtil.pairs |> Coverage.EdgeCoverage.of_list in
-      let new_points = Coverage.EdgeCoverage.diff cov covset in
+      let seed, new_points =
+        compute_coverage_and_seed llm lines importants covset node_tbl distmap
+      in
       log_new_points new_points;
-      let new_seed = Seedpool.Seed.make llm trace importants node_tbl distmap in
-      save_covering_mutant parent_llm new_seed;
+      save_if_cover parent_llm seed;
       let interesting = not (Coverage.EdgeCoverage.is_empty new_points) in
-      if interesting then Some new_seed else None
+      if interesting then Some seed else None
+  | Error _ -> None
   | Assert _ -> None
 
 let change_suffix filename suffix =
@@ -127,19 +132,22 @@ let gen_mutants mutator node_tbl distmap energy llm pool progress =
   in
   aux energy pool progress
 
+let save_importants seed =
+  AUtil.clean "importants";
+  Out_channel.with_open_text "importants" (fun line ->
+      Printf.fprintf line "%s" seed.Seedpool.CfgSeed.importants)
+
 let run seed_pool node_tbl distmap llctx llset progress =
   (* generate and deduplicate seeds *)
   let mutator = mutate_seed llctx llset in
 
-  let rec campaign pool (progress : Progress.t) =
-    let seed, pool_popped = Seedpool.pop pool in
-    let energy = Seedpool.Seed.get_energy seed in
-    let llm = Seedpool.Seed.llmodule seed in
-    AUtil.clean "importants";
-    Out_channel.with_open_text "importants" (fun line ->
-        Printf.fprintf line "%s" seed.importants);
-    L.debug "campaign: seed popped (energy: %d): %a" energy Seedpool.Seed.pp
-      seed;
+  let rec campaign pool progress =
+    let open Seedpool in
+    let seed, pool_popped = pop pool in
+    let energy = Seed.get_energy seed in
+    let llm = Seed.llmodule seed in
+    save_importants seed;
+    L.debug "campaign: seed popped (energy: %d): %a" energy Seed.pp seed;
 
     assert (energy >= 0);
 
