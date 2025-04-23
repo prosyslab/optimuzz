@@ -1,0 +1,5 @@
+networkx==3.4.2
+pydot==3.0.4
+pyparsing==3.2.3
+tqdm==4.67.1
+watchdog==6.0.0
