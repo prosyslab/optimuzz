@@ -336,14 +336,12 @@ let compute_init_cov seeds =
     EdgeCoverage.empty seeds
 
 let make_pool_and_cov seeds =
-  let open Coverage in
   let pool = create () in
   seeds |> List.to_seq |> add_seq pool;
   let init_cov = compute_init_cov seeds in
   (pool, init_cov)
 
 let evaluate_seeds_and_construct_seedpool raw_seeds node_tbl distmap =
-  let open AUtil in
   let open Coverage in
   if is_optimuzz_base () then
     let _, seeds = classify_seeds node_tbl distmap raw_seeds in
