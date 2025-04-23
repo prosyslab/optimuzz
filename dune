@@ -3,4 +3,4 @@
   (flags
    (:standard -warn-error -A -w -32))))
 
-(dirs src)
+(dirs src test)
