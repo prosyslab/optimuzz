@@ -6,8 +6,15 @@
     <description>Recent content in Posts on Optimuzz</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 05 Apr 2025 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Thu, 08 May 2025 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://prosys.kaist.ac.kr/optimuzz/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Optimuzz meets LLM!</title>
+      <link>https://prosys.kaist.ac.kr/optimuzz/posts/optimuzz-meets-llm/</link>
+      <pubDate>Thu, 08 May 2025 00:00:00 +0000</pubDate>
+      <guid>https://prosys.kaist.ac.kr/optimuzz/posts/optimuzz-meets-llm/</guid>
+      <description>We have successfully integrated LLMs into our workflow to automate Optimuzz for LLVM.</description>
+    </item>
     <item>
       <title>Our paper is appearing on PLDI 2025</title>
       <link>https://prosys.kaist.ac.kr/optimuzz/posts/pldi-2025-paper/</link>

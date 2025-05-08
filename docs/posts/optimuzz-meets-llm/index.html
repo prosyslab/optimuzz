@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Optimuzz meets LLM!</title>
+    
+    
+    <link rel="stylesheet" href="/optimuzz/css/style.css">
+    <base href="https://prosys.kaist.ac.kr/optimuzz/">
+    
+</head>
+
+<body class="">
+    
+<main class="min-h-screen bg-gray-50 text-gray-900 px-6 py-12 font-display">
+
+  <article class="prose lg:prose-xl prose-gray max-w-3xl mx-auto">
+    <div class="mb-6">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/" class="text-indigo-700 hover:underline text-sm">&larr; Back to Home</a>
+      </div>
+    <h1 class="text-4xl font-bold mb-6">Optimuzz meets LLM!</h1>
+
+    <time class="text-sm text-gray-500 block mb-2" datetime='2025-05-08T00:00:00'>
+        2025 May 8
+    </time>
+
+
+    
+  <h2 id="introduction">Introduction</h2>
+<p>Given a target optimization, Optimuzz excels at generating input programs that trigger the optimization.
+Optimuzz then checks the correctness of the optimization by translation-validating the optimized programs from the generated input programs.
+It has demonstrated its effectiveness in finding miscompilation bugs in LLVM and TurboFan, and even found out unknown bugs in the recent LLVM versions.</p>
+<p>While the nearly whole process is effective and automated, it still requires human effort to identify the target optimization.
+For example, an update on an optimization in LLVM may introduce a new optimization, change the optimization condition, or even remove the optimization.
+In addition, from such changes, one should also identify an exact target line in the optimization.
+Although the process is not very difficult, it still requires manual intervention.</p>
+<h2 id="optimuzz-and-llm">Optimuzz and LLM</h2>
+<p>This is where LLMs come to the rescue.
+We observe that the process of identifying the target optimization does not require a deep understanding of the whole compiler.
+Instead, it can be easily identified by reading the commit message and the code changes.
+For example, we asked the LLM with the following prompt:</p>
+<pre tabindex="0"><code>The commit message is:
+[InstCombine] Preserve the sign bit of NaN in `SimplifyDemandedUseFPClass` (#137287)
+
+Alive2: https://alive2.llvm.org/ce/z/uiUzEf
+
+Closes https://github.com/llvm/llvm-project/issues/137196.
+
+Note: To avoid regression in
+`ret_nofpclass_nopositives_copysign_nnan_flag`, the second commit takes
+FMF into account.
+
+The code change is as follows:
+
+File: llvm/lib/Transforms/InstCombine/InstCombineSimplifyDemanded.cpp
+Status: modified
+Patch:
+...
+2022 |
+--- | -      if ((DemandedMask &amp; fcPositive) == fcNone) {
+2023 | +      if ((DemandedMask &amp; fcNegative) == DemandedMask) {
+2024 |          // Roundabout way of replacing with fneg(fabs)
+2025 |          I-&gt;setOperand(1, ConstantFP::get(VTy, -1.0));
+2026 |          return I;
+2027 |        }
+
+...
+
+Which target line should Optimuzz aim at? Provide your best suggestion of the target line.
+</code></pre><p>The LLM answered with the target line 2026, where the optimized instruction is returned for the update optimization condition.
+Therefore, we confirmed that the LLM can effectively identify the target line of the optimization update.</p>
+<p>As a result, we have successfully integrated LLMs into our workflow.
+Every time there is an update on an optimization in LLVM, we automatically fetch the commit information using the GitHub API.
+We then use the commit message and the code changes to consult the LLM.
+Then, we run Optimuzz to check the correctness of the updated optimization using the target line suggested by the LLM.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Reading a commit information and identifying the target optimization for each update is a tedious task.
+However, we used LLMs to automate this process and successfully integrated it into our workflow.
+This comes with two benefits as we describe below.</p>
+<p>This drastically improves the productivity in employing Optimuzz.
+As of now, there is no need to manually intervene in the process of running Optimuzz for LLVM.
+This means that we can run Optimuzz for every optimization update in LLVM.
+Therefore, we can contribute more to enhance the reliability of the LLVM compiler.</p>
+<p>In addition, this workflow provides an insight into the potential usefulness of LLMs in a wide range of software testing tasks.
+Typically, analyzing a source code requires a well-formed input even if the input is small and simple.
+For example, it would not be possible to analyze a commit with a message and code changes with
+traditional tools such as static analyzer.
+However, LLMs can take such unstructured inputs and provide a useful analysis result.</p>
+
+    
+
+    
+
+    <div class="mt-12">
+        <a href="https://prosys.kaist.ac.kr/optimuzz/" class="text-indigo-700 hover:underline text-sm">&larr; Back to Home</a>
+      </div>
+  </article>
+</main>
+
+</body>
+
+</html>
