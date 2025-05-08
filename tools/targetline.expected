@@ -1,0 +1,146 @@
+===== Human =====
+
+Your task is to read a code change from a commit and (1) determine the target lines for a directed compiler fuzzer to aim at, and (2) categorize the code change.
+
+First, you determine the target lines.
+The source code is from the LLVM project and implements mid-end optimizations in C++, including InstCombine, VectorCombine, GVN, SLPVectorizer, and others.
+The directed compiler fuzzer, Optimuzz, generates input programs that satisfy the optimization conditions in the source code to reach the target line and trigger the optimization.
+The target line is the line at which the optimization happens after the optimization condition checks and the code transformation is applied.
+For example, LLVM InstCombine pass returns a newly created instruction when the optimization is applied,
+and the return statement is usually located at the target line.
+
+The code change is typically one of the following three types:
+(A) A new optimization is added to the compiler.
+```c++
+1 Instruction *foldX() {
+2  if (A)
+3    return Inst();
+4  if (C)
+5    ...
+6 }
+```
+In the example, a new optimization is added with the optimization condition `A`.
+In this case, the target line is 3, where the new instruction `Inst()` is created and returned.
+This is because we want to generate input programs that test the optimization `Inst()`.
+(B) Optimization condition is weakened.
+```c++
+1  Instruction *foldX() {
+2   if (A)
+3 +   if (B)
+4       return nullptr;
+5   if (C)
+6     return Opt1();
+7   return nullptr;
+8 }
+```
+In the example, the optimization condition `B` is added,
+then the optimization condition of `Opt1` is weakened since both `A` and `B` are required to be true to prevent the optimization.
+In this case, the target line is 6, where the optimization `Opt1` is applied.
+(C) Optimization condition is strengthened.
+```c++
+1  Instruction *foldX() {
+2   if (A)
+3 +   if (B)
+4       return Opt1();
+5   if (C)
+6     return Opt2();
+7   return nullptr;
+8 }
+```
+In the example, the optimization condition `B` is added to the optimization `Opt1`.
+In this case, the target lines are 4 and 6, where the optimization `Opt1` is applied and the optimization `Opt2` is applied.
+Since the optimization condition of `Opt2` is weakend, we also target the line of `Opt2`.
+
+Second, you categorize the code change.
+A code change is typically one of the following three types:
+
+1. A new optimization is added to the compiler. Then you should answer `new`. The code change usually follows the pattern of (A) above.
+2. An optimization condition is weakened. Then you should answer `weakened`. The code change usually follows the pattern of (B) above.
+3. An optimization condition is strengthened. Then you should answer `strengthened`. The code change usually follows the pattern of (C) above.
+
+The commit message is:
+[InstCombine] Preserve the sign bit of NaN in `SimplifyDemandedUseFPClass` (#137287)
+
+Alive2: https://alive2.llvm.org/ce/z/uiUzEf
+
+Closes https://github.com/llvm/llvm-project/issues/137196.
+
+Note: To avoid regression in
+`ret_nofpclass_nopositives_copysign_nnan_flag`, the second commit takes
+FMF into account.
+
+The code change is as follows:
+
+File: llvm/lib/Transforms/InstCombine/InstCombineSimplifyDemanded.cpp
+Status: modified
+Patch:
+```
+--- | @@ -1959,9 +1959,11 @@ static Constant *getFPClassConstant(Type *Ty, FPClassTest Mask) {
+1959 |    }
+1960 |  }
+1961 |
+--- | -Value *InstCombinerImpl::SimplifyDemandedUseFPClass(
+--- | -    Value *V, const FPClassTest DemandedMask, KnownFPClass &Known,
+--- | -    unsigned Depth, Instruction *CxtI) {
+1962 | +Value *InstCombinerImpl::SimplifyDemandedUseFPClass(Value *V,
+1963 | +                                                    FPClassTest DemandedMask,
+1964 | +                                                    KnownFPClass &Known,
+1965 | +                                                    unsigned Depth,
+1966 | +                                                    Instruction *CxtI) {
+1967 |    assert(Depth <= MaxAnalysisRecursionDepth && "Limit Search Depth");
+1968 |    Type *VTy = V->getType();
+1969 |
+--- | @@ -1985,7 +1987,12 @@ Value *InstCombinerImpl::SimplifyDemandedUseFPClass(
+1987 |    if (!I->hasOneUse())
+1988 |      return nullptr;
+1989 |
+--- | -  // TODO: Should account for nofpclass/FastMathFlags on current instruction
+1990 | +  if (auto *FPOp = dyn_cast<FPMathOperator>(I)) {
+1991 | +    if (FPOp->hasNoNaNs())
+1992 | +      DemandedMask &= ~fcNan;
+1993 | +    if (FPOp->hasNoInfs())
+1994 | +      DemandedMask &= ~fcInf;
+1995 | +  }
+1996 |    switch (I->getOpcode()) {
+1997 |    case Instruction::FNeg: {
+1998 |      if (SimplifyDemandedFPClass(I, 0, llvm::fneg(DemandedMask), Known,
+--- | @@ -2013,13 +2020,13 @@ Value *InstCombinerImpl::SimplifyDemandedUseFPClass(
+2020 |        if (SimplifyDemandedFPClass(I, 0, DemandedMaskAnySign, Known, Depth + 1))
+2021 |          return I;
+2022 |
+--- | -      if ((DemandedMask & fcPositive) == fcNone) {
+2023 | +      if ((DemandedMask & fcNegative) == DemandedMask) {
+2024 |          // Roundabout way of replacing with fneg(fabs)
+2025 |          I->setOperand(1, ConstantFP::get(VTy, -1.0));
+2026 |          return I;
+2027 |        }
+2028 |
+--- | -      if ((DemandedMask & fcNegative) == fcNone) {
+2029 | +      if ((DemandedMask & fcPositive) == DemandedMask) {
+2030 |          // Roundabout way of replacing with fabs
+2031 |          I->setOperand(1, ConstantFP::getZero(VTy));
+2032 |          return I;
+
+```
+Now you should answer the following question:
+
+(1) Which target line should Optimuzz aim at? Provide your best suggestion of the target line.
+(2) What is the type of the code change? You can answer one of the following four types: `new`, `bug fix`, `weakened`, `removed`.
+
+You answer should follow the JSON format:
+```json
+{
+    "target_file": "<target_file>",
+    "target_line": <target_line>,
+    "type": "<type>"
+}
+```
+
+===== AI =====
+```json
+{
+    "target_file": "llvm/lib/Transforms/InstCombine/InstCombineSimplifyDemanded.cpp",
+    "target_line": 2026,
+    "type": "strengthened"
+}
+```
