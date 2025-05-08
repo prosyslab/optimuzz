@@ -54,7 +54,8 @@ Which target line should Optimuzz aim at? Provide your best suggestion of the ta
 ```
 
 The LLM answered with the target line 2026, where the optimized instruction is returned for the update optimization condition.
-Therefore, we confirmed that the LLM can effectively identify the target line of the optimization update.
+From this, we confirmed that the LLM can effectively identify the target line of the optimization update.
+Note that the example above is a summary from the commit message and code changes from the LLVM commit: https://github.com/llvm/llvm-project/commit/1f69d6354a4b088bda5ee62c31411a75eead8b0c.
 
 As a result, we have successfully integrated LLMs into our workflow.
 Every time there is an update on an optimization in LLVM, we automatically fetch the commit information using the GitHub API.
