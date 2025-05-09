@@ -55,9 +55,8 @@ Which target line should Optimuzz aim at? Provide your best suggestion of the ta
 
 The LLM answered with the target line 2026, where the optimized instruction is returned for the update optimization condition.
 From this, we confirmed that the LLM can effectively identify the target line of the optimization update.
-Note that the example above is a summary from the commit message and code changes from the LLVM commit: https://github.com/llvm/llvm-project/commit/1f69d6354a4b088bda5ee62c31411a75eead8b0c.
-The script that construct a prompt can be found at https://github.com/prosyslab/optimuzz/blob/master/tools/targetline.py, and
-the example prompt with its expected output can be found at https://github.com/prosyslab/optimuzz/blob/master/tools/targetline.expected .
+Note that the example above is a summary from the commit message and code changes from the LLVM commit [1f69d63](https://github.com/llvm/llvm-project/commit/1f69d6354a4b088bda5ee62c31411a75eead8b0c).
+We also provide [the prompting script](https://github.com/prosyslab/optimuzz/blob/master/tools/targetline.py) and an example prompt with [its expected output](https://github.com/prosyslab/optimuzz/blob/master/tools/targetline.expected).
 
 As a result, we have successfully integrated LLMs into our workflow.
 Every time there is an update on an optimization in LLVM, we automatically fetch the commit information using the GitHub API.
