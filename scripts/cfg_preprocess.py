@@ -149,7 +149,7 @@ edge_cnt = sum([cfg.number_of_edges() for cfg in cfgs])
 print(f'Total number of nodes: {node_cnt}', file=sys.stderr)
 print(f'Total number of edges: {edge_cnt}', file=sys.stderr)
 
-entire_cfg = merge_cfgs(cfgs, callgraph)
+entire_cfg = merge_cfgs(cfgs, callgraph).reverse()
 
 fulldistmap = defaultdict(list)
 for v in target_nodes:
