@@ -30,8 +30,14 @@ parser.add_argument('-j', '--jobs', type=int, help='number of parallel jobs', de
 parser.add_argument('--cont', action='store_true', help='continue TV even if the first miscompilation is found')
 
 # Placeholder removed as args parsing is moved under __main__
-def run_opt(d: Path, timeout: str = '2s', passes: str = 'instcombine', save_result: bool = True, cwd: Path = None):
-    opt_args = ['timeout', timeout, 'opt', '-S', f'-passes={passes}']
+def run_opt(
+    d: Path,
+    opt_bin: str,
+    timeout: str = '2s',
+    passes: str = 'instcombine',
+    save_result: bool = True,
+):
+    opt_args = ['timeout', timeout, opt_bin, '-S', f'-passes={passes}']
     opt_result = d.with_suffix('.opt.ll') if save_result else Path('/dev/null')
     opt_args.extend(['-o', opt_result.absolute().as_posix(), str(d)])
     opt_p = sp.run(opt_args)
@@ -39,8 +45,15 @@ def run_opt(d: Path, timeout: str = '2s', passes: str = 'instcombine', save_resu
         return opt_result if save_result else None
     return None
 
-def run_tv(before: Path, after: Path, timeout: str = '2m', no_undef: bool = False, no_poison: bool = False):
-    tv_args = ['timeout', timeout, 'alive-tv', before.absolute().as_posix(), after.absolute().as_posix()]
+def run_tv(
+    before: Path,
+    after: Path,
+    tv_bin: str,
+    timeout: str = '2m',
+    no_undef: bool = False,
+    no_poison: bool = False,
+):
+    tv_args = ['timeout', timeout, tv_bin, before.absolute().as_posix(), after.absolute().as_posix()]
     if no_undef:
         tv_args.append('--disable-undef-input')
     if no_poison:
@@ -74,11 +87,25 @@ def unique_sorted_files(files: list[Path]):
         
     return files
 
-def process_file(target: Path, crash_dir: Path):
-    opt_result = run_opt(target)
+def process_file(
+    target: Path,
+    crash_dir: Path,
+    opt_bin: str,
+    tv_bin: str,
+    passes: str,
+    no_undef: bool,
+    no_poison: bool,
+):
+    opt_result = run_opt(target, opt_bin=opt_bin, passes=passes)
     if not opt_result:
         return False
-    tv_result = run_tv(target, opt_result)
+    tv_result = run_tv(
+        target,
+        opt_result,
+        tv_bin=tv_bin,
+        no_undef=no_undef,
+        no_poison=no_poison,
+    )
     if tv_result == "incorrect":
        shutil.copy(opt_result, crash_dir / target.name)
 
@@ -87,7 +114,18 @@ def process_file(target: Path, crash_dir: Path):
     return tv_result == "pass"
 
 
-def postmortem(covers_dir: Path, crash_dir: Path, jobs: int, cont: bool = False):
+def postmortem(
+    covers_dir: Path,
+    crash_dir: Path,
+    jobs: int,
+    cont: bool = False,
+    *,
+    opt_bin: str,
+    tv_bin: str,
+    passes: str,
+    no_undef: bool,
+    no_poison: bool,
+):
     files = [d.absolute() for d in covers_dir.iterdir() if d.suffix == '.ll' and 'opt.ll' not in d.name]
     files = unique_sorted_files(files)
     print(f"Found {len(files)} files to process", file=sys.stderr)
@@ -100,7 +138,15 @@ def postmortem(covers_dir: Path, crash_dir: Path, jobs: int, cont: bool = False)
         def worker(file: Path):
             if stop_event.is_set():  # Check if stop signal is set
                 return
-            passed = process_file(file, crash_dir)
+            passed = process_file(
+                file,
+                crash_dir,
+                opt_bin=opt_bin,
+                tv_bin=tv_bin,
+                passes=passes,
+                no_undef=no_undef,
+                no_poison=no_poison,
+            )
             with progress_lock:  # Safely update the progress bar
                 pbar.update(1)
             if not passed:  # Miscompilation found
@@ -141,7 +187,17 @@ if __name__ == "__main__":
     print('opt: ', args.opt_bin, file=sys.stderr)
     print('alive-tv: ', tv_bin, file=sys.stderr)
 
-    postmortem(covers_dir, crash_dir, args.jobs, args.cont)
+    postmortem(
+        covers_dir,
+        crash_dir,
+        args.jobs,
+        args.cont,
+        opt_bin=opt_bin,
+        tv_bin=tv_bin,
+        passes=args.passes,
+        no_undef=args.no_undef,
+        no_poison=args.no_poison,
+    )
 
     miscompilations = len(list(crash_dir.iterdir()))
     if miscompilations > 0:
